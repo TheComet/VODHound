@@ -1,0 +1,42 @@
+#pragma once
+
+#cmakedefine RF_BTREE_64BIT_KEYS
+#cmakedefine RF_BTREE_64BIT_CAPACITY
+#cmakedefine RF_MEM_BACKTRACE
+#cmakedefine RF_MEM_DEBUGGING
+#cmakedefine RF_TESTS
+#cmakedefine RF_VEC_64BIT_CAPACITY
+
+#define RF_${RF_LIB_TYPE}
+#define RF_SIZEOF_VOID_P          ${CMAKE_SIZEOF_VOID_P}
+#define RF_BTREE_EXPAND_FACTOR    ${RF_BTREE_EXPAND_FACTOR}
+#define RF_BTREE_MIN_CAPACITY     ${RF_BTREE_MIN_CAPACITY}
+#define RF_HM_EXPAND_FACTOR       ${RF_HM_EXPAND_FACTOR}
+#define RF_HM_MIN_CAPACITY        ${RF_HM_MIN_CAPACITY}
+#define RF_HM_REHASH_AT_PERCENT   ${RF_HM_REHASH_AT_PERCENT}
+#define RF_MEM_BACKTRACE_SIZE     ${RF_MEM_BACKTRACE_SIZE}
+#define RF_VEC_EXPAND_FACTOR      ${RF_VEC_EXPAND_FACTOR}
+#define RF_VEC_MIN_CAPACITY       ${RF_VEC_MIN_CAPACITY}u
+
+#define RF_THREADLOCAL ${RF_THREADLOCAL}
+
+#if defined(RF_SHARED)
+#   if defined(RF_BUILDING)
+#       define RF_PUBLIC_API ${API_EXPORT}
+#   else
+#       define RF_PUBLIC_API ${API_IMPORT}
+#   endif
+#   define RF_PRIVATE_API ${API_LOCAL}
+#else
+#   define RF_PUBLIC_API
+#   define RF_PRIVATE_API
+#endif
+
+#ifdef __cplusplus
+#   define C_BEGIN extern "C" {
+#   define C_END }
+#else
+#   define C_BEGIN
+#   define C_END
+#endif
+

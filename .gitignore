@@ -1,0 +1,9 @@
+# Generated
+/build*
+
+# IDE files
+CMakeLists.txt.user
+*.swp
+
+# Other files
+*.xcf
