@@ -55,16 +55,19 @@ CREATE TABLE video_paths (
 );
 CREATE TABLE people (
     id INTEGER PRIMARY KEY NOT NULL,
-    sponsor TEXT,
+    sponsor_id INTEGER,
     name TEXT NOT NULL,
     tag TEXT NOT NULL,
-    social TEXT,
-    pronouns TEXT
+    social TEXT NOT NULL,
+    pronouns TEXT NOT NULL,
+    FOREIGN KEY (sponsor_id) REFERENCES sponsors(id),
+    UNIQUE(name, tag)
 );
 CREATE TABLE tournaments (
-    id INTEGER PRIMAY KEY,
+    id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
-    website TEXT
+    website TEXT NOT NULL,
+    UNIQUE(name, website)
 );
 CREATE TABLE tournament_organizers (
     tournament_id INTEGER NOT NULL,
@@ -73,8 +76,11 @@ CREATE TABLE tournament_organizers (
     FOREIGN KEY (person_id) REFERENCES people(id)
 );
 CREATE TABLE sponsors (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL, website TEXT
+    id INTEGER PRIMARY KEY NOT NULL,
+    short TEXT NOT NULL,
+    name TEXT NOT NULL,
+    website TEXT NOT NULL,
+    UNIQUE(short, name, website)
 );
 CREATE TABLE tournament_sponsors (
     tournament_id INTEGER NOT NULL,

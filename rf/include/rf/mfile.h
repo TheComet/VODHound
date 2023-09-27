@@ -4,16 +4,16 @@
 
 C_BEGIN
 
-struct mfile
+struct rf_mfile
 {
     void* address;
     int size;
 };
 
 int
-map_file(struct mfile* mf, const char* file_name);
+rf_mfile_map(struct rf_mfile* mf, const char* file_name);
 
 void
-unmap_file(struct mfile* mf);
+rf_mfile_unmap(struct rf_mfile* mf);
 
 C_END

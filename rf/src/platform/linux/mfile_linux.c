@@ -6,7 +6,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
-int map_file(struct mfile* mf, const char* file_name)
+int rf_mfile_map(struct rf_mfile* mf, const char* file_name)
 {
     struct stat stbuf;
     int fd;
@@ -39,7 +39,7 @@ int map_file(struct mfile* mf, const char* file_name)
     open_failed    : return -1;
 }
 
-void unmap_file(struct mfile* mf)
+void rf_mfile_unmap(struct rf_mfile* mf)
 {
     munmap(mf->address, (size_t)mf->size);
 }

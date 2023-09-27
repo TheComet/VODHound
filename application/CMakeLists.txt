@@ -11,6 +11,7 @@ target_link_libraries (application
     PRIVATE
         sqlite
         json-c
+        zlibstatic
         rf)
 
 set_target_properties (application PROPERTIES

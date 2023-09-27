@@ -20,9 +20,13 @@ set (REFRAMED_INSTALL_BINDIR ".")
 set (REFRAMED_INSTALL_LIBDIR "lib")
 set (REFRAMED_INSTALL_INCLUDEDIR "include")
 
+# Need to compile static libraries with position independent code on because
+# rfcommon is a shared library
+set (ZLIB_PIC ON CACHE INTERNAL "")
+
 add_subdirectory ("thirdparty/sqlite-3.43.1")
 add_subdirectory ("thirdparty/json-c")
+add_subdirectory ("thirdparty/zlib-1.2.11")
 #add_subdirectory ("thirdparty/iup-cmake")
 add_subdirectory ("rf")
 add_subdirectory ("application")
-

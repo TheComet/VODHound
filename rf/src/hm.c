@@ -5,9 +5,9 @@
 
 #define IS_POWER_OF_2(x) (((x) & ((x)-1)) == 0)
 
-#define SLOT(hm, pos)  (*(rf_hash32*)(hm->storage + (int)sizeof(rf_hash32) * pos))
-#define KEY(hm, pos)   (void*)       (hm->storage + (int)sizeof(rf_hash32) * hm->table_count + hm->key_size * pos)
-#define VALUE(hm, pos) (void*)       (hm->storage + (int)sizeof(rf_hash32) * hm->table_count + hm->key_size * hm->table_count + hm->value_size * pos)
+#define SLOT(hm, pos)  (*(rf_hash32*)(hm->storage + sizeof(rf_hash32) * pos))
+#define KEY(hm, pos)   (void*)       (hm->storage + sizeof(rf_hash32) * hm->table_count + hm->key_size * pos)
+#define VALUE(hm, pos) (void*)       (hm->storage + sizeof(rf_hash32) * hm->table_count + hm->key_size * hm->table_count + hm->value_size * pos)
 
 #if defined(RF_HASHMAP_STATS)
 #   include <stdio.h>
@@ -108,7 +108,7 @@ hash_wrapper(const struct rf_hm* hm, const void* data, int len)
 
 /* ------------------------------------------------------------------------- */
 static char*
-malloc_and_init_storage(int key_size, int value_size, int table_count)
+malloc_and_init_storage(rf_hm_size key_size, rf_hm_size value_size, rf_hm_size table_count)
 {
     char* storage;
     assert(IS_POWER_OF_2(table_count));
@@ -125,7 +125,7 @@ malloc_and_init_storage(int key_size, int value_size, int table_count)
 
 /* ------------------------------------------------------------------------- */
 static int
-resize_rehash(struct rf_hm* hm, int new_table_count)
+resize_rehash(struct rf_hm* hm, rf_hm_size new_table_count)
 {
     struct rf_hm new_hm;
     int i;
@@ -140,7 +140,7 @@ resize_rehash(struct rf_hm* hm, int new_table_count)
     if (new_hm.storage == NULL)
         return -1;
 
-    for (i = 0; i != hm->table_count; ++i)
+    for (i = 0; i != (int)hm->table_count; ++i)
     {
         if (SLOT(hm, i) == RF_HM_SLOT_UNUSED || SLOT(hm, i) == RF_HM_SLOT_RIP)
             continue;

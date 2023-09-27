@@ -1,13 +1,14 @@
 #include "rf/mstream.h"
+#include "rf/str.h"
 
 int
-mstream_read_string_until_delim(struct mstream* ms, char delim, struct string* str)
+rf_mstream_read_string_until_delim(struct rf_mstream* ms, char delim, struct rf_str* str)
 {
     const char* data = ms->address;
-    str->begin = &data[ms->idx];
+    str->data = &data[ms->idx];
     str->len = 0;
     for (; ms->idx + str->len != ms->size; ++str->len)
-        if (str->begin[str->len] == delim)
+        if (str->data[str->len] == delim)
         {
             ms->idx += str->len + 1;
             return 0;
@@ -17,16 +18,16 @@ mstream_read_string_until_delim(struct mstream* ms, char delim, struct string* s
 }
 
 int
-mstream_read_string_until_condition(struct mstream* ms, int (*cond)(char), struct string* str)
+rf_mstream_read_string_until_condition(struct rf_mstream* ms, int (*cond)(char), struct rf_str* str)
 {
     const char* data = ms->address;
-    str->begin = &data[ms->idx];
+    str->data = &data[ms->idx];
     str->len = 0;
     for (; ms->idx + str->len != ms->size; ++str->len)
-        if (cond(str->begin[str->len]))
+        if (cond(str->data[str->len]))
         {
             ms->idx += str->len + 1;
-            while (!mstream_at_end(ms) && cond(data[ms->idx]))
+            while (!rf_mstream_at_end(ms) && cond(data[ms->idx]))
                 ++ms->idx;
             return 0;
         }

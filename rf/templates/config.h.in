@@ -32,7 +32,18 @@
 #   define RF_PRIVATE_API
 #endif
 
-#ifdef __cplusplus
+/* Version string ---------------------------------------------------------- */
+#define RF_VERSION_MAJOR ${PROJECT_VERSION_MAJOR}
+#define RF_VERSION_MINOR ${PROJECT_VERSION_MINOR}
+#define RF_VERSION_PATCH ${PROJECT_VERSION_PATCH}
+#define RF_VERSION_STR \
+        RF_STRINGIFY(RF_VERSION_MAJOR) "." RF_STRINGIFY(RF_VERSION_MINOR) "." RF_STRINGIFY(RF_VERSION_PATCH)
+
+#define RF_VERSION \
+        ((RF_VERSION_MAJOR << 24) | (RF_VERSION_MINOR << 16) | (RF_VERSION_PATCH << 8) | /* release candidate */ 0)
+
+/* C++ macros -------------------------------------------------------------- */
+#if defined(__cplusplus)
 #   define C_BEGIN extern "C" {
 #   define C_END }
 #else
@@ -40,3 +51,10 @@
 #   define C_END
 #endif
 
+
+/* printf formatting ------------------------------------------------------- */
+#if defined(__GNUC__) || defined(__clang__)
+#   define RF_PRINTF_FORMAT(fmt, params) __attribute__((format(printf, fmt, params)))
+#else
+#   define PRINTF_FORMAT(fmt, params)
+#endif

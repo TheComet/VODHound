@@ -1,5 +1,12 @@
+#include "rf/log.h"
+#include "rf/mem.h"
+#include "rf/mfile.h"
+#include "rf/mstream.h"
+#include "rf/str.h"
+
 #include "sqlite/sqlite3.h"
 #include "json-c/json.h"
+#include "zlib.h"
 
 #include <stdio.h>
 
@@ -124,6 +131,7 @@ static void insert_mapping_info(sqlite3* db)
     json_object_put(root);
 }
 
+static int newline_or_end(char b) { return b == '\r' || b == '\n' || b == '\0'; }
 static void insert_hash40(sqlite3* db)
 {
     sqlite3_stmt* stmt_insert;
@@ -133,7 +141,36 @@ static void insert_hash40(sqlite3* db)
     sqlite3_exec(db, "BEGIN TRANSACTION", NULL, NULL, &error_message);
     printf("BEGIN TRANSACTION;\n");
 
+    struct rf_mfile mf;
+    rf_mfile_map(&mf, "ParamLabels.csv");
 
+    struct rf_mstream ms = rf_mstream_from_mfile(&mf);
+
+    while (!rf_mstream_at_end(&ms))
+    {
+        /* Extract hash40 and label, splitting on comma */
+        struct rf_str h40_str, label;
+        if (rf_mstream_read_string_until_delim(&ms, ',', &h40_str) != 0)
+            break;
+        if (rf_mstream_read_string_until_condition(&ms, newline_or_end, &label) != 0)
+            break;
+
+        /* Convert hash40 into value */
+        uint64_t h40;
+        if (rf_str_hex_to_u64(h40_str, &h40) != 0)
+            continue;
+
+        if (h40 == 0 || label.len == 0)
+            continue;
+
+        sqlite3_bind_int64(stmt_insert, 1, h40);
+        sqlite3_bind_text(stmt_insert, 2, label.data, label.len, SQLITE_STATIC);
+        sqlite3_step(stmt_insert);
+
+        sqlite3_reset(stmt_insert);
+    }
+
+    rf_mfile_unmap(&mf);
 
     printf("COMMIT TRANSACTION;\n");
     sqlite3_exec(db, "COMMIT TRANSACTION", NULL, NULL, &error_message);
@@ -141,55 +178,152 @@ static void insert_hash40(sqlite3* db)
     sqlite3_finalize(stmt_insert);
 }
 
-#include "rf/str.h"
-
-struct rf_person
+int import_rfr_metadata_1_7_into_db(sqlite3* db, struct json_object* root)
 {
-    struct rf_str tag;
-    struct rf_str name;
-    struct rf_str sponsor;
-    struct rf_str social;
-    struct rf_str pronouns;
-    char is_loser_side;
-};
+    char* err_msg;
+    int ret;
 
-void rf_person_init(struct rf_person* p,
-    struct rf_str tag,
-    struct rf_str name,
-    struct rf_str sponsor,
-    struct rf_str social,
-    struct rf_str pronouns,
-    char is_loser_side)
-{
-    struct arena a = string_arena_alloc(
-        tag.len + name.len + sponsor.len + social.len + pronouns.len);
-    p->tag = string_dup(&a, tag);
-    p->name = string_dup(&a, name);
-    p->sponsor = string_dup(&a, sponsor);
-    p->social = string_dup(&a, social);
-    p->pronouns = string_dup(&a, pronouns);
+    struct json_object* tournament = json_object_object_get(root, "tournament");
+    struct json_object* tournament_name = json_object_object_get(tournament, "name");
+    struct json_object* tournament_website = json_object_object_get(tournament, "website");
+    int tournament_id = -1;
+    {
+        const char* name = json_object_get_string(tournament_name);
+        const char* website = json_object_get_string(tournament_website);
+        if (name && website && *name)
+        {
+            /*
+             * The "tournaments" table holds a list of all existing tournaments.
+             * We want to create a new entry if this tournament is not yet
+             * recorded, otherwise we want to get the existing id.
+             */
+            sqlite3_stmt* stmt;
+            ret = sqlite3_prepare_v2(db,
+                "INSERT INTO tournaments (name, website) VALUES (?, ?) ON CONFLICT DO UPDATE SET name=excluded.name RETURNING id;", -1, &stmt, NULL);
+            if (ret != SQLITE_OK)
+            {
+                rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+                return -1;
+            }
 
-    p->is_loser_side = is_loser_side;
+            if ((ret = sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC) != SQLITE_OK) ||
+                (ret = sqlite3_bind_text(stmt, 2, website, -1, SQLITE_STATIC) != SQLITE_OK))
+            {
+                rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+                sqlite3_finalize(stmt);
+                return -1;
+            }
+
+            if (sqlite3_step(stmt) != SQLITE_ROW)
+            {
+                rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+                sqlite3_finalize(stmt);
+                return -1;
+            }
+            tournament_id = sqlite3_column_int(stmt, 0);
+
+            if (sqlite3_step(stmt) != SQLITE_DONE)
+            {
+                rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+                sqlite3_finalize(stmt);
+                return -1;
+            }
+
+            sqlite3_finalize(stmt);
+        }
+    }
+
+    struct json_object* tournament_sponsors = json_object_object_get(tournament, "sponsors");
+    for (int i = 0; i != json_object_array_length(tournament_sponsors); ++i)
+    {
+        int sponsor_id = -1;
+        struct json_object* sponsor = json_object_array_get_idx(tournament_sponsors, i);
+        const char* name = json_object_get_string(json_object_object_get(sponsor, "name"));
+        const char* website = json_object_get_string(json_object_object_get(sponsor, "website"));
+        if (name && website && *name)
+        {
+            sqlite3_stmt* stmt;
+            ret = sqlite3_prepare_v2(db,
+                "INSERT INTO sponsors (short, name, website) VALUES ('', ?, ?) ON CONFLICT DO UPDATE SET name=excluded.name RETURNING id;", -1, &stmt, NULL);
+            if (ret != SQLITE_OK)
+            {
+                rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+                return -1;
+            }
+
+            if ((ret = sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC) != SQLITE_OK) ||
+                (ret = sqlite3_bind_text(stmt, 2, website, -1, SQLITE_STATIC) != SQLITE_OK))
+            {
+                rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+                sqlite3_finalize(stmt);
+                return -1;
+            }
+
+            if (sqlite3_step(stmt) != SQLITE_ROW)
+            {
+                rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+                sqlite3_finalize(stmt);
+                return -1;
+            }
+            sponsor_id = sqlite3_column_int(stmt, 0);
+
+            if (sqlite3_step(stmt) != SQLITE_DONE)
+            {
+                rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+                sqlite3_finalize(stmt);
+                return -1;
+            }
+
+            sqlite3_finalize(stmt);
+        }
+
+        if (sponsor_id != -1)
+        {
+            /*
+             * The "tournament_sponsors" table forms a many-to-many relation
+             * between tournaments and their sponsors. Make sure each sponsor
+             * is associated with the current tournament_id.
+             */
+            sqlite3_stmt* stmt;
+            ret = sqlite3_prepare_v2(db,
+                "INSERT OR IGNORE INTO tournament_sponsors (tournament_id, sponsor_id) VALUES (?, ?);", -1, &stmt, NULL);
+            if (ret != SQLITE_OK)
+            {
+                rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+                return -1;
+            }
+
+            if ((ret = sqlite3_bind_int(stmt, 1, tournament_id) != SQLITE_OK) ||
+                (ret = sqlite3_bind_int(stmt, 2, sponsor_id) != SQLITE_OK))
+            {
+                rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+                sqlite3_finalize(stmt);
+                return -1;
+            }
+
+            if (sqlite3_step(stmt) != SQLITE_DONE)
+            {
+                rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+                sqlite3_finalize(stmt);
+                return -1;
+            }
+
+            sqlite3_finalize(stmt);
+        }
+    }
+
+    struct json_object* player_info = json_object_object_get(root, "playerinfo");
+    struct json_object* game_info = json_object_object_get(root, "gameinfo");
+
+    struct json_object* time_started = json_object_object_get(game_info, "timestampstart");
+    struct json_object* time_ended = json_object_object_get(game_info, "timestampend");
+    struct json_object* stage_id = json_object_object_get(game_info, "stageid");
+    struct json_object* winner = json_object_object_get(game_info, "winner");
+
+    return 0;
 }
 
-void rf_person_deinit(struct rf_person* p)
-{
-    free(p->tag.begin);
-}
-
-struct rf_metadata
-{
-    uint64_t time_started;
-    uint64_t time_ended;
-    uint8_t fighter_ids[8];
-    uint8_t costumes[8];
-
-    uint16_t stage_id;
-};
-
-static int newline_or_end(char b) { return b == '\r' || b == '\n' || b == '\0'; }
-
-int import_rfr_metadata_into_db(struct mstream* ms)
+int import_rfr_metadata_into_db(sqlite3* db, struct rf_mstream* ms)
 {
     struct json_tokener* tok = json_tokener_new();
     struct json_object* root = json_tokener_parse_ex(tok, ms->address, ms->size);
@@ -209,7 +343,10 @@ int import_rfr_metadata_into_db(struct mstream* ms)
     else if (strcmp(version_str, "1.6") == 0)
     {}
     else if (strcmp(version_str, "1.7") == 0)
-    {}
+    {
+        if (import_rfr_metadata_1_7_into_db(db, root) != 0)
+            goto fail;
+    }
     else
         goto fail;
 
@@ -220,124 +357,129 @@ int import_rfr_metadata_into_db(struct mstream* ms)
     parse_failed : return -1;
 }
 
-int import_rfr_framedata_1_5_into_db(struct mstream* ms)
+int import_rfr_framedata_1_5_into_db(sqlite3* db, struct rf_mstream* ms)
 {
-    int frame_count = mstream_read_lu32(ms);
-    int fighter_count = mstream_read_u8(ms);
+    int frame_count = rf_mstream_read_lu32(ms);
+    int fighter_count = rf_mstream_read_u8(ms);
 
     for (int fighter_idx = 0; fighter_idx != fighter_count; ++fighter_idx)
         for (int frame = 0; frame != frame_count; ++frame)
         {
-            uint64_t timestamp = mstream_read_lu64(ms);
-            uint32_t frames_left = mstream_read_lu32(ms);
-            float posx = mstream_read_lf32(ms);
-            float posy = mstream_read_lf32(ms);
-            float damage = mstream_read_lf32(ms);
-            float hitstun = mstream_read_lf32(ms);
-            float shield = mstream_read_lf32(ms);
-            uint16_t status = mstream_read_lu16(ms);
-            uint32_t motion_l = mstream_read_lu32(ms);
-            uint8_t motion_h = mstream_read_u8(ms);
-            uint8_t hit_status = mstream_read_u8(ms);
-            uint8_t stocks = mstream_read_u8(ms);
-            uint8_t flags = mstream_read_u8(ms);
+            uint64_t timestamp = rf_mstream_read_lu64(ms);
+            uint32_t frames_left = rf_mstream_read_lu32(ms);
+            float posx = rf_mstream_read_lf32(ms);
+            float posy = rf_mstream_read_lf32(ms);
+            float damage = rf_mstream_read_lf32(ms);
+            float hitstun = rf_mstream_read_lf32(ms);
+            float shield = rf_mstream_read_lf32(ms);
+            uint16_t status = rf_mstream_read_lu16(ms);
+            uint32_t motion_l = rf_mstream_read_lu32(ms);
+            uint8_t motion_h = rf_mstream_read_u8(ms);
+            uint8_t hit_status = rf_mstream_read_u8(ms);
+            uint8_t stocks = rf_mstream_read_u8(ms);
+            uint8_t flags = rf_mstream_read_u8(ms);
 
-            if (mstream_past_end(ms))
+            if (rf_mstream_past_end(ms))
                 return -1;
 
             //printf("frame: %d, x: %f, y: %f, stocks: %d\n", frames_left, posx, posy, stocks);
         }
 
-    if (!mstream_at_end(ms))
+    if (!rf_mstream_at_end(ms))
         return -1;
 
     return 0;
 }
 
-int import_rfr_framedata_into_db(struct mstream* ms)
+int import_rfr_framedata_into_db(sqlite3* db, struct rf_mstream* ms)
 {
-    uint8_t major = mstream_read_u8(ms);
-    uint8_t minor = mstream_read_u8(ms);
+    uint8_t major = rf_mstream_read_u8(ms);
+    uint8_t minor = rf_mstream_read_u8(ms);
     if (major == 1 && minor == 5)
     {
-        uLongf uncompressed_size = mstream_read_lu32(ms);
+        uLongf uncompressed_size = rf_mstream_read_lu32(ms);
         if (uncompressed_size == 0 || uncompressed_size > 128*1024*1024)
             return -1;
 
-        void* uncompressed_data = malloc(uncompressed_size);
+        void* uncompressed_data = rf_malloc(uncompressed_size);
         if (uncompress(
             (uint8_t*)uncompressed_data, &uncompressed_size,
-            (const uint8_t*)mstream_ptr(ms), mstream_bytes_left(ms)) != Z_OK)
+            (const uint8_t*)rf_mstream_ptr(ms), rf_mstream_bytes_left(ms)) != Z_OK)
         {
-            free(uncompressed_data);
+            rf_free(uncompressed_data);
             return -1;
         }
 
-        struct mstream uncompressed_stream = mstream_from_memory(
+        struct rf_mstream uncompressed_stream = rf_mstream_from_memory(
                 uncompressed_data, uncompressed_size);
-        int result = import_rfr_framedata_1_5_into_db(&uncompressed_stream);
-        free(uncompressed_data);
+        int result = import_rfr_framedata_1_5_into_db(db, &uncompressed_stream);
+        rf_free(uncompressed_data);
         return result;
     }
 
     return -1;
 }
 
-int import_rfr_video_metadata_into_db(struct mstream* ms)
+int import_rfr_video_metadata_into_db(sqlite3* db, struct rf_mstream* ms)
 {
     return 0;
 }
 
-int import_rfr_into_db(const char* file_name)
+int import_rfr_into_db(sqlite3* db, const char* file_name)
 {
-    struct mfile mf;
-    if (map_file(&mf, file_name) != 0)
+    struct rf_mfile mf;
+    if (rf_mfile_map(&mf, file_name) != 0)
         goto mmap_failed;
 
-    struct mstream ms = mstream_from_mfile(mf);
-    if (memcmp(mstream_read(&ms, 4), "RFR1", 4) != 0)
+    struct rf_mstream ms = rf_mstream_from_mfile(&mf);
+    if (memcmp(rf_mstream_read(&ms, 4), "RFR1", 4) != 0)
     {
         puts("File has invalid header");
         goto invalid_header;
     }
 
-    uint8_t num_entries = mstream_read_u8(&ms);
+    uint8_t num_entries = rf_mstream_read_u8(&ms);
     for (int i = 0; i != num_entries; ++i)
     {
-        const void* type = mstream_read(&ms, 4);
-        int offset = mstream_read_lu32(&ms);
-        int size = mstream_read_lu32(&ms);
-        struct mstream blob = mstream_from_mstream(&ms, offset, size);
+        const void* type = rf_mstream_read(&ms, 4);
+        int offset = rf_mstream_read_lu32(&ms);
+        int size = rf_mstream_read_lu32(&ms);
+        struct rf_mstream blob = rf_mstream_from_mstream(&ms, offset, size);
 
         if (memcmp(type, "META", 4) == 0)
         {
-            if (import_rfr_metadata_into_db(&blob) != 0)
+            if (import_rfr_metadata_into_db(db, &blob) != 0)
                 goto fail;
         }
         else if (memcmp(type, "FDAT", 4) == 0)
         {
-            if (import_rfr_framedata_into_db(&blob) != 0)
+            if (import_rfr_framedata_into_db(db, &blob) != 0)
                 goto fail;
         }
         else if (memcmp(type, "VIDM", 4) == 0)
         {
-            if (import_rfr_video_metadata_into_db(&blob) != 0)
+            if (import_rfr_video_metadata_into_db(db, &blob) != 0)
                 goto fail;
         }
     }
 
-    unmap_file(&mf);
+    rf_mfile_unmap(&mf);
     return 0;
 
     fail           :
-    invalid_header : unmap_file(&mf);
+    invalid_header : rf_mfile_unmap(&mf);
     mmap_failed    : return -1;
 }
 
 int main(int argc, char** argv)
 {
     sqlite3* db;
-    sqlite3_open_v2("rf.db", &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL);
+    int result = sqlite3_open_v2("rf.db", &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL);
+    if (result != SQLITE_OK)
+    {
+        rf_log_sqlite_err(result, sqlite3_errstr(result));
+        goto open_db_failed;
+    }
 
     sqlite3_stmt* stmt_version;
     sqlite3_prepare_v2(db, "PRAGMA user_version;", -1, &stmt_version, NULL);
@@ -347,42 +489,12 @@ int main(int argc, char** argv)
 
     sqlite3_finalize(stmt_version);
 
-    insert_mapping_info(db);
-    insert_hash40(db);
-
-    struct mfile mf;
-    map_file(&mf, "ParamLabels.csv");
-
-    struct mstream ms = mstream_from_mfile(mf);
-
-    while (!mstream_at_end(&ms))
-    {
-        /* Extract hash40 and label, splitting on comma */
-        struct rf_str h40_str, label;
-        if (mstream_read_string_until_delim(&ms, ',', &h40_str) != 0)
-            break;
-        if (mstream_read_string_until_condition(&ms, newline_or_end, &label) != 0)
-            break;
-
-        /* Convert hash40 into value */
-        uint64_t h40;
-        if (string_hex_to_u64(h40_str, &h40) != 0)
-            continue;
-
-        if (h40 == 0 || label.len == 0)
-            continue;
-
-/*
-        char buf[256];
-        memcpy(buf, label.begin, label.len);
-        buf[label.len] = '\0';
-        printf("0x%lx: %s\n", h40, buf);*/
-    }
-
-    unmap_file(&mf);
-
-    import_rfr_into_db("games/2022-08-24 - Coaching (1) - TheComet (Pikachu) vs Mitch (Mythra) Game 1.rfr");
+    /*insert_mapping_info(db);
+    insert_hash40(db);*/
+    import_rfr_into_db(db, "/home/thecomet/videos/ssbu/2023-09-20 - SBZ Bi-Weekly/reframed/2023-09-20_19-09-51 - Singles Bracket - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 1 (0-0) - Hollow Bastion.rfr");
 
     sqlite3_close(db);
     return 0;
+
+open_db_failed: return -1;
 }
