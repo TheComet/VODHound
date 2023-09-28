@@ -10,10 +10,10 @@ struct rf_mfile
     int size;
 };
 
-int
+RF_PUBLIC_API int
 rf_mfile_map(struct rf_mfile* mf, const char* file_name);
 
-void
+RF_PUBLIC_API void
 rf_mfile_unmap(struct rf_mfile* mf);
 
 C_END

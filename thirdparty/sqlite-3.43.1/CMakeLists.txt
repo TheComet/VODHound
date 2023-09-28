@@ -13,6 +13,9 @@ add_library (sqlite
 target_include_directories (sqlite
     PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
+set_target_properties (sqlite
+    PROPERTIES
+        MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>)
 
 if (CMAKE_PLATFORM_ID MATCHES "Linux" OR CMAKE_PLATFORM_ID MATCHES "Darwin")
     if (SQLITE_THREADS)
@@ -39,6 +42,7 @@ if (SQLITE_CLI)
         "include/sqlite")
     target_link_libraries (sqlite_cli PRIVATE sqlite)
     set_target_properties (sqlite_cli PROPERTIES
+        MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>
         VS_DEBUGGER_WORKING_DIRECTORY ${REFRAMED_BUILD_BINDIR}
         RUNTIME_OUTPUT_DIRECTORY ${REFRAMED_BUILD_BINDIR}
         RUNTIME_OUTPUT_DIRECTORY_DEBUG ${REFRAMED_BUILD_BINDIR}

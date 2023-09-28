@@ -3,7 +3,7 @@
 #   and many OpenWRT packages require, much newer CMake packages.
 #  We're stopping before 3.10 because that version starts requiring
 #   c++11, which isn't available on e.g HPUX.
-cmake_minimum_required(VERSION 3.9...3.12)
+cmake_minimum_required(VERSION 3.21)
 
 # JSON-C library is C only project.
 # PROJECT_VERSION{,_MAJOR,_MINOR,_PATCH} set by project():
@@ -71,7 +71,7 @@ option(DISABLE_EXTRA_LIBS             "Avoid linking against extra libraries, su
 option(DISABLE_JSON_POINTER           "Disable JSON pointer (RFC6901) and JSON patch support." OFF)
 option(DISABLE_JSON_PATCH             "Disable JSON patch (RFC6902) support."                 OFF)
 option(NEWLOCALE_NEEDS_FREELOCALE     "Work around newlocale bugs in old FreeBSD by calling freelocale"  OFF)
-option(BUILD_APPS                     "Default to building apps" ON)
+option(BUILD_APPS                     "Default to building apps" OFF)
 
 
 if (UNIX OR MINGW OR CYGWIN)
@@ -463,6 +463,10 @@ target_include_directories(${PROJECT_NAME}
 
 target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_REQUIRED_LIBRARIES})
 
+set_target_properties (${PROJECT_NAME}
+    PROPERTIES
+        MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>)
+
 # Allow to build static and shared libraries at the same time
 if (BUILD_STATIC_LIBS AND BUILD_SHARED_LIBS)
     set(STATIC_LIB ${PROJECT_NAME}-static)
@@ -478,11 +482,15 @@ if (BUILD_STATIC_LIBS AND BUILD_SHARED_LIBS)
 
 	target_link_libraries(${PROJECT_NAME}-static PUBLIC ${CMAKE_REQUIRED_LIBRARIES})
 
+    set_target_properties (${PROJECT_NAME}-static
+    PROPERTIES
+        MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>)
+
     # rename the static library
     if (NOT MSVC)
-    set_target_properties(${STATIC_LIB} PROPERTIES
-        OUTPUT_NAME ${PROJECT_NAME}
-    )
+        set_target_properties(${STATIC_LIB} PROPERTIES
+            OUTPUT_NAME ${PROJECT_NAME}
+        )
     endif()
     list(APPEND CMAKE_TARGETS ${STATIC_LIB})
 endif ()

@@ -3,7 +3,7 @@
 #include <string.h>
 
 int
-rf_str_hex_to_u64(struct rf_str str, uint64_t* out)
+rf_str_hex_to_u64(struct rf_str_view str, uint64_t* out)
 {
     int i = 0;
     uint64_t value = 0;

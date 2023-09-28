@@ -70,8 +70,9 @@ CREATE TABLE tournaments (
     UNIQUE(name, website)
 );
 CREATE TABLE tournament_organizers (
-    tournament_id INTEGER NOT NULL,
-    person_id INTEGER NOT NULL,
+    tournament_id INTEGER NOT NULL CHECK (tournament_id > 0),
+    person_id INTEGER NOT NULL CHECK (person_id > 0),
+    UNIQUE(tournament_id, person_id)
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
     FOREIGN KEY (person_id) REFERENCES people(id)
 );
@@ -85,12 +86,14 @@ CREATE TABLE sponsors (
 CREATE TABLE tournament_sponsors (
     tournament_id INTEGER NOT NULL,
     sponsor_id INTEGER NOT NULL,
+    UNIQUE(tournament_id, sponsor_id),
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
     FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
 );
 CREATE TABLE tournament_commentators (
     tournament_id INTEGER NOT NULL,
     person_id INTEGER NOT NULL,
+    UNIQUE(tournament_id, person_id),
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
     FOREIGN KEY (person_id) REFERENCES people(id)
 );

@@ -2,7 +2,7 @@
 #include "rf/str.h"
 
 int
-rf_mstream_read_string_until_delim(struct rf_mstream* ms, char delim, struct rf_str* str)
+rf_mstream_read_string_until_delim(struct rf_mstream* ms, char delim, struct rf_str_view* str)
 {
     const char* data = ms->address;
     str->data = &data[ms->idx];
@@ -18,7 +18,7 @@ rf_mstream_read_string_until_delim(struct rf_mstream* ms, char delim, struct rf_
 }
 
 int
-rf_mstream_read_string_until_condition(struct rf_mstream* ms, int (*cond)(char), struct rf_str* str)
+rf_mstream_read_string_until_condition(struct rf_mstream* ms, int (*cond)(char), struct rf_str_view* str)
 {
     const char* data = ms->address;
     str->data = &data[ms->idx];

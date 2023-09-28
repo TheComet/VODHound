@@ -33,6 +33,8 @@ rf_mem_threadlocal_init(void);
 RF_PRIVATE_API size_t
 rf_mem_threadlocal_deinit(void);
 
+#if defined(RF_MEMORY_DEBUGGING)
+
 /*!
  * @brief Does the same thing as a normal call to malloc(), but does some
  * additional work to monitor and track down memory leaks.
@@ -53,6 +55,8 @@ rf_realloc(void* ptr, size_t new_size);
  */
 RF_PRIVATE_API void
 rf_free(void*);
+
+#endif
 
 RF_PUBLIC_API size_t
 rf_mem_get_num_allocs(void);

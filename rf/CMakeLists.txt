@@ -1,3 +1,5 @@
+include (CheckCSourceCompiles)
+
 project ("rf"
     VERSION ${REFRAMED_VERSION}
     LANGUAGES C)
@@ -27,8 +29,24 @@ option (RF_VEC_64BIT_CAPACITY "Set vector capacity to 2^64 instead of 2^32, but 
 set (RF_VEC_EXPAND_FACTOR "2" CACHE STRING "When reallocating vector memory, this is the factor with which the buffer grows")
 set (RF_VEC_MIN_CAPACITY "32" CACHE STRING "The smallest number of elements to reserve when initializing a vector")
 
+# Visibility
+check_c_source_compiles ("__declspec(dllexport) void foo(void); int main(void) { return 0; }" DLLEXPORT_VISIBILITY)
+check_c_source_compiles ("__declspec(dllimport) void foo(void); int main(void) { return 0; }" DLLIMPORT_VISIBILITY)
+check_c_source_compiles ("__attribute__((visibility(\"default\"))) void foo(void); int main(void) { return 0; }" DEFAULT_VISIBILITY)
+check_c_source_compiles ("__attribute__((visibility(\"hidden\"))) void foo(void); int main(void) { return 0; }"  HIDDEN_VISIBILITY)
+if (DLLEXPORT_VISIBILITY AND DLLIMPORT_VISIBILITY)
+    set (RF_API_EXPORT "__declspec(dllexport)")
+    set (RF_API_IMPORT "__declspec(dllimport)")
+    set (RF_API_LOCAL "")
+elseif (DEFAULT_VISIBILITY AND HIDDEN_VISIBILITY)
+    set (RF_API_EXPORT "__attribute__((visibility(\"default\")))")
+    set (RF_API_IMPORT "__attribute__((visibility(\"default\")))")
+    set (RF_API_LOCAL  "__attribute__((visibility(\"hidden\")))")
+else ()
+    message (FATAL_ERROR "Don't know how to define visibility macros for this compiler")
+endif ()
+
 # Memory debugging uses thread-local storage for its state because we don't want to deal with locks
-include (CheckCSourceCompiles)
 check_c_source_compiles ("__declspec(thread) int value; int main(void) { return 0; }" MSVC_THREADLOCAL)
 check_c_source_compiles ("__thread int value; int main(void) { return 0; }" GCC_THREADLOCAL)
 if (MSVC_THREADLOCAL)
@@ -49,6 +67,7 @@ add_library (rf ${RF_LIB_TYPE}
     "${PROJECT_BINARY_DIR}/include/rf/config.h"
 
     "src/btree.c"
+    "src/db_ops.c"
     "src/hash.c"
     "src/hm.c"
     "src/init.c"
@@ -62,6 +81,7 @@ add_library (rf ${RF_LIB_TYPE}
     "include/rf/backtrace.h"
     "include/rf/btree.h"
     "include/rf/cli_colors.h"
+    "include/rf/db_ops.h"
     "include/rf/hash.h"
     "include/rf/hm.h"
     "include/rf/init.h"
@@ -71,12 +91,16 @@ add_library (rf ${RF_LIB_TYPE}
     "include/rf/mstream.h"
     "include/rf/rb.h"
     "include/rf/str.h"
+    "include/rf/utf8.h"
     "include/rf/vec.h"
 
     $<$<PLATFORM_ID:Linux>:src/platform/linux/backtrace_linux.c>
     $<$<PLATFORM_ID:Linux>:src/platform/linux/mfile_linux.c>
+    $<$<PLATFORM_ID:Linux>:src/platform/linux/utf8_linux.c>
 
-    $<$<PLATFORM_ID:Windows>:src/platform/win32/backtrace_win32.c>)
+    $<$<PLATFORM_ID:Windows>:src/platform/win32/backtrace_win32.c>
+    $<$<PLATFORM_ID:Windows>:src/platform/win32/mfile_win32.c>
+    $<$<PLATFORM_ID:Windows>:src/platform/win32/utf8_win32.c>)
 target_include_directories (rf
     PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
@@ -87,9 +111,26 @@ target_compile_options (rf
         $<$<C_COMPILER_ID:MSVC>:/W4 /wd4706 /wd4305 /wd4244>
         $<$<C_COMPILER_ID:GNU>:-W -Wall -Wextra -Wshadow -Wconversion -Wno-unused-parameter $<$<BOOL:${RF_PROFILING}>:-pg -fno-omit-frame-pointer>>
         $<$<C_COMPILER_ID:Clang>:-W -Wall -Wextra -Wshadow -Wconversion -Wno-unused-parameter $<$<BOOL:${RF_PROFILING}>:-pg -fno-omit-frame-pointer>>)
-target_link_libraries (rf
+target_compile_definitions (rf
     PRIVATE
+        RF_BUILDING
+        $<$<C_COMPILER_ID:MSVC>:_CRT_SECURE_NO_WARNINGS>)
+target_link_libraries (rf
+    PUBLIC
+        json-c
+        zlibstatic
+        sqlite
         $<$<PLATFORM_ID:Windows>:$<$<BOOL:${RF_MEM_BACKTRACE}>:Dbghelp>>)
+set_target_properties (rf
+    PROPERTIES
+        MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>
+        DEBUG_POSTFIX "d"
+        LIBRARY_OUTPUT_DIRECTORY ${REFRAMED_BUILD_LIBDIR}
+        LIBRARY_OUTPUT_DIRECTORY_DEBUG ${REFRAMED_BUILD_LIBDIR}
+        LIBRARY_OUTPUT_DIRECTORY_RELEASE ${REFRAMED_BUILD_LIBDIR}
+        RUNTIME_OUTPUT_DIRECTORY ${REFRAMED_BUILD_BINDIR}
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${REFRAMED_BUILD_BINDIR}
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${REFRAMED_BUILD_BINDIR})
 
 ###############################################################################
 # Unit tests
@@ -127,3 +168,11 @@ if (RF_BENCHMARKS)
             $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/thirdparty/benchmark/include>)
 endif ()
 
+###############################################################################
+# Database migration scripts
+###############################################################################
+
+add_custom_command (TARGET rf POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_SOURCE_DIR}/migrations ${REFRAMED_BUILD_BINDIR}/migrations
+    COMMENT "Copying DB migration scripts"
+    VERBATIM)

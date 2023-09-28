@@ -10,7 +10,7 @@ static HANDLE hProcess;
 
 /* ------------------------------------------------------------------------- */
 int
-backtrace_init(void)
+rf_backtrace_init(void)
 {
     hProcess = GetCurrentProcess();
     if (SymInitialize(hProcess, NULL, TRUE) != TRUE)
@@ -20,7 +20,7 @@ backtrace_init(void)
 
 /* ------------------------------------------------------------------------- */
 void
-backtrace_deinit(void)
+rf_backtrace_deinit(void)
 {
     /* This crashes for some reason?
     SymCleanup(hProcess);*/
@@ -28,7 +28,7 @@ backtrace_deinit(void)
 
 /* ------------------------------------------------------------------------- */
 char**
-backtrace_get(int* size)
+rf_backtrace_get(int* size)
 {
     char** result;
     char** current_ptr;
@@ -68,7 +68,7 @@ backtrace_get(int* size)
 
 /* ------------------------------------------------------------------------- */
 void
-backtrace_free(char** bt)
+rf_backtrace_free(char** bt)
 {
     free(bt);
 }

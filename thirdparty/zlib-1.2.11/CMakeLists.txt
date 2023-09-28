@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.21)
 set(CMAKE_ALLOW_LOOSE_LOOP_CONSTRUCTS ON)
 
 project(zlib
@@ -149,9 +149,10 @@ endif ()
 
 if(MSVC)
 	set_target_properties(zlibstatic
-		PROPERTIES DEBUG_POSTFIX "d")
+		PROPERTIES
+			MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+			DEBUG_POSTFIX "d")
 	target_compile_definitions(zlibstatic
 		PRIVATE _CRT_SECURE_NO_DEPRECATE 
 		PRIVATE _CRT_NONSTDC_NO_DEPRECATE)
 endif()
-

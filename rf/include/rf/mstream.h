@@ -7,7 +7,7 @@
 
 C_BEGIN
 
-struct rf_str;
+struct rf_str_view;
 
 struct rf_mstream
 {
@@ -115,10 +115,10 @@ rf_mstream_ptr(struct rf_mstream* ms)
     return (const char*)ms->address + ms->idx;
 }
 
-int
+RF_PUBLIC_API int
 rf_mstream_read_string_until_delim(
-        struct rf_mstream* ms, char delim, struct rf_str* str);
+        struct rf_mstream* ms, char delim, struct rf_str_view* str);
 
-int
+RF_PUBLIC_API int
 rf_mstream_read_string_until_condition(
-        struct rf_mstream* ms, int (*cond)(char), struct rf_str* str);
+        struct rf_mstream* ms, int (*cond)(char), struct rf_str_view* str);

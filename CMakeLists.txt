@@ -30,3 +30,8 @@ add_subdirectory ("thirdparty/zlib-1.2.11")
 #add_subdirectory ("thirdparty/iup-cmake")
 add_subdirectory ("rf")
 add_subdirectory ("application")
+
+# "application" target should be the startup project in VS
+set_property(
+    DIRECTORY "${PROJECT_SOURCE_DIR}"
+    PROPERTY VS_STARTUP_PROJECT application)

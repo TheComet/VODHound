@@ -1,5 +1,7 @@
 #pragma once
 
+/* Options ----------------------------------------------------------------- */
+
 #cmakedefine RF_BTREE_64BIT_KEYS
 #cmakedefine RF_BTREE_64BIT_CAPACITY
 #cmakedefine RF_MEM_BACKTRACE
@@ -8,7 +10,6 @@
 #cmakedefine RF_VEC_64BIT_CAPACITY
 
 #define RF_${RF_LIB_TYPE}
-#define RF_SIZEOF_VOID_P          ${CMAKE_SIZEOF_VOID_P}
 #define RF_BTREE_EXPAND_FACTOR    ${RF_BTREE_EXPAND_FACTOR}
 #define RF_BTREE_MIN_CAPACITY     ${RF_BTREE_MIN_CAPACITY}
 #define RF_HM_EXPAND_FACTOR       ${RF_HM_EXPAND_FACTOR}
@@ -20,13 +21,14 @@
 
 #define RF_THREADLOCAL ${RF_THREADLOCAL}
 
+/* Symbol visibility ------------------------------------------------------- */
 #if defined(RF_SHARED)
 #   if defined(RF_BUILDING)
-#       define RF_PUBLIC_API ${API_EXPORT}
+#       define RF_PUBLIC_API ${RF_API_EXPORT}
 #   else
-#       define RF_PUBLIC_API ${API_IMPORT}
+#       define RF_PUBLIC_API ${RF_API_IMPORT}
 #   endif
-#   define RF_PRIVATE_API ${API_LOCAL}
+#   define RF_PRIVATE_API ${RF_API_LOCAL}
 #else
 #   define RF_PUBLIC_API
 #   define RF_PRIVATE_API
@@ -51,10 +53,9 @@
 #   define C_END
 #endif
 
-
 /* printf formatting ------------------------------------------------------- */
 #if defined(__GNUC__) || defined(__clang__)
 #   define RF_PRINTF_FORMAT(fmt, params) __attribute__((format(printf, fmt, params)))
 #else
-#   define PRINTF_FORMAT(fmt, params)
+#   define RF_PRINTF_FORMAT(fmt, params)
 #endif
