@@ -11,17 +11,20 @@
 #include "zlib.h"
 
 static int newline_or_end(char b) { return b == '\r' || b == '\n' || b == '\0'; }
-static int insert_hash40(struct rf_db_interface* dbi, struct rf_db* db)
+static int import_hash40(struct rf_db_interface* dbi, struct rf_db* db, const char* file_name)
 {
-
     struct rf_mfile mf;
-    if (rf_mfile_map(&mf, "ParamLabels.csv") != 0)
+    struct rf_mstream ms;
+
+    rf_log_info("Importing hash40 strings from '%s'\n", file_name);
+
+    if (rf_mfile_map(&mf, file_name) != 0)
         goto open_file_failed;
 
     if (dbi->transaction_begin(db) != 0)
         goto transaction_begin_failed;
 
-    struct rf_mstream ms = rf_mstream_from_mfile(&mf);
+    ms = rf_mstream_from_mfile(&mf);
 
     while (!rf_mstream_at_end(&ms))
     {
@@ -40,7 +43,8 @@ static int insert_hash40(struct rf_db_interface* dbi, struct rf_db* db)
         if (h40 == 0 || label.len == 0)
             continue;
 
-        dbi->motion_add(db, h40, label);
+        if (dbi->motion_add(db, h40, label) != 0)
+            goto add_failed;
     }
 
     dbi->transaction_commit(db);
@@ -48,14 +52,15 @@ static int insert_hash40(struct rf_db_interface* dbi, struct rf_db* db)
 
     return 0;
 
+add_failed               : dbi->transaction_rollback(db);
 transaction_begin_failed : rf_mfile_unmap(&mf);
 open_file_failed         : return -1;
 }
 
 static int
-insert_mapping_info(struct rf_db_interface* dbi, struct rf_db* db)
+import_mapping_info(struct rf_db_interface* dbi, struct rf_db* db, const char* file_name)
 {
-    json_object* root = json_object_from_file("/home/thecomet/.local/share/ReFramed/mappingInfo.json");
+    json_object* root = json_object_from_file(file_name);
     json_object* jversion = json_object_object_get(root, "version");
 
     json_object* statuses = json_object_object_get(root, "fighterstatus");
@@ -66,7 +71,8 @@ insert_mapping_info(struct rf_db_interface* dbi, struct rf_db* db)
     json_object* base_statuses = json_object_object_get(statuses, "base");
     json_object* specific_statuses = json_object_object_get(statuses, "specific");
 
-    rf_log_db(stderr, "mapping info version: %s\n", json_object_get_string(jversion));
+    rf_log_info("Importing mapping info from '%s'\n", file_name);
+    rf_log_dbg("mapping info version: %s\n", json_object_get_string(jversion));
 
     if (dbi->transaction_begin(db) != 0)
         goto transaction_begin_failed;
@@ -187,7 +193,6 @@ int import_rfr_metadata_into_db(struct rf_db_interface* dbi, struct rf_db* db, s
     if (version_str == NULL)
         goto fail;
 
-    printf("version: %s\n", version_str);
     if (strcmp(version_str, "1.5") == 0)
     {}
     else if (strcmp(version_str, "1.6") == 0)
@@ -278,10 +283,14 @@ int import_rfr_video_metadata_into_db(struct rf_db_interface* dbi, struct rf_db*
 int import_rfr_into_db(struct rf_db_interface* dbi, struct rf_db* db, const char* file_name)
 {
     struct rf_mfile mf;
+    struct rf_mstream ms;
+
+    rf_log_info("Importing replay '%s'\n", file_name);
+
     if (rf_mfile_map(&mf, file_name) != 0)
         goto mmap_failed;
 
-    struct rf_mstream ms = rf_mstream_from_mfile(&mf);
+    ms = rf_mstream_from_mfile(&mf);
     if (memcmp(rf_mstream_read(&ms, 4), "RFR1", 4) != 0)
     {
         puts("File has invalid header");
@@ -328,9 +337,13 @@ int main(int argc, char** argv)
     if (db == NULL)
         goto open_db_failed;
 
-    /*insert_mapping_info(db);
-    insert_hash40(db);*/
+    import_mapping_info(dbi, db, "/home/thecomet/.local/share/ReFramed/mappingInfo.json");
+    import_hash40(dbi, db, "ParamLabels.csv");
     import_rfr_into_db(dbi, db, "/home/thecomet/videos/ssbu/2023-09-20 - SBZ Bi-Weekly/reframed/2023-09-20_19-09-51 - Singles Bracket - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 1 (0-0) - Hollow Bastion.rfr");
+    import_rfr_into_db(dbi, db, "/home/thecomet/videos/ssbu/2023-09-20 - SBZ Bi-Weekly/reframed/2023-09-20_19-13-39 - Singles Bracket - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 2 (1-0) - Town and City.rfr");
+    import_rfr_into_db(dbi, db, "/home/thecomet/videos/ssbu/2023-09-20 - SBZ Bi-Weekly/reframed/2023-09-20_19-19-12 - Singles Bracket - Bo3 (Pools 2) - TheComet (Pikachu) vs Keppler (Roy) - Game 1 (0-0) - Small Battlefield.rfr");
+    import_rfr_into_db(dbi, db, "/home/thecomet/videos/ssbu/2023-09-20 - SBZ Bi-Weekly/reframed/2023-09-20_19-23-38 - Singles Bracket - Bo3 (Pools 2) - TheComet (Pikachu) vs Keppler (Roy) - Game 2 (0-1) - Small Battlefield.rfr");
+    import_rfr_into_db(dbi, db, "/home/thecomet/videos/ssbu/2023-09-20 - SBZ Bi-Weekly/reframed/2023-09-20_19-27-42 - Friendlies - Free (WR1) - TheComet (Kirby) vs Keppler (Roy) - Game 1 (0-0) - Small Battlefield.rfr");
 
     dbi->close(db);
     return 0;

@@ -3,6 +3,7 @@ project (sqlite
     VERSION 3.43.1)
 
 option (SQLITE_THREADS "Enable threading support" ON)
+option (SQLITE_PIC "Enable position independent code" ON)
 option (SQLITE_EXENSIONS "Enable loading extensions" OFF)
 option (SQLITE_CLI "Build the CLI program" OFF)
 
@@ -15,7 +16,8 @@ target_include_directories (sqlite
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
 set_target_properties (sqlite
     PROPERTIES
-        MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>)
+        MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>
+        POSITION_INDEPENDENT_CODE ${SQLITE_PIC})
 
 if (CMAKE_PLATFORM_ID MATCHES "Linux" OR CMAKE_PLATFORM_ID MATCHES "Darwin")
     if (SQLITE_THREADS)

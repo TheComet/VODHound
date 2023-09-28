@@ -35,6 +35,6 @@ rf_log_note(const char* fmt, ...);
 
 /* Specialized logging functions ------------------------------------------- */
 void
-rf_log_sqlite_err(int error_code, const char* error_msg);
+rf_log_sqlite_err(int error_code, const char* error_code_str, const char* error_msg);
 
 C_END

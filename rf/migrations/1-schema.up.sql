@@ -1,31 +1,31 @@
-CREATE TABLE stages (
+CREATE TABLE IF NOT EXISTS stages (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL
 );
-CREATE TABLE fighters (
+CREATE TABLE IF NOT EXISTS fighters (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL
 );
-CREATE TABLE hit_status_enums (
+CREATE TABLE IF NOT EXISTS hit_status_enums (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL
 );
-CREATE TABLE status_enums (
+CREATE TABLE IF NOT EXISTS status_enums (
     id INTEGER PRIMARY KEY NOT NULL,
     fighter_id INTEGER,
     value INTEGER NOT NULL,
     name TEXT NOT NULL,
     FOREIGN KEY (fighter_id) REFERENCES fighters(id)
 );
-CREATE TABLE motions (
+CREATE TABLE IF NOT EXISTS motions (
     hash40 INTEGER PRIMARY KEY NOT NULL,
     string TEXT NOT NULL
 );
-CREATE TABLE motion_categories (
+CREATE TABLE IF NOT EXISTS motion_categories (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL
 );
-CREATE TABLE motion_labels (
+CREATE TABLE IF NOT EXISTS motion_labels (
     id INTEGER PRIMARY KEY NOT NULL,
     hash40 INTEGER NOT NULL,
     layer_id INTEGER NOT NULL,
@@ -37,23 +37,23 @@ CREATE TABLE motion_labels (
     FOREIGN KEY (category_id) REFERENCES motion_categories(id),
     FOREIGN KEY (usage_id) REFERENCES motion_usages(id)
 );
-CREATE TABLE motion_usages (
+CREATE TABLE IF NOT EXISTS motion_usages (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL
 );
-CREATE TABLE motion_layers (
+CREATE TABLE IF NOT EXISTS motion_layers (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL
 );
-CREATE TABLE videos (
+CREATE TABLE IF NOT EXISTS videos (
     id INTEGER PRIMARY KEY NOT NULL,
     file_name TEXT NOT NULL,
     frame_offset INTEGER NOT NULL
 );
-CREATE TABLE video_paths (
+CREATE TABLE IF NOT EXISTS video_paths (
     path TEXT PRIMARY KEY NOT NULL
 );
-CREATE TABLE people (
+CREATE TABLE IF NOT EXISTS people (
     id INTEGER PRIMARY KEY NOT NULL,
     sponsor_id INTEGER,
     name TEXT NOT NULL,
@@ -63,71 +63,71 @@ CREATE TABLE people (
     FOREIGN KEY (sponsor_id) REFERENCES sponsors(id),
     UNIQUE(name, tag)
 );
-CREATE TABLE tournaments (
+CREATE TABLE IF NOT EXISTS tournaments (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
     website TEXT NOT NULL,
     UNIQUE(name, website)
 );
-CREATE TABLE tournament_organizers (
+CREATE TABLE IF NOT EXISTS tournament_organizers (
     tournament_id INTEGER NOT NULL CHECK (tournament_id > 0),
     person_id INTEGER NOT NULL CHECK (person_id > 0),
     UNIQUE(tournament_id, person_id)
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
     FOREIGN KEY (person_id) REFERENCES people(id)
 );
-CREATE TABLE sponsors (
+CREATE TABLE IF NOT EXISTS sponsors (
     id INTEGER PRIMARY KEY NOT NULL,
-    short TEXT NOT NULL,
-    name TEXT NOT NULL,
+    short_name TEXT NOT NULL,
+    full_name TEXT NOT NULL,
     website TEXT NOT NULL,
-    UNIQUE(short, name, website)
+    UNIQUE(short_name, full_name, website)
 );
-CREATE TABLE tournament_sponsors (
+CREATE TABLE IF NOT EXISTS tournament_sponsors (
     tournament_id INTEGER NOT NULL,
     sponsor_id INTEGER NOT NULL,
     UNIQUE(tournament_id, sponsor_id),
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
     FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
 );
-CREATE TABLE tournament_commentators (
+CREATE TABLE IF NOT EXISTS tournament_commentators (
     tournament_id INTEGER NOT NULL,
     person_id INTEGER NOT NULL,
     UNIQUE(tournament_id, person_id),
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
     FOREIGN KEY (person_id) REFERENCES people(id)
 );
-CREATE TABLE bracket_types (
+CREATE TABLE IF NOT EXISTS bracket_types (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL
 );
-CREATE TABLE round_types (
+CREATE TABLE IF NOT EXISTS round_types (
     id INTEGER PRIMARY KEY NOT NULL,
     short_name TEXT NOT NULL,
     long_name TEXT NOT NULL
 );
-CREATE TABLE set_formats (
+CREATE TABLE IF NOT EXISTS set_formats (
     id INTEGER PRIMARY KEY NOT NULL,
     short_name TEXT NOT NULL,
     long_name TEXT NOT NULL
 );
-CREATE TABLE brackets (
+CREATE TABLE IF NOT EXISTS brackets (
     id INTEGER PRIMARY KEY NOT NULL,
     bracket_type_id INTEGER NOT NULL,
     url TEXT,
     FOREIGN KEY (bracket_type_id) REFERENCES bracket_types(id)
 );
-CREATE TABLE rounds (
+CREATE TABLE IF NOT EXISTS rounds (
     id INTEGER PRIMARY KEY NOT NULL,
     round_type_id,
     number INTEGER NOT NULL,
     FOREIGN KEY (round_type_id) REFERENCES rount_types(id)
 );
-CREATE TABLE teams (
+CREATE TABLE IF NOT EXISTS teams (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL
 );
-CREATE TABLE games (
+CREATE TABLE IF NOT EXISTS games (
     id INTEGER PRIMARY KEY NOT NULL,
     video_id INTEGER,
     tournament_id INTEGER,
@@ -146,14 +146,14 @@ CREATE TABLE games (
     FOREIGN KEY (winner_team_id) REFERENCES teams(id),
     FOREIGN KEY (stage_id) REFERENCES stages(id)
 );
-CREATE TABLE scores (
+CREATE TABLE IF NOT EXISTS scores (
     game_id INTEGER NOT NULL,
     person_id INTEGER NOT NULL,
     score INTEGER NOT NULL,
     FOREIGN KEY (game_id) REFERENCES games(id),
     FOREIGN KEY (person_id) REFERENCES people(id)
 );
-CREATE TABLE player_games (
+CREATE TABLE IF NOT EXISTS player_games (
     person_id INTEGER NOT NULL,
     game_id INTEGER NOT NULL,
     slot INTEGER NOT NULL,
@@ -166,7 +166,7 @@ CREATE TABLE player_games (
     FOREIGN KEY (team_id) REFERENCES teams(id),
     FOREIGN KEY (fighter_id) REFERENCES fighters(id)
 );
-CREATE TABLE frame_data (
+CREATE TABLE IF NOT EXISTS frame_data (
     game_id INTEGER NOT NULL,
     time_stamp TIMESTAMP NOT NULL,
     frame_number INTEGER NOT NULL,

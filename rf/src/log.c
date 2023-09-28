@@ -173,10 +173,10 @@ rf_log_note(const char* fmt, ...)
 
 /* ------------------------------------------------------------------------- */
 void
-rf_log_sqlite_err(int error_code, const char* error_msg)
+rf_log_sqlite_err(int error_code, const char* error_code_str, const char* error_msg)
 {
     fprintf(stderr, "[" COL_B_RED "Error" COL_RESET "] %s%s%s", g_col_set, g_prefix, g_col_clr);
-    fprintf(stderr, "SQLite3 error (%d): %s\n", error_code, error_msg);
+    fprintf(stderr, "%s (%d): %s\n", error_code_str, error_code, error_msg);
 
     if (g_log)
     {

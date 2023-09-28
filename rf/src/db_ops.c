@@ -7,6 +7,11 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <ctype.h>
+
+#if !defined(min)
+#   define min(a, b) ((a) < (b) ? (a) : (b))
+#endif
 
 struct rf_db
 {
@@ -30,7 +35,7 @@ exec_sql_wrapper(sqlite3* db, const char* sql)
     int ret = sqlite3_exec(db, sql, NULL, NULL, &error_message);
     if (ret != SQLITE_OK)
     {
-        rf_log_sqlite_err(ret, error_message);
+        rf_log_sqlite_err(ret, error_message, sqlite3_errmsg(db));
         return -1;
     }
     return 0;
@@ -42,19 +47,19 @@ prepare_stmt_wrapper(sqlite3* db, sqlite3_stmt** stmt, struct rf_str_view sql)
     int ret = sqlite3_prepare_v2(db, sql.data, sql.len, stmt, NULL);
     if (ret != SQLITE_OK)
     {
-        rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
         return -1;
     }
     return 0;
 }
 
 static int
-step_stmt_wrapper(sqlite3_stmt* stmt)
+step_stmt_wrapper(sqlite3* db, sqlite3_stmt* stmt)
 {
     int ret = sqlite3_step(stmt);
     if (ret != SQLITE_DONE)
     {
-        rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
         return -1;
     }
 
@@ -64,36 +69,46 @@ step_stmt_wrapper(sqlite3_stmt* stmt)
 }
 
 static int
-upgrade_to_v1(sqlite3* db)
+run_migration_script(sqlite3* db, const char* file_name)
 {
     int ret;
     struct rf_mfile mf;
     sqlite3_stmt* stmt;
+    const char* sql;
+    const char* sql_next;
+    int sql_len;
 
-    if (rf_mfile_map(&mf, "migrations/1-schema.up.sql") != 0)
+    rf_log_info("Running migration script '%s'\n", file_name);
+
+    if (rf_mfile_map(&mf, file_name) != 0)
         goto open_script_failed;
-
-    ret = sqlite3_prepare_v2(db, mf.address, mf.size, &stmt, NULL);
-    if (ret != SQLITE_OK)
-    {
-        rf_log_sqlite_err(ret, sqlite3_errstr(ret));
-        goto prepare_failed;
-    }
+    sql = mf.address;
+    sql_len = mf.size;
 
 next_step:
-    ret = sqlite3_step(stmt);
-    switch (ret)
+    ret = sqlite3_prepare_v2(db, sql, sql_len, &stmt, &sql_next);
+    if (ret != SQLITE_OK)
     {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_ROW:  goto next_step;
-        case SQLITE_DONE: break;
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
+        goto prepare_failed;
+    }
+retry_step:
+    switch (ret = sqlite3_step(stmt))
+    {
+        case SQLITE_BUSY:
+            goto retry_step;
+        case SQLITE_ROW:
+        case SQLITE_DONE:
+            sql_len -= sql_next - sql;
+            sql = sql_next;
+            for (; sql_len && isspace(*sql); ++sql, --sql_len) {}
+            if (sql_len <= 0)
+                break;
+            goto next_step;
         default:
-            rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+            rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
             goto exec_failed;
     }
-
-    if (exec_sql_wrapper(db, "PRAGMA user_version=1") != 0)
-        goto exec_failed;
 
     sqlite3_finalize(stmt);
     rf_mfile_unmap(&mf);
@@ -114,39 +129,51 @@ check_version_and_migrate(sqlite3* db)
     ret = sqlite3_prepare_v2(db, "PRAGMA user_version", -1, &stmt, NULL);
     if (ret != SQLITE_OK)
     {
-        rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
         return -1;
     }
 
     ret = sqlite3_step(stmt);
     if (ret != SQLITE_ROW)
     {
-        rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
         sqlite3_finalize(stmt);
         return -1;
     }
-    
+
     version = sqlite3_column_int(stmt, 0);
     sqlite3_finalize(stmt);
-    rf_log_dbg("db version: %d\n", version);
+    rf_log_info("db version: %d\n", version);
 
     if (exec_sql_wrapper(db, "BEGIN TRANSACTION") != 0)
         return -1;
 
     switch (version)
     {
-        case 0: if (upgrade_to_v1(db) != 0) goto migrate_failed;
+        case 1: if (run_migration_script(db, "migrations/1-schema.down.sql") != 0) goto migrate_failed;
+        case 0: break;
+    }
+    version = 0;
+
+    switch (version)
+    {
+        case 0: if (run_migration_script(db, "migrations/1-schema.up.sql") != 0) goto migrate_failed;
         /*case 1: if (upgrade_to_v2(db) != 0) goto migrate_failed;
         case 2: if (upgrade_to_v3(db) != 0) goto migrate_failed;*/
-        break;
+        case 1: break;
 
         default:
-            rf_log_err("Unknown database version %d. Aborting all operations\n");
+            rf_log_err("Unknown database version %d. Aborting all operations\n", version);
             goto migrate_failed;
     }
 
+    if (exec_sql_wrapper(db, "PRAGMA user_version=1") != 0)
+        goto migrate_failed;
+
     if (exec_sql_wrapper(db, "COMMIT TRANSACTION") != 0)
         goto migrate_failed;
+
+    rf_log_info("Successfully migrated to db version 1\n");
 
     return 0;
 
@@ -166,7 +193,7 @@ open_and_prepare(const char* uri)
     ret = sqlite3_open_v2(uri, &ctx->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL);
     if (ret != SQLITE_OK)
     {
-        rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
         goto open_db_failed;
     }
 
@@ -239,7 +266,7 @@ transaction_rollback_nested(struct rf_db* ctx, struct rf_str_view name)
 }
 
 static int
-motion_add(struct rf_db* ctx, uint64_t hash40, struct rf_str_view label)
+motion_add(struct rf_db* ctx, uint64_t hash40, struct rf_str_view string)
 {
     int ret;
     if (ctx->motion_add == NULL)
@@ -248,13 +275,13 @@ motion_add(struct rf_db* ctx, uint64_t hash40, struct rf_str_view label)
             return -1;
 
     if ((ret = sqlite3_bind_int64(ctx->motion_add, 1, hash40) != SQLITE_OK) ||
-        (ret = sqlite3_bind_text(ctx->motion_add, 2, label.data, label.len, SQLITE_STATIC) != SQLITE_OK))
+        (ret = sqlite3_bind_text(ctx->motion_add, 2, string.data, string.len, SQLITE_STATIC) != SQLITE_OK))
     {
-        rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
         return -1;
     }
 
-    return step_stmt_wrapper(ctx->motion_add);
+    return step_stmt_wrapper(ctx->db, ctx->motion_add);
 }
 
 static int
@@ -269,11 +296,11 @@ fighter_add(struct rf_db* ctx, int fighter_id, struct rf_str_view name)
     if ((ret = sqlite3_bind_int(ctx->fighter_add, 1, fighter_id) != SQLITE_OK) ||
         (ret = sqlite3_bind_text(ctx->fighter_add, 2, name.data, name.len, SQLITE_STATIC) != SQLITE_OK))
     {
-        rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
         return -1;
     }
 
-    return step_stmt_wrapper(ctx->fighter_add);
+    return step_stmt_wrapper(ctx->db, ctx->fighter_add);
 }
 
 static int
@@ -288,11 +315,11 @@ stage_add(struct rf_db* ctx, int stage_id, struct rf_str_view name)
     if ((ret = sqlite3_bind_int(ctx->stage_add, 1, stage_id) != SQLITE_OK) ||
         (ret = sqlite3_bind_text(ctx->stage_add, 2, name.data, name.len, SQLITE_STATIC) != SQLITE_OK))
     {
-        rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
         return -1;
     }
 
-    return step_stmt_wrapper(ctx->stage_add);
+    return step_stmt_wrapper(ctx->db, ctx->stage_add);
 }
 
 static int
@@ -308,7 +335,7 @@ status_enum_add(struct rf_db* ctx, int fighter_id, int status_id, struct rf_str_
     {
         if ((ret = sqlite3_bind_null(ctx->status_enum_add, 1) != SQLITE_OK))
         {
-            rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+            rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
             return -1;
         }
     }
@@ -316,7 +343,7 @@ status_enum_add(struct rf_db* ctx, int fighter_id, int status_id, struct rf_str_
     {
         if ((ret = sqlite3_bind_int(ctx->status_enum_add, 1, fighter_id) != SQLITE_OK))
         {
-            rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+            rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
             return -1;
         }
     }
@@ -324,11 +351,11 @@ status_enum_add(struct rf_db* ctx, int fighter_id, int status_id, struct rf_str_
     if ((ret = sqlite3_bind_int(ctx->status_enum_add, 2, status_id) != SQLITE_OK) ||
         (ret = sqlite3_bind_text(ctx->status_enum_add, 3, name.data, name.len, SQLITE_STATIC) != SQLITE_OK))
     {
-        rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
         return -1;
     }
 
-    return step_stmt_wrapper(ctx->status_enum_add);
+    return step_stmt_wrapper(ctx->db, ctx->status_enum_add);
 }
 
 static int
@@ -343,11 +370,11 @@ hit_status_enum_add(struct rf_db* ctx, int id, struct rf_str_view name)
     if ((ret = sqlite3_bind_int(ctx->hit_status_enum_add, 1, id) != SQLITE_OK) ||
         (ret = sqlite3_bind_text(ctx->hit_status_enum_add, 2, name.data, name.len, SQLITE_STATIC) != SQLITE_OK))
     {
-        rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
         return -1;
     }
 
-    return step_stmt_wrapper(ctx->hit_status_enum_add);
+    return step_stmt_wrapper(ctx->db, ctx->hit_status_enum_add);
 }
 
 static int
@@ -362,7 +389,7 @@ tournament_add_or_get(struct rf_db* ctx, struct rf_str_view name, struct rf_str_
     if ((ret = sqlite3_bind_text(ctx->tournament_add_or_get, 1, name.data, name.len, SQLITE_STATIC) != SQLITE_OK) ||
         (ret = sqlite3_bind_text(ctx->tournament_add_or_get, 2, website.data, website.len, SQLITE_STATIC) != SQLITE_OK))
     {
-        rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
         return -1;
     }
 
@@ -376,7 +403,7 @@ next_step:
         tournament_id = sqlite3_column_int(ctx->tournament_add_or_get, 0);
         goto next_step;
     default:
-        rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
         break;
     }
 
@@ -387,40 +414,41 @@ next_step:
 }
 
 static int
-sponsor_add_or_get(struct rf_db* ctx, struct rf_str_view short_name, struct rf_str_view name, struct rf_str_view website)
+sponsor_add_or_get(struct rf_db* ctx, struct rf_str_view short_name, struct rf_str_view full_name, struct rf_str_view website)
 {
-    int ret, tournament_id = -1;
+    int ret, sponsor_id = -1;
     if (ctx->sponsor_add_or_get == NULL)
         if (prepare_stmt_wrapper(ctx->db, &ctx->sponsor_add_or_get, rf_cstr_view(
-            "INSERT INTO sponsors (short, name, website) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET short_name=excluded.short_name RETURNING id;")) != 0)
+            "INSERT INTO sponsors (short_name, full_name, website) VALUES (?, ?, ?) "
+            "ON CONFLICT DO UPDATE SET short_name=excluded.short_name RETURNING id;")) != 0)
             return -1;
 
-    if ((ret = sqlite3_bind_text(ctx->tournament_add_or_get, 1, short_name.data, short_name.len, SQLITE_STATIC) != SQLITE_OK) ||
-        (ret = sqlite3_bind_text(ctx->tournament_add_or_get, 2, name.data, name.len, SQLITE_STATIC) != SQLITE_OK) ||
-        (ret = sqlite3_bind_text(ctx->tournament_add_or_get, 3, website.data, website.len, SQLITE_STATIC) != SQLITE_OK))
+    if ((ret = sqlite3_bind_text(ctx->sponsor_add_or_get, 1, short_name.data, short_name.len, SQLITE_STATIC) != SQLITE_OK) ||
+        (ret = sqlite3_bind_text(ctx->sponsor_add_or_get, 2, full_name.data, full_name.len, SQLITE_STATIC) != SQLITE_OK) ||
+        (ret = sqlite3_bind_text(ctx->sponsor_add_or_get, 3, website.data, website.len, SQLITE_STATIC) != SQLITE_OK))
     {
-        rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
         return -1;
     }
 
 next_step:
-    ret = sqlite3_step(ctx->tournament_add_or_get);
+    ret = sqlite3_step(ctx->sponsor_add_or_get);
     switch (ret)
     {
-    case SQLITE_BUSY: goto next_step;
-    case SQLITE_DONE: break;
-    case SQLITE_ROW:
-        tournament_id = sqlite3_column_int(ctx->tournament_add_or_get, 0);
-        goto next_step;
-    default:
-        rf_log_sqlite_err(ret, sqlite3_errstr(ret));
-        break;
+        case SQLITE_BUSY: goto next_step;
+        case SQLITE_DONE: break;
+        case SQLITE_ROW:
+            sponsor_id = sqlite3_column_int(ctx->sponsor_add_or_get, 0);
+            goto next_step;
+        default:
+            rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+            break;
     }
 
     /* TODO: Required? */
-    sqlite3_reset(ctx->tournament_add_or_get);
+    sqlite3_reset(ctx->sponsor_add_or_get);
 
-    return tournament_id;
+    return sponsor_id;
 }
 
 static int
@@ -435,11 +463,11 @@ tournament_sponsor_add(struct rf_db* ctx, int tournament_id, int sponsor_id)
     if ((ret = sqlite3_bind_int(ctx->tournament_sponsor_add, 1, tournament_id) != SQLITE_OK) ||
         (ret = sqlite3_bind_int(ctx->tournament_sponsor_add, 2, sponsor_id) != SQLITE_OK))
     {
-        rf_log_sqlite_err(ret, sqlite3_errstr(ret));
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
         return -1;
     }
 
-    return step_stmt_wrapper(ctx->hit_status_enum_add);
+    return step_stmt_wrapper(ctx->db, ctx->tournament_sponsor_add);
 }
 
 struct rf_db_interface rf_db_sqlite = {
