@@ -29,6 +29,10 @@ struct rf_db_interface
     int (*tournament_add_or_get)(struct rf_db* db, struct rf_str_view name, struct rf_str_view website);
     int (*sponsor_add_or_get)(struct rf_db* db, struct rf_str_view short_name, struct rf_str_view full_name, struct rf_str_view website);
     int (*tournament_sponsor_add)(struct rf_db* db, int tournament_id, int sponsor_id);
+    int (*tournament_organizer_add)(struct rf_db* db, int tournament_id, int person_id);
+    int (*tournament_commentator_add)(struct rf_db* db, int tournament_id, int person_id);
+
+    int (*person_add_or_get)(struct rf_db* db, int sponsor_id, struct rf_str_view name, struct rf_str_view tag, struct rf_str_view social, struct rf_str_view pronouns);
 };
 
 RF_PUBLIC_API struct rf_db_interface*

@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS people (
     social TEXT NOT NULL,
     pronouns TEXT NOT NULL,
     FOREIGN KEY (sponsor_id) REFERENCES sponsors(id),
-    UNIQUE(name, tag)
+    UNIQUE(name)
 );
 CREATE TABLE IF NOT EXISTS tournaments (
     id INTEGER PRIMARY KEY NOT NULL,
@@ -84,32 +84,37 @@ CREATE TABLE IF NOT EXISTS sponsors (
     UNIQUE(short_name, full_name, website)
 );
 CREATE TABLE IF NOT EXISTS tournament_sponsors (
-    tournament_id INTEGER NOT NULL,
-    sponsor_id INTEGER NOT NULL,
+    tournament_id INTEGER NOT NULL CHECK (tournament_id > 0),
+    sponsor_id INTEGER NOT NULL CHECK (sponsor_id > 0),
     UNIQUE(tournament_id, sponsor_id),
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
     FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
 );
 CREATE TABLE IF NOT EXISTS tournament_commentators (
-    tournament_id INTEGER NOT NULL,
-    person_id INTEGER NOT NULL,
+    tournament_id INTEGER NOT NULL CHECK (tournament_id > 0),
+    person_id INTEGER NOT NULL CHECK (person_id > 0),
     UNIQUE(tournament_id, person_id),
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
     FOREIGN KEY (person_id) REFERENCES people(id)
 );
 CREATE TABLE IF NOT EXISTS bracket_types (
     id INTEGER PRIMARY KEY NOT NULL,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+    UNIQUE (name)
 );
 CREATE TABLE IF NOT EXISTS round_types (
     id INTEGER PRIMARY KEY NOT NULL,
     short_name TEXT NOT NULL,
-    long_name TEXT NOT NULL
+    long_name TEXT NOT NULL,
+    UNIQUE (short_name),
+    UNIQUE (long_name)
 );
 CREATE TABLE IF NOT EXISTS set_formats (
     id INTEGER PRIMARY KEY NOT NULL,
     short_name TEXT NOT NULL,
-    long_name TEXT NOT NULL
+    long_name TEXT NOT NULL,
+    UNIQUE (short_name),
+    UNIQUE (long_name)
 );
 CREATE TABLE IF NOT EXISTS brackets (
     id INTEGER PRIMARY KEY NOT NULL,

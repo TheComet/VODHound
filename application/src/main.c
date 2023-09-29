@@ -150,23 +150,76 @@ int import_rfr_metadata_1_7_into_db(struct rf_db_interface* dbi, struct rf_db* d
     }
 
     struct json_object* tournament_sponsors = json_object_object_get(tournament, "sponsors");
-    for (int i = 0; i != json_object_array_length(tournament_sponsors); ++i)
-    {
-        int sponsor_id = -1;
-        struct json_object* sponsor = json_object_array_get_idx(tournament_sponsors, i);
-        const char* name = json_object_get_string(json_object_object_get(sponsor, "name"));
-        const char* website = json_object_get_string(json_object_object_get(sponsor, "website"));
-        if (name && website && *name)
+    if (tournament_sponsors && json_object_get_type(tournament_sponsors) == json_type_array)
+        for (int i = 0; i != json_object_array_length(tournament_sponsors); ++i)
         {
-            sponsor_id = dbi->sponsor_add_or_get(db, rf_cstr_view(""), rf_cstr_view(name), rf_cstr_view(website));
-            if (sponsor_id < 0)
-                return -1;
+            int sponsor_id = -1;
+            struct json_object* sponsor = json_object_array_get_idx(tournament_sponsors, i);
+            const char* name = json_object_get_string(json_object_object_get(sponsor, "name"));
+            const char* website = json_object_get_string(json_object_object_get(sponsor, "website"));
+            if (name && website && *name)
+            {
+                sponsor_id = dbi->sponsor_add_or_get(db, rf_cstr_view(""), rf_cstr_view(name), rf_cstr_view(website));
+                if (sponsor_id < 0)
+                    return -1;
+            }
+
+            if (tournament_id != -1 && sponsor_id != -1)
+                if (dbi->tournament_sponsor_add(db, tournament_id, sponsor_id) != 0)
+                    return -1;
         }
 
-        if (tournament_id != -1 && sponsor_id != -1)
-            if (dbi->tournament_sponsor_add(db, tournament_id, sponsor_id) != 0)
-                return -1;
-    }
+    struct json_object* tournament_organizers = json_object_object_get(tournament, "organizers");
+    if (tournament_organizers && json_object_get_type(tournament_organizers) == json_type_array)
+        for (int i = 0; i != json_object_array_length(tournament_organizers); ++i)
+        {
+            int person_id = -1;
+            struct json_object* organizer = json_object_array_get_idx(tournament_organizers, i);
+            const char* name = json_object_get_string(json_object_object_get(organizer, "name"));
+            const char* social = json_object_get_string(json_object_object_get(organizer, "social"));
+            const char* pronouns = json_object_get_string(json_object_object_get(organizer, "pronouns"));
+            if (name && *name)
+            {
+                person_id = dbi->person_add_or_get(db,
+                        -1,
+                        rf_cstr_view(name),
+                        rf_cstr_view(name),
+                        rf_cstr_view(social ? social : ""),
+                        rf_cstr_view(pronouns ? pronouns : ""));
+                if (person_id < 0)
+                    return -1;
+            }
+
+            if (tournament_id != -1 && person_id != -1)
+                if (dbi->tournament_organizer_add(db, tournament_id, person_id) != 0)
+                    return -1;
+        }
+
+    struct json_object* tournament_commentators = json_object_object_get(root, "commentators");
+    if (tournament_commentators && json_object_get_type(tournament_commentators) == json_type_array)
+        for (int i = 0; i != json_object_array_length(tournament_commentators); ++i)
+        {
+            int person_id = -1;
+            struct json_object* commentator = json_object_array_get_idx(tournament_commentators, i);
+            const char* name = json_object_get_string(json_object_object_get(commentator, "name"));
+            const char* social = json_object_get_string(json_object_object_get(commentator, "social"));
+            const char* pronouns = json_object_get_string(json_object_object_get(commentator, "pronouns"));
+            if (name && *name)
+            {
+                person_id = dbi->person_add_or_get(db,
+                        -1,
+                        rf_cstr_view(name),
+                        rf_cstr_view(name),
+                        rf_cstr_view(social ? social : ""),
+                        rf_cstr_view(pronouns ? pronouns : ""));
+                if (person_id < 0)
+                    return -1;
+            }
+
+            if (tournament_id != -1 && person_id != -1)
+                if (dbi->tournament_commentator_add(db, tournament_id, person_id) != 0)
+                    return -1;
+        }
 
     struct json_object* player_info = json_object_object_get(root, "playerinfo");
     struct json_object* game_info = json_object_object_get(root, "gameinfo");

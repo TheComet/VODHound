@@ -26,6 +26,10 @@ struct rf_db
     sqlite3_stmt* tournament_add_or_get;
     sqlite3_stmt* sponsor_add_or_get;
     sqlite3_stmt* tournament_sponsor_add;
+    sqlite3_stmt* tournament_organizer_add;
+    sqlite3_stmt* tournament_commentator_add;
+
+    sqlite3_stmt* person_add_or_get;
 };
 
 static int
@@ -210,6 +214,9 @@ oom                           : return NULL;
 static void
 close_db(struct rf_db* ctx)
 {
+    sqlite3_finalize(ctx->person_add_or_get);
+    sqlite3_finalize(ctx->tournament_commentator_add);
+    sqlite3_finalize(ctx->tournament_organizer_add);
     sqlite3_finalize(ctx->tournament_sponsor_add);
     sqlite3_finalize(ctx->sponsor_add_or_get);
     sqlite3_finalize(ctx->tournament_add_or_get);
@@ -274,7 +281,7 @@ motion_add(struct rf_db* ctx, uint64_t hash40, struct rf_str_view string)
             "INSERT OR IGNORE INTO motions (hash40, string) VALUES (?, ?);")) != 0)
             return -1;
 
-    if ((ret = sqlite3_bind_int64(ctx->motion_add, 1, hash40) != SQLITE_OK) ||
+    if ((ret = sqlite3_bind_int64(ctx->motion_add, 1, (int64_t)hash40) != SQLITE_OK) ||
         (ret = sqlite3_bind_text(ctx->motion_add, 2, string.data, string.len, SQLITE_STATIC) != SQLITE_OK))
     {
         rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
@@ -470,6 +477,106 @@ tournament_sponsor_add(struct rf_db* ctx, int tournament_id, int sponsor_id)
     return step_stmt_wrapper(ctx->db, ctx->tournament_sponsor_add);
 }
 
+static int
+tournament_organizer_add(struct rf_db* ctx, int tournament_id, int person_id)
+{
+    int ret;
+    if (ctx->tournament_organizer_add == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->tournament_organizer_add, rf_cstr_view(
+            "INSERT OR IGNORE INTO tournament_organizers (tournament_id, person_id) VALUES (?, ?);")) != 0)
+            return -1;
+
+    if ((ret = sqlite3_bind_int(ctx->tournament_organizer_add, 1, tournament_id) != SQLITE_OK) ||
+        (ret = sqlite3_bind_int(ctx->tournament_organizer_add, 2, person_id) != SQLITE_OK))
+    {
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        return -1;
+    }
+
+    return step_stmt_wrapper(ctx->db, ctx->tournament_organizer_add);
+}
+
+static int
+tournament_commentator_add(struct rf_db* ctx, int tournament_id, int person_id)
+{
+    int ret;
+    if (ctx->tournament_commentator_add == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->tournament_commentator_add, rf_cstr_view(
+            "INSERT OR IGNORE INTO tournament_commentators (tournament_id, person_id) VALUES (?, ?);")) != 0)
+            return -1;
+
+    if ((ret = sqlite3_bind_int(ctx->tournament_commentator_add, 1, tournament_id) != SQLITE_OK) ||
+        (ret = sqlite3_bind_int(ctx->tournament_commentator_add, 2, person_id) != SQLITE_OK))
+    {
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        return -1;
+    }
+
+    return step_stmt_wrapper(ctx->db, ctx->tournament_commentator_add);
+}
+
+static int
+person_add_or_get(
+        struct rf_db* ctx,
+        int sponsor_id,
+        struct rf_str_view name,
+        struct rf_str_view tag,
+        struct rf_str_view social,
+        struct rf_str_view pronouns)
+{
+    int ret, person_id = -1;
+    if (ctx->person_add_or_get == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->person_add_or_get, rf_cstr_view(
+            "INSERT INTO people (sponsor_id, name, tag, social, pronouns) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT DO UPDATE SET name=excluded.name RETURNING id;")) != 0)
+            return -1;
+
+    if (sponsor_id == -1)
+    {
+        if ((ret = sqlite3_bind_null(ctx->person_add_or_get, 1) != SQLITE_OK))
+        {
+            rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+            return -1;
+        }
+    }
+    else
+    {
+        if ((ret = sqlite3_bind_int(ctx->person_add_or_get, 1, sponsor_id) != SQLITE_OK))
+        {
+            rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+            return -1;
+        }
+    }
+
+    if ((ret = sqlite3_bind_text(ctx->person_add_or_get, 2, name.data, name.len, SQLITE_STATIC) != SQLITE_OK) ||
+        (ret = sqlite3_bind_text(ctx->person_add_or_get, 3, tag.data, tag.len, SQLITE_STATIC) != SQLITE_OK) ||
+        (ret = sqlite3_bind_text(ctx->person_add_or_get, 4, social.data, social.len, SQLITE_STATIC) != SQLITE_OK) ||
+        (ret = sqlite3_bind_text(ctx->person_add_or_get, 5, pronouns.data, pronouns.len, SQLITE_STATIC) != SQLITE_OK))
+    {
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        return -1;
+    }
+
+next_step:
+    ret = sqlite3_step(ctx->person_add_or_get);
+    switch (ret)
+    {
+        case SQLITE_BUSY: goto next_step;
+        case SQLITE_DONE: break;
+        case SQLITE_ROW:
+            person_id = sqlite3_column_int(ctx->person_add_or_get, 0);
+            goto next_step;
+        default:
+            rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+            break;
+    }
+
+    /* TODO: Required? */
+    sqlite3_reset(ctx->person_add_or_get);
+
+    return person_id;
+}
+
 struct rf_db_interface rf_db_sqlite = {
     open_and_prepare,
     close_db,
@@ -489,7 +596,11 @@ struct rf_db_interface rf_db_sqlite = {
 
     tournament_add_or_get,
     sponsor_add_or_get,
-    tournament_sponsor_add
+    tournament_sponsor_add,
+    tournament_organizer_add,
+    tournament_commentator_add,
+
+    person_add_or_get
 };
 
 struct rf_db_interface* rf_db(const char* type)
