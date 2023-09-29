@@ -71,6 +71,12 @@ import_mapping_info(struct rf_db_interface* dbi, struct rf_db* db, const char* f
     json_object* base_statuses = json_object_object_get(statuses, "base");
     json_object* specific_statuses = json_object_object_get(statuses, "specific");
 
+    if (root == NULL)
+    {
+        rf_log_err("File '%s' not found\n", file_name);
+        return -1;
+    }
+
     rf_log_info("Importing mapping info from '%s'\n", file_name);
     rf_log_dbg("mapping info version: %s\n", json_object_get_string(jversion));
 
@@ -221,13 +227,54 @@ int import_rfr_metadata_1_7_into_db(struct rf_db_interface* dbi, struct rf_db* d
                     return -1;
         }
 
-    struct json_object* player_info = json_object_object_get(root, "playerinfo");
+    struct json_object* event = json_object_object_get(root, "event");
+    const char* bracket_type = json_object_get_string(json_object_object_get(event, "type"));
+    int bracket_type_id;
+    if (bracket_type == NULL || !bracket_type)
+        bracket_type = "Friendlies";  /* fallback to friendlies */
+    if ((bracket_type_id = dbi->bracket_type_add_or_get(db, rf_cstr_view(bracket_type))) < 0)
+        return -1;
+
+    const char* bracket_url = json_object_get_string(json_object_object_get(event, "url"));
+    int bracket_id;
+    if (bracket_url == NULL)
+        bracket_url = "";  /* Default is empty string for URL */
+    if ((bracket_id = dbi->bracket_add_or_get(db, bracket_type_id, rf_cstr_view(bracket_url))) < 0)
+        return -1;
+
     struct json_object* game_info = json_object_object_get(root, "gameinfo");
 
     struct json_object* time_started = json_object_object_get(game_info, "timestampstart");
     struct json_object* time_ended = json_object_object_get(game_info, "timestampend");
     struct json_object* stage_id = json_object_object_get(game_info, "stageid");
     struct json_object* winner = json_object_object_get(game_info, "winner");
+
+    /*
+    struct json_object* player_info = json_object_object_get(root, "playerinfo");
+    if (player_info && json_object_get_type(player_info) == json_type_array)
+        for (int i = 0; i != json_object_array_length(player_info); ++i)
+        {
+            int person_id = -1;
+            struct json_object* player = json_object_array_get_idx(player_info, i);
+            const char* name = json_object_get_string(json_object_object_get(player, "name"));
+            const char* social = json_object_get_string(json_object_object_get(player, "social"));
+            const char* pronouns = json_object_get_string(json_object_object_get(player, "pronouns"));
+            if (name && *name)
+            {
+                person_id = dbi->person_add_or_get(db,
+                    -1,
+                    rf_cstr_view(name),
+                    rf_cstr_view(name),
+                    rf_cstr_view(social ? social : ""),
+                    rf_cstr_view(pronouns ? pronouns : ""));
+                if (person_id < 0)
+                    return -1;
+            }
+
+            if (tournament_id != -1 && person_id != -1)
+                if (dbi->tournament_commentator_add(db, tournament_id, person_id) != 0)
+                    return -1;
+        }*/
 
     return 0;
 }
@@ -338,10 +385,13 @@ int import_rfr_into_db(struct rf_db_interface* dbi, struct rf_db* db, const char
     struct rf_mfile mf;
     struct rf_mstream ms;
 
-    rf_log_info("Importing replay '%s'\n", file_name);
-
     if (rf_mfile_map(&mf, file_name) != 0)
+    {
+        rf_log_err("Failed to open file '%s'\n", file_name);
         goto mmap_failed;
+    }
+
+    rf_log_info("Importing replay '%s'\n", file_name);
 
     ms = rf_mstream_from_mfile(&mf);
     if (memcmp(rf_mstream_read(&ms, 4), "RFR1", 4) != 0)
@@ -390,13 +440,17 @@ int main(int argc, char** argv)
     if (db == NULL)
         goto open_db_failed;
 
-    import_mapping_info(dbi, db, "/home/thecomet/.local/share/ReFramed/mappingInfo.json");
+    import_mapping_info(dbi, db, "migrations/mappingInfo.json");
     import_hash40(dbi, db, "ParamLabels.csv");
-    import_rfr_into_db(dbi, db, "/home/thecomet/videos/ssbu/2023-09-20 - SBZ Bi-Weekly/reframed/2023-09-20_19-09-51 - Singles Bracket - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 1 (0-0) - Hollow Bastion.rfr");
-    import_rfr_into_db(dbi, db, "/home/thecomet/videos/ssbu/2023-09-20 - SBZ Bi-Weekly/reframed/2023-09-20_19-13-39 - Singles Bracket - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 2 (1-0) - Town and City.rfr");
-    import_rfr_into_db(dbi, db, "/home/thecomet/videos/ssbu/2023-09-20 - SBZ Bi-Weekly/reframed/2023-09-20_19-19-12 - Singles Bracket - Bo3 (Pools 2) - TheComet (Pikachu) vs Keppler (Roy) - Game 1 (0-0) - Small Battlefield.rfr");
-    import_rfr_into_db(dbi, db, "/home/thecomet/videos/ssbu/2023-09-20 - SBZ Bi-Weekly/reframed/2023-09-20_19-23-38 - Singles Bracket - Bo3 (Pools 2) - TheComet (Pikachu) vs Keppler (Roy) - Game 2 (0-1) - Small Battlefield.rfr");
-    import_rfr_into_db(dbi, db, "/home/thecomet/videos/ssbu/2023-09-20 - SBZ Bi-Weekly/reframed/2023-09-20_19-27-42 - Friendlies - Free (WR1) - TheComet (Kirby) vs Keppler (Roy) - Game 1 (0-0) - Small Battlefield.rfr");
+    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-09-51 -  - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 1 (0-0) - Hollow Bastion.rfr");
+    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-13-39 -  - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 2 (1-0) - Town and City.rfr");
+    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-19-12 -  - Bo3 (Pools 2) - TheComet (Pikachu) vs Keppler (Roy) - Game 1 (0-0) - Small Battlefield.rfr");
+    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-23-38 -  - Bo3 (Pools 2) - TheComet (Pikachu) vs Keppler (Roy) - Game 2 (0-1) - Small Battlefield.rfr");
+    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-39-28 -  - Bo3 (Pools 3) - TaDavidID (Villager) vs TheComet (Pikachu) - Game 1 (0-0) - Hollow Bastion.rfr");
+    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-44-17 -  - Bo3 (Pools 3) - TaDavidID (Villager) vs TheComet (Pikachu) - Game 2 (1-0) - Hollow Bastion.rfr");
+    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-52-03 -  - Bo3 (Pools 3) - TaDavidID (Villager) vs TheComet (Pikachu) - Game 3 (1-1) - Hollow Bastion.rfr");
+    import_rfr_into_db(dbi, db, "reframed/2023-09-20_20-06-46 -  - Bo3 (Pools 4) - TheComet (Pikachu) vs karsten187 (Wolf) - Game 1 (0-0) - Small Battlefield.rfr");
+    import_rfr_into_db(dbi, db, "reframed/2023-09-20_20-11-47 -  - Bo3 (Pools 4) - TheComet (Pikachu) vs karsten187 (Wolf) - Game 2 (0-1) - Small Battlefield.rfr");
 
     dbi->close(db);
     return 0;

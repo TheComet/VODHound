@@ -119,13 +119,15 @@ CREATE TABLE IF NOT EXISTS set_formats (
 CREATE TABLE IF NOT EXISTS brackets (
     id INTEGER PRIMARY KEY NOT NULL,
     bracket_type_id INTEGER NOT NULL,
-    url TEXT,
+    url TEXT NOT NULL,
+    UNIQUE (url),
     FOREIGN KEY (bracket_type_id) REFERENCES bracket_types(id)
 );
 CREATE TABLE IF NOT EXISTS rounds (
     id INTEGER PRIMARY KEY NOT NULL,
-    round_type_id,
+    round_type_id INTEGER NOT NULL,
     number INTEGER NOT NULL,
+    UNIQUE (round_type_id, number),
     FOREIGN KEY (round_type_id) REFERENCES rount_types(id)
 );
 CREATE TABLE IF NOT EXISTS teams (

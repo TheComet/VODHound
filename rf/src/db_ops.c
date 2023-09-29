@@ -24,11 +24,14 @@ struct rf_db
     sqlite3_stmt* hit_status_enum_add;
 
     sqlite3_stmt* tournament_add_or_get;
-    sqlite3_stmt* sponsor_add_or_get;
     sqlite3_stmt* tournament_sponsor_add;
     sqlite3_stmt* tournament_organizer_add;
     sqlite3_stmt* tournament_commentator_add;
 
+    sqlite3_stmt* bracket_type_add_or_get;
+    sqlite3_stmt* bracket_add_or_get;
+
+    sqlite3_stmt* sponsor_add_or_get;
     sqlite3_stmt* person_add_or_get;
 };
 
@@ -161,7 +164,9 @@ check_version_and_migrate(sqlite3* db)
 
     switch (version)
     {
-        case 0: if (run_migration_script(db, "migrations/1-schema.up.sql") != 0) goto migrate_failed;
+        case 0:
+            if (run_migration_script(db, "migrations/1-schema.up.sql") != 0) goto migrate_failed;
+            if (run_migration_script(db, "migrations/1-static-tables.sql") != 0) goto migrate_failed;
         /*case 1: if (upgrade_to_v2(db) != 0) goto migrate_failed;
         case 2: if (upgrade_to_v3(db) != 0) goto migrate_failed;*/
         case 1: break;
@@ -215,11 +220,16 @@ static void
 close_db(struct rf_db* ctx)
 {
     sqlite3_finalize(ctx->person_add_or_get);
+    sqlite3_finalize(ctx->sponsor_add_or_get);
+
+    sqlite3_finalize(ctx->bracket_add_or_get);
+    sqlite3_finalize(ctx->bracket_type_add_or_get);
+
     sqlite3_finalize(ctx->tournament_commentator_add);
     sqlite3_finalize(ctx->tournament_organizer_add);
     sqlite3_finalize(ctx->tournament_sponsor_add);
-    sqlite3_finalize(ctx->sponsor_add_or_get);
     sqlite3_finalize(ctx->tournament_add_or_get);
+
     sqlite3_finalize(ctx->hit_status_enum_add);
     sqlite3_finalize(ctx->status_enum_add);
     sqlite3_finalize(ctx->stage_add);
@@ -421,44 +431,6 @@ next_step:
 }
 
 static int
-sponsor_add_or_get(struct rf_db* ctx, struct rf_str_view short_name, struct rf_str_view full_name, struct rf_str_view website)
-{
-    int ret, sponsor_id = -1;
-    if (ctx->sponsor_add_or_get == NULL)
-        if (prepare_stmt_wrapper(ctx->db, &ctx->sponsor_add_or_get, rf_cstr_view(
-            "INSERT INTO sponsors (short_name, full_name, website) VALUES (?, ?, ?) "
-            "ON CONFLICT DO UPDATE SET short_name=excluded.short_name RETURNING id;")) != 0)
-            return -1;
-
-    if ((ret = sqlite3_bind_text(ctx->sponsor_add_or_get, 1, short_name.data, short_name.len, SQLITE_STATIC) != SQLITE_OK) ||
-        (ret = sqlite3_bind_text(ctx->sponsor_add_or_get, 2, full_name.data, full_name.len, SQLITE_STATIC) != SQLITE_OK) ||
-        (ret = sqlite3_bind_text(ctx->sponsor_add_or_get, 3, website.data, website.len, SQLITE_STATIC) != SQLITE_OK))
-    {
-        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return -1;
-    }
-
-next_step:
-    ret = sqlite3_step(ctx->sponsor_add_or_get);
-    switch (ret)
-    {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_DONE: break;
-        case SQLITE_ROW:
-            sponsor_id = sqlite3_column_int(ctx->sponsor_add_or_get, 0);
-            goto next_step;
-        default:
-            rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            break;
-    }
-
-    /* TODO: Required? */
-    sqlite3_reset(ctx->sponsor_add_or_get);
-
-    return sponsor_id;
-}
-
-static int
 tournament_sponsor_add(struct rf_db* ctx, int tournament_id, int sponsor_id)
 {
     int ret;
@@ -513,6 +485,116 @@ tournament_commentator_add(struct rf_db* ctx, int tournament_id, int person_id)
     }
 
     return step_stmt_wrapper(ctx->db, ctx->tournament_commentator_add);
+}
+
+static int
+bracket_type_add_or_get(struct rf_db* ctx, struct rf_str_view name)
+{
+    int ret, bracket_type_id = -1;
+    if (ctx->bracket_type_add_or_get == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->bracket_type_add_or_get, rf_cstr_view(
+            "INSERT INTO bracket_types (name) VALUES (?) "
+            "ON CONFLICT DO UPDATE SET name=excluded.name RETURNING id;")) != 0)
+            return -1;
+
+    if ((ret = sqlite3_bind_text(ctx->bracket_type_add_or_get, 1, name.data, name.len, SQLITE_STATIC) != SQLITE_OK))
+    {
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        return -1;
+    }
+
+next_step:
+    ret = sqlite3_step(ctx->bracket_type_add_or_get);
+    switch (ret)
+    {
+    case SQLITE_BUSY: goto next_step;
+    case SQLITE_DONE: break;
+    case SQLITE_ROW:
+        bracket_type_id = sqlite3_column_int(ctx->bracket_type_add_or_get, 0);
+        goto next_step;
+    default:
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        break;
+    }
+
+    /* TODO: Required? */
+    sqlite3_reset(ctx->bracket_type_add_or_get);
+
+    return bracket_type_id;
+}
+
+static int
+bracket_add_or_get(struct rf_db* ctx, int bracket_type_id, struct rf_str_view url)
+{
+    int ret, bracket_id = -1;
+    if (ctx->bracket_add_or_get == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->bracket_add_or_get, rf_cstr_view(
+            "INSERT INTO brackets (bracket_type_id, url) VALUES (?, ?) "
+            "ON CONFLICT DO UPDATE SET bracket_type_id=excluded.bracket_type_id RETURNING id;")) != 0)
+            return -1;
+
+    if ((ret = sqlite3_bind_text(ctx->bracket_add_or_get, 1, name.data, name.len, SQLITE_STATIC) != SQLITE_OK))
+    {
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        return -1;
+    }
+
+next_step:
+    ret = sqlite3_step(ctx->bracket_add_or_get);
+    switch (ret)
+    {
+    case SQLITE_BUSY: goto next_step;
+    case SQLITE_DONE: break;
+    case SQLITE_ROW:
+        bracket_id = sqlite3_column_int(ctx->bracket_add_or_get, 0);
+        goto next_step;
+    default:
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        break;
+    }
+
+    /* TODO: Required? */
+    sqlite3_reset(ctx->bracket_add_or_get);
+
+    return bracket_id;
+}
+
+static int
+sponsor_add_or_get(struct rf_db* ctx, struct rf_str_view short_name, struct rf_str_view full_name, struct rf_str_view website)
+{
+    int ret, sponsor_id = -1;
+    if (ctx->sponsor_add_or_get == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->sponsor_add_or_get, rf_cstr_view(
+            "INSERT INTO sponsors (short_name, full_name, website) VALUES (?, ?, ?) "
+            "ON CONFLICT DO UPDATE SET short_name=excluded.short_name RETURNING id;")) != 0)
+            return -1;
+
+    if ((ret = sqlite3_bind_text(ctx->sponsor_add_or_get, 1, short_name.data, short_name.len, SQLITE_STATIC) != SQLITE_OK) ||
+        (ret = sqlite3_bind_text(ctx->sponsor_add_or_get, 2, full_name.data, full_name.len, SQLITE_STATIC) != SQLITE_OK) ||
+        (ret = sqlite3_bind_text(ctx->sponsor_add_or_get, 3, website.data, website.len, SQLITE_STATIC) != SQLITE_OK))
+    {
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        return -1;
+    }
+
+next_step:
+    ret = sqlite3_step(ctx->sponsor_add_or_get);
+    switch (ret)
+    {
+    case SQLITE_BUSY: goto next_step;
+    case SQLITE_DONE: break;
+    case SQLITE_ROW:
+        sponsor_id = sqlite3_column_int(ctx->sponsor_add_or_get, 0);
+        goto next_step;
+    default:
+        rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        break;
+    }
+
+    /* TODO: Required? */
+    sqlite3_reset(ctx->sponsor_add_or_get);
+
+    return sponsor_id;
 }
 
 static int
@@ -595,11 +677,13 @@ struct rf_db_interface rf_db_sqlite = {
     hit_status_enum_add,
 
     tournament_add_or_get,
-    sponsor_add_or_get,
     tournament_sponsor_add,
     tournament_organizer_add,
     tournament_commentator_add,
 
+    bracket_type_add_or_get,
+
+    sponsor_add_or_get,
     person_add_or_get
 };
 
