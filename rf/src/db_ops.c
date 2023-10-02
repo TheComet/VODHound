@@ -533,7 +533,7 @@ bracket_add_or_get(struct rf_db* ctx, int bracket_type_id, struct rf_str_view ur
             "ON CONFLICT DO UPDATE SET bracket_type_id=excluded.bracket_type_id RETURNING id;")) != 0)
             return -1;
 
-    if ((ret = sqlite3_bind_text(ctx->bracket_add_or_get, 1, name.data, name.len, SQLITE_STATIC) != SQLITE_OK))
+    if ((ret = sqlite3_bind_text(ctx->bracket_add_or_get, 1, url.data, url.len, SQLITE_STATIC) != SQLITE_OK))
     {
         rf_log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
         return -1;

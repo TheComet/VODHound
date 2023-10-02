@@ -52,9 +52,9 @@ static int import_hash40(struct rf_db_interface* dbi, struct rf_db* db, const ch
 
     return 0;
 
-add_failed               : dbi->transaction_rollback(db);
-transaction_begin_failed : rf_mfile_unmap(&mf);
-open_file_failed         : return -1;
+    add_failed               : dbi->transaction_rollback(db);
+    transaction_begin_failed : rf_mfile_unmap(&mf);
+    open_file_failed         : return -1;
 }
 
 static int
@@ -130,9 +130,9 @@ import_mapping_info(struct rf_db_interface* dbi, struct rf_db* db, const char* f
     json_object_put(root);
     return dbi->transaction_commit(db);
 
-fail                     : dbi->transaction_rollback(db);
-transaction_begin_failed : json_object_put(root);
-unsupported_version      : return -1;
+    fail                     : dbi->transaction_rollback(db);
+    transaction_begin_failed : json_object_put(root);
+    unsupported_version      : return -1;
 }
 
 int import_rfr_metadata_1_7_into_db(struct rf_db_interface* dbi, struct rf_db* db, struct json_object* root)
@@ -455,5 +455,5 @@ int main(int argc, char** argv)
     dbi->close(db);
     return 0;
 
-open_db_failed: return -1;
+    open_db_failed : return -1;
 }
