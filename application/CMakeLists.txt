@@ -10,6 +10,8 @@ target_include_directories (application
 target_link_libraries (application
     PRIVATE
         vh)
+        #iup
+        #iupimglib)
 
 set_target_properties (application PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY ${VODHOUND_BUILD_BINDIR}

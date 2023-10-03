@@ -7,7 +7,7 @@ void*
 dynlib_open(const char* file_name)
 {
     void* handle = dlopen(file_name, RTLD_LAZY);
-    if (handle == NULL)
+    if (!handle)
         log_err("Failed to load shared library '%s': %s\n", file_name, dlerror());
     return handle;
 }

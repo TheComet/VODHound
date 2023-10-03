@@ -5,7 +5,10 @@
 #include "vh/mstream.h"
 #include "vh/str.h"
 
+/*#include <iup.h>*/
+
 #include <stdio.h>
+#include <ctype.h>
 
 #include "json.h"
 #include "zlib.h"
@@ -228,59 +231,189 @@ int import_rfr_metadata_1_7_into_db(struct db_interface* dbi, struct db* db, str
         }
 
     struct json_object* event = json_object_object_get(root, "event");
-    const char* bracket_type = json_object_get_string(json_object_object_get(event, "type"));
-    int bracket_type_id;
-    if (bracket_type == NULL || !bracket_type)
-        bracket_type = "Friendlies";  /* fallback to friendlies */
-    if ((bracket_type_id = dbi->bracket_type_add_or_get(db, cstr_view(bracket_type))) < 0)
-        return -1;
+    const char* event_type = json_object_get_string(json_object_object_get(event, "type"));
+    if (event_type == NULL || !event_type)
+        event_type = "Friendlies";  /* fallback to friendlies */
+    /* Only create an entry in the bracket type table if it is NOT friendlies */
+    int event_id = -1;
+    if (strcmp(event_type, "Friendlies"))
+    {
+        int event_type_id;
+        if ((event_type_id = dbi->event_type_add_or_get(db, cstr_view(event_type))) < 0)
+            return -1;
 
-    const char* bracket_url = json_object_get_string(json_object_object_get(event, "url"));
-    int bracket_id;
-    if (bracket_url == NULL)
-        bracket_url = "";  /* Default is empty string for URL */
-    if ((bracket_id = dbi->bracket_add_or_get(db, bracket_type_id, cstr_view(bracket_url))) < 0)
-        return -1;
+        const char* event_url = json_object_get_string(json_object_object_get(event, "url"));
+        if (event_url == NULL)
+            event_url = "";  /* Default is empty string for URL */
+        if ((event_id = dbi->event_add_or_get(db, event_type_id, cstr_view(event_url))) < 0)
+            return -1;
+    }
 
     struct json_object* game_info = json_object_object_get(root, "gameinfo");
 
-    struct json_object* time_started = json_object_object_get(game_info, "timestampstart");
-    struct json_object* time_ended = json_object_object_get(game_info, "timestampend");
-    struct json_object* stage_id = json_object_object_get(game_info, "stageid");
-    struct json_object* winner = json_object_object_get(game_info, "winner");
+    /* This will equal something like "WR2" or "Pools 3". Want to parse it into
+     * "WR" and the number 2, or "Pools" and the number 3, respectively. */
+    struct str_view round_type = cstr_view(json_object_get_string(json_object_object_get(game_info, "round")));
+    const char* round_number_cstr = round_type.data;
+    int round_number = 1;
+    while (*round_number_cstr && !isdigit(*round_number_cstr))
+        round_number_cstr++;
+    if (*round_number_cstr)
+    {
+        /* Remove digits and trailing space from round type string */
+        while (round_type.data[round_type.len-1] == ' ' || isdigit(round_type.data[round_type.len-1]))
+            round_type.len--;
 
-    /*
+        round_number = atoi(round_number_cstr);
+        if (round_number < 1)
+            round_number = 1;
+    }
+
+    const char* set_format = json_object_get_string(json_object_object_get(game_info, "format"));
+    int set_format_id;
+    {
+        const char* long_name = "Freeplay";
+        if (strcmp(set_format, "Bo3") == 0)       long_name = "Best of 3";
+        else if (strcmp(set_format, "Bo5") == 0)  long_name = "Best of 5";
+        else if (strcmp(set_format, "Bo7") == 0)  long_name = "Best of 7";
+        else if (strcmp(set_format, "FT5") == 0)  long_name = "First to 5";
+        else if (strcmp(set_format, "FT10") == 0) long_name = "First to 10";
+
+        set_format_id = dbi->set_format_add_or_get(db, cstr_view(set_format), cstr_view(long_name));
+        if (set_format_id < 0)
+            return -1;
+    }
+
+    int round_id;
+    if (strcmp(set_format, "Free") == 0)
+    {
+        if ((round_id = dbi->round_add_or_get(db, -1, round_number)) < 0)
+            return -1;
+    }
+    else
+    {
+        const char* long_name = "Winner's Round";
+        if (cstr_cmp(round_type, "WR") == 0)         long_name = "Winner's Round";
+        else if (cstr_cmp(round_type, "WQF") == 0)   long_name = "Winner's Quarter Finals";
+        else if (cstr_cmp(round_type, "WSF") == 0)   long_name = "Winner's Semi Finals";
+        else if (cstr_cmp(round_type, "WF") == 0)    long_name = "Winner's Finals";
+        else if (cstr_cmp(round_type, "LR") == 0)    long_name = "Loser's Round";
+        else if (cstr_cmp(round_type, "LQF") == 0)   long_name = "Loser's Quarter Finals";
+        else if (cstr_cmp(round_type, "LSF") == 0)   long_name = "Loser's Semi Finals";
+        else if (cstr_cmp(round_type, "LF") == 0)    long_name = "Loser's Finals";
+        else if (cstr_cmp(round_type, "GF") == 0)    long_name = "Grand Finals";
+        else if (cstr_cmp(round_type, "GFR") == 0)   long_name = "Grand Finals Reset";
+        else if (cstr_cmp(round_type, "Pools") == 0) long_name = "Pools";
+
+        int round_type_id = dbi->round_type_add_or_get(db, round_type, cstr_view(long_name));
+        if (round_type_id < 0)
+            return -1;
+
+        if ((round_id = dbi->round_add_or_get(db, round_type_id, round_number)) < 0)
+            return -1;
+    }
+
+    uint64_t time_started = json_object_get_int64(json_object_object_get(game_info, "timestampstart"));
+    uint64_t time_ended = json_object_get_int64(json_object_object_get(game_info, "timestampend"));
+    int stage_id = json_object_get_int(json_object_object_get(game_info, "stageid"));
+    int winner = json_object_get_int(json_object_object_get(game_info, "winner"));
+
     struct json_object* player_info = json_object_object_get(root, "playerinfo");
-    if (player_info && json_object_get_type(player_info) == json_type_array)
-        for (int i = 0; i != json_object_array_length(player_info); ++i)
+    int winner_team_id = -1;
+    if (player_info && json_object_get_type(player_info) != json_type_array)
+        return -1;
+    for (int i = 0; i != json_object_array_length(player_info); ++i)
+    {
+        struct json_object* player = json_object_array_get_idx(player_info, i);
+        const char* name = json_object_get_string(json_object_object_get(player, "name"));
+        const char* tag = json_object_get_string(json_object_object_get(player, "tag"));
+        const char* social = json_object_get_string(json_object_object_get(player, "social"));
+        const char* pronouns = json_object_get_string(json_object_object_get(player, "pronouns"));
+        const char* sponsor = json_object_get_string(json_object_object_get(player, "sponsor"));
+
+        if (tag == NULL || !*tag)
         {
-            int person_id = -1;
-            struct json_object* player = json_object_array_get_idx(player_info, i);
-            const char* name = json_object_get_string(json_object_object_get(player, "name"));
-            const char* social = json_object_get_string(json_object_object_get(player, "social"));
-            const char* pronouns = json_object_get_string(json_object_object_get(player, "pronouns"));
-            if (name && *name)
-            {
-                person_id = dbi->person_add_or_get(db,
-                    -1,
-                    cstr_view(name),
-                    cstr_view(name),
-                    cstr_view(social ? social : ""),
-                    cstr_view(pronouns ? pronouns : ""));
-                if (person_id < 0)
-                    return -1;
-            }
+            log_err("Player has no tag!\n");
+            return -1;
+        }
 
-            if (tournament_id != -1 && person_id != -1)
-                if (dbi->tournament_commentator_add(db, tournament_id, person_id) != 0)
-                    return -1;
-        }*/
+        if (name == NULL || !*name)
+        {
+            log_warn("Player has no name!\n");
+            name = tag;
+        }
 
-    return 0;
+        int sponsor_id = -1;
+        if (*sponsor)
+            if ((sponsor_id = dbi->sponsor_add_or_get(db, cstr_view(sponsor), cstr_view(""), cstr_view(""))) < 0)
+                return -1;
+
+        int person_id = dbi->person_add_or_get(db,
+            sponsor_id,
+            cstr_view(name),
+            cstr_view(tag),
+            cstr_view(social ? social : ""),
+            cstr_view(pronouns ? pronouns : ""));
+        if (person_id < 0)
+            return -1;
+
+        int team_id = dbi->team_add_or_get(db, cstr_view(name), cstr_view(""));
+        if (team_id < 0)
+            return -1;
+
+        if (dbi->team_member_add(db, team_id, person_id) != 0)
+            return -1;
+
+        if (winner == i)
+            winner_team_id = team_id;
+    }
+
+    int game_id = dbi->game_add_or_get(db,
+         -1,
+         tournament_id,
+         event_id,
+         round_id,
+         set_format_id,
+         winner_team_id,
+         stage_id,
+         time_started,
+         time_ended);
+
+    for (int i = 0; i != json_object_array_length(player_info); ++i)
+    {
+        struct json_object* player = json_object_array_get_idx(player_info, i);
+        const char* name = json_object_get_string(json_object_object_get(player, "name"));
+        const char* tag = json_object_get_string(json_object_object_get(player, "tag"));
+        const char* social = json_object_get_string(json_object_object_get(player, "social"));
+        const char* pronouns = json_object_get_string(json_object_object_get(player, "pronouns"));
+        const char* sponsor = json_object_get_string(json_object_object_get(player, "sponsor"));
+        int is_loser_side = json_object_get_boolean(json_object_object_get(player, "loserside"));
+        int fighter_id = json_object_get_int(json_object_object_get(player, "fighterid"));
+        int costume = json_object_get_int(json_object_object_get(player, "costume"));
+
+        int person_id = dbi->person_get_id(db, cstr_view(name));
+        if (person_id < 0)
+            return -1;
+
+        int team_id = dbi->person_get_team_id(db, cstr_view(name));
+        if (team_id < 0)
+            return -1;
+
+        if (dbi->game_player_add(db, person_id, game_id, i, team_id, fighter_id, costume, is_loser_side) != 0)
+            return -1;
+
+        struct json_object* score = json_object_object_get(game_info, i == 0 ? "score1" : "score2");
+        if (score)
+            if (dbi->score_add(db, game_id, team_id, json_object_get_int(score)) != 0)
+                return -1;
+    }
+
+    return game_id;
 }
 
 int import_rfr_metadata_into_db(struct db_interface* dbi, struct db* db, struct mstream* ms)
 {
+    int game_id;
     struct json_tokener* tok = json_tokener_new();
     struct json_object* root = json_tokener_parse_ex(tok, ms->address, ms->size);
     json_tokener_free(tok);
@@ -299,20 +432,21 @@ int import_rfr_metadata_into_db(struct db_interface* dbi, struct db* db, struct 
     {}
     else if (strcmp(version_str, "1.7") == 0)
     {
-        if (import_rfr_metadata_1_7_into_db(dbi, db, root) != 0)
+        game_id = import_rfr_metadata_1_7_into_db(dbi, db, root);
+        if (game_id < 0)
             goto fail;
     }
     else
         goto fail;
 
     json_object_put(root);
-    return 0;
+    return game_id;
 
     fail         : json_object_put(root);
     parse_failed : return -1;
 }
 
-int import_rfr_framedata_1_5_into_db(struct db_interface* dbi, struct db* db, struct mstream* ms)
+int import_rfr_framedata_1_5_into_db(struct db_interface* dbi, struct db* db, struct mstream* ms, int game_id)
 {
     int frame_count = mstream_read_lu32(ms);
     int fighter_count = mstream_read_u8(ms);
@@ -334,10 +468,18 @@ int import_rfr_framedata_1_5_into_db(struct db_interface* dbi, struct db* db, st
             uint8_t stocks = mstream_read_u8(ms);
             uint8_t flags = mstream_read_u8(ms);
 
+            uint64_t motion = ((uint64_t)motion_h << 32) | motion_l;
+            int attack_connected = (flags & 0x01) ? 1 : 0;
+            int facing_left = (flags & 0x02) ? 1 : 0;
+            int opponent_in_hitlag = (flags & 0x04) ? 1 : 0;
+
             if (mstream_past_end(ms))
                 return -1;
 
-            //printf("frame: %d, x: %f, y: %f, stocks: %d\n", frames_left, posx, posy, stocks);
+            if (dbi->frame_add(db, game_id, fighter_idx, timestamp, frame,
+                    frames_left, posx, posy, damage, hitstun, shield, status,
+                    hit_status, motion, stocks, attack_connected, facing_left, opponent_in_hitlag) != 0)
+                return -1;
         }
 
     if (!mstream_at_end(ms))
@@ -346,7 +488,7 @@ int import_rfr_framedata_1_5_into_db(struct db_interface* dbi, struct db* db, st
     return 0;
 }
 
-int import_rfr_framedata_into_db(struct db_interface* dbi, struct db* db, struct mstream* ms)
+int import_rfr_framedata_into_db(struct db_interface* dbi, struct db* db, struct mstream* ms, int game_id)
 {
     uint8_t major = mstream_read_u8(ms);
     uint8_t minor = mstream_read_u8(ms);
@@ -367,7 +509,7 @@ int import_rfr_framedata_into_db(struct db_interface* dbi, struct db* db, struct
 
         struct mstream uncompressed_stream = mstream_from_memory(
                 uncompressed_data, uncompressed_size);
-        int result = import_rfr_framedata_1_5_into_db(dbi, db, &uncompressed_stream);
+        int result = import_rfr_framedata_1_5_into_db(dbi, db, &uncompressed_stream, game_id);
         free(uncompressed_data);
         return result;
     }
@@ -400,7 +542,11 @@ int import_rfr_into_db(struct db_interface* dbi, struct db* db, const char* file
         goto invalid_header;
     }
 
+    if (dbi->transaction_begin(db) != 0)
+        goto transaction_begin_failed;
+
     uint8_t num_entries = mstream_read_u8(&ms);
+    int game_id = -1;
     for (int i = 0; i != num_entries; ++i)
     {
         const void* type = mstream_read(&ms, 4);
@@ -410,12 +556,13 @@ int import_rfr_into_db(struct db_interface* dbi, struct db* db, const char* file
 
         if (memcmp(type, "META", 4) == 0)
         {
-            if (import_rfr_metadata_into_db(dbi, db, &blob) != 0)
+            game_id = import_rfr_metadata_into_db(dbi, db, &blob);
+            if (game_id < 0)
                 goto fail;
         }
         else if (memcmp(type, "FDAT", 4) == 0)
         {
-            if (import_rfr_framedata_into_db(dbi, db, &blob) != 0)
+            if (import_rfr_framedata_into_db(dbi, db, &blob, game_id) != 0)
                 goto fail;
         }
         else if (memcmp(type, "VIDM", 4) == 0)
@@ -425,12 +572,24 @@ int import_rfr_into_db(struct db_interface* dbi, struct db* db, const char* file
         }
     }
 
+    if (dbi->transaction_commit(db) != 0)
+        goto fail;
+
     mfile_unmap(&mf);
     return 0;
 
-    fail           :
-    invalid_header : mfile_unmap(&mf);
-    mmap_failed    : return -1;
+    fail                     : dbi->transaction_rollback(db);
+    transaction_begin_failed :
+    invalid_header           : mfile_unmap(&mf);
+    mmap_failed              : return -1;
+}
+
+static void
+import_all_rfr(struct db_interface* dbi, struct db*  db)
+{
+    do {
+
+    } while (0);
 }
 
 int main(int argc, char** argv)
@@ -439,21 +598,29 @@ int main(int argc, char** argv)
     struct db* db = dbi->open_and_prepare("rf.db");
     if (db == NULL)
         goto open_db_failed;
+/*
+    IupOpen(&argc, &argv);
+    IupMessage("Hello World 1", "Hello world from IUP.");
+    IupClose();*/
 
     import_mapping_info(dbi, db, "migrations/mappingInfo.json");
     import_hash40(dbi, db, "ParamLabels.csv");
-    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-09-51 -  - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 1 (0-0) - Hollow Bastion.rfr");
-    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-13-39 -  - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 2 (1-0) - Town and City.rfr");
-    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-19-12 -  - Bo3 (Pools 2) - TheComet (Pikachu) vs Keppler (Roy) - Game 1 (0-0) - Small Battlefield.rfr");
-    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-23-38 -  - Bo3 (Pools 2) - TheComet (Pikachu) vs Keppler (Roy) - Game 2 (0-1) - Small Battlefield.rfr");
-    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-39-28 -  - Bo3 (Pools 3) - TaDavidID (Villager) vs TheComet (Pikachu) - Game 1 (0-0) - Hollow Bastion.rfr");
-    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-44-17 -  - Bo3 (Pools 3) - TaDavidID (Villager) vs TheComet (Pikachu) - Game 2 (1-0) - Hollow Bastion.rfr");
-    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-52-03 -  - Bo3 (Pools 3) - TaDavidID (Villager) vs TheComet (Pikachu) - Game 3 (1-1) - Hollow Bastion.rfr");
-    import_rfr_into_db(dbi, db, "reframed/2023-09-20_20-06-46 -  - Bo3 (Pools 4) - TheComet (Pikachu) vs karsten187 (Wolf) - Game 1 (0-0) - Small Battlefield.rfr");
-    import_rfr_into_db(dbi, db, "reframed/2023-09-20_20-11-47 -  - Bo3 (Pools 4) - TheComet (Pikachu) vs karsten187 (Wolf) - Game 2 (0-1) - Small Battlefield.rfr");
+    import_all_rfr(dbi, db);
+
+    /*
+    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-09-51 - Singles Bracket - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 1 (0-0) - Hollow Bastion.rfr");
+    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-13-39 - Singles Bracket - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 2 (1-0) - Town and City.rfr");
+    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-19-12 - Singles Bracket - Bo3 (Pools 2) - TheComet (Pikachu) vs Keppler (Roy) - Game 1 (0-0) - Small Battlefield.rfr");
+    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-23-38 - Singles Bracket - Bo3 (Pools 2) - TheComet (Pikachu) vs Keppler (Roy) - Game 2 (0-1) - Small Battlefield.rfr");
+    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-39-28 - Singles Bracket - Bo3 (Pools 3) - TaDavidID (Villager) vs TheComet (Pikachu) - Game 1 (0-0) - Hollow Bastion.rfr");
+    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-44-17 - Singles Bracket - Bo3 (Pools 3) - TaDavidID (Villager) vs TheComet (Pikachu) - Game 2 (1-0) - Hollow Bastion.rfr");
+    import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-52-03 - Singles Bracket - Bo3 (Pools 3) - TaDavidID (Villager) vs TheComet (Pikachu) - Game 3 (1-1) - Hollow Bastion.rfr");
+    import_rfr_into_db(dbi, db, "reframed/2023-09-20_20-06-46 - Singles Bracket - Bo3 (Pools 4) - TheComet (Pikachu) vs karsten187 (Wolf) - Game 1 (0-0) - Small Battlefield.rfr");
+    import_rfr_into_db(dbi, db, "reframed/2023-09-20_20-11-47 - Singles Bracket - Bo3 (Pools 4) - TheComet (Pikachu) vs karsten187 (Wolf) - Game 2 (0-1) - Small Battlefield.rfr");
+*/
 
     dbi->close(db);
-    return 0;
+    return EXIT_SUCCESS;
 
     open_db_failed : return -1;
 }

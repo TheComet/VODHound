@@ -1,8 +1,8 @@
 cmake_minimum_required (VERSION 3.21)
 
-# Force a release build if not specified
+# Force a debug build if not specified
 if (NOT DEFINED CMAKE_BUILD_TYPE)
-    set (CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build")
+    set (CMAKE_BUILD_TYPE "Debug" CACHE STRING "Choose the type of build")
 endif ()
 message (STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 

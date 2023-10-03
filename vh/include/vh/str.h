@@ -39,6 +39,12 @@ cstr_view(const char* str)
     return view;
 }
 
+static inline int
+cstr_cmp(struct str_view str, const char* cstr)
+{
+    return memcmp(str.data, cstr, (size_t)str.len);
+}
+
 VH_PUBLIC_API int
 str_hex_to_u64(struct str_view str, uint64_t* out);
 

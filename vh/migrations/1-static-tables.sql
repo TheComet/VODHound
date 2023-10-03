@@ -1,4 +1,4 @@
-INSERT INTO bracket_types (id, name) VALUES
+INSERT INTO event_types (id, name) VALUES
     (0, 'Singles Bracket'),
     (1, 'Doubles Bracket'),
     (2, 'Side Bracket'),

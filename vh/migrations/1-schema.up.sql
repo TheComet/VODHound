@@ -53,6 +53,14 @@ CREATE TABLE IF NOT EXISTS videos (
 CREATE TABLE IF NOT EXISTS video_paths (
     path TEXT PRIMARY KEY NOT NULL
 );
+CREATE TABLE IF NOT EXISTS sponsors (
+    id INTEGER PRIMARY KEY NOT NULL,
+    short_name TEXT NOT NULL,
+    full_name TEXT NOT NULL,
+    website TEXT NOT NULL,
+    CHECK (short_name <> '' OR full_name <> ''),
+    UNIQUE (short_name, full_name, website)
+);
 CREATE TABLE IF NOT EXISTS people (
     id INTEGER PRIMARY KEY NOT NULL,
     sponsor_id INTEGER,
@@ -61,53 +69,34 @@ CREATE TABLE IF NOT EXISTS people (
     social TEXT NOT NULL,
     pronouns TEXT NOT NULL,
     FOREIGN KEY (sponsor_id) REFERENCES sponsors(id),
-    UNIQUE(name)
+    UNIQUE (name)
 );
 CREATE TABLE IF NOT EXISTS tournaments (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
     website TEXT NOT NULL,
-    UNIQUE(name, website)
+    UNIQUE (name, website)
 );
 CREATE TABLE IF NOT EXISTS tournament_organizers (
     tournament_id INTEGER NOT NULL CHECK (tournament_id > 0),
     person_id INTEGER NOT NULL CHECK (person_id > 0),
-    UNIQUE(tournament_id, person_id)
+    UNIQUE (tournament_id, person_id)
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
     FOREIGN KEY (person_id) REFERENCES people(id)
-);
-CREATE TABLE IF NOT EXISTS sponsors (
-    id INTEGER PRIMARY KEY NOT NULL,
-    short_name TEXT NOT NULL,
-    full_name TEXT NOT NULL,
-    website TEXT NOT NULL,
-    UNIQUE(short_name, full_name, website)
 );
 CREATE TABLE IF NOT EXISTS tournament_sponsors (
     tournament_id INTEGER NOT NULL CHECK (tournament_id > 0),
     sponsor_id INTEGER NOT NULL CHECK (sponsor_id > 0),
-    UNIQUE(tournament_id, sponsor_id),
+    UNIQUE (tournament_id, sponsor_id),
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
     FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
 );
 CREATE TABLE IF NOT EXISTS tournament_commentators (
     tournament_id INTEGER NOT NULL CHECK (tournament_id > 0),
     person_id INTEGER NOT NULL CHECK (person_id > 0),
-    UNIQUE(tournament_id, person_id),
+    UNIQUE (tournament_id, person_id),
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
     FOREIGN KEY (person_id) REFERENCES people(id)
-);
-CREATE TABLE IF NOT EXISTS bracket_types (
-    id INTEGER PRIMARY KEY NOT NULL,
-    name TEXT NOT NULL,
-    UNIQUE (name)
-);
-CREATE TABLE IF NOT EXISTS round_types (
-    id INTEGER PRIMARY KEY NOT NULL,
-    short_name TEXT NOT NULL,
-    long_name TEXT NOT NULL,
-    UNIQUE (short_name),
-    UNIQUE (long_name)
 );
 CREATE TABLE IF NOT EXISTS set_formats (
     id INTEGER PRIMARY KEY NOT NULL,
@@ -116,65 +105,90 @@ CREATE TABLE IF NOT EXISTS set_formats (
     UNIQUE (short_name),
     UNIQUE (long_name)
 );
-CREATE TABLE IF NOT EXISTS brackets (
+CREATE TABLE IF NOT EXISTS event_types (
     id INTEGER PRIMARY KEY NOT NULL,
-    bracket_type_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    UNIQUE (name)
+);
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY NOT NULL,
+    event_type_id INTEGER NOT NULL,
     url TEXT NOT NULL,
-    UNIQUE (url),
-    FOREIGN KEY (bracket_type_id) REFERENCES bracket_types(id)
+    UNIQUE (event_type_id, url),
+    FOREIGN KEY (event_type_id) REFERENCES event_types(id)
+);
+CREATE TABLE IF NOT EXISTS round_types (
+    id INTEGER PRIMARY KEY NOT NULL,
+    short_name TEXT NOT NULL,
+    long_name TEXT NOT NULL,
+    UNIQUE (short_name),
+    UNIQUE (long_name)
 );
 CREATE TABLE IF NOT EXISTS rounds (
     id INTEGER PRIMARY KEY NOT NULL,
-    round_type_id INTEGER NOT NULL,
-    number INTEGER NOT NULL,
+    round_type_id INTEGER,
+    number INTEGER NOT NULL CHECK (number > 0),
     UNIQUE (round_type_id, number),
     FOREIGN KEY (round_type_id) REFERENCES rount_types(id)
 );
 CREATE TABLE IF NOT EXISTS teams (
     id INTEGER PRIMARY KEY NOT NULL,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    UNIQUE (name, url)
+);
+CREATE TABLE IF NOT EXISTS team_members (
+    team_id INTEGER NOT NULL,
+    person_id INTEGER NOT NULL,
+    UNIQUE (team_id, person_id),
+    FOREIGN KEY (team_id) REFERENCES teams(id),
+    FOREIGN KEY (person_id) REFERENCES people(id)
 );
 CREATE TABLE IF NOT EXISTS games (
     id INTEGER PRIMARY KEY NOT NULL,
     video_id INTEGER,
     tournament_id INTEGER,
-    bracket_id INTEGER,
+    event_id INTEGER NOT NULL,
     round_id INTEGER NOT NULL,
-    set_format_id INTEGER,
+    set_format_id INTEGER NOT NULL,
     winner_team_id INTEGER NOT NULL,
     stage_id INTEGER NOT NULL,
     time_started TIMESTAMP NOT NULL,
-    time_ended TIMESTAMP,
+    time_ended TIMESTAMP NOT NULL,
     FOREIGN KEY (video_id) REFERENCES videos(id),
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
-    FOREIGN KEY (bracket_id) REFERENCES brackets(id),
+    FOREIGN KEY (event_id) REFERENCES events(id),
     FOREIGN KEY (round_id) REFERENCES rounds(id),
     FOREIGN KEY (set_format_id) REFERENCES set_formats(id),
     FOREIGN KEY (winner_team_id) REFERENCES teams(id),
     FOREIGN KEY (stage_id) REFERENCES stages(id)
 );
-CREATE TABLE IF NOT EXISTS scores (
-    game_id INTEGER NOT NULL,
-    person_id INTEGER NOT NULL,
-    score INTEGER NOT NULL,
-    FOREIGN KEY (game_id) REFERENCES games(id),
-    FOREIGN KEY (person_id) REFERENCES people(id)
-);
-CREATE TABLE IF NOT EXISTS player_games (
+CREATE TABLE IF NOT EXISTS game_players (
     person_id INTEGER NOT NULL,
     game_id INTEGER NOT NULL,
     slot INTEGER NOT NULL,
     team_id INTEGER NOT NULL,
     fighter_id INTEGER NOT NULL,
     costume INTEGER NOT NULL,
-    is_loser_side BOOLEAN NOT NULL,
+    is_loser_side BOOLEAN NOT NULL CHECK (is_loser_side IN (0, 1)),
+    UNIQUE (person_id, game_id, slot, team_id, fighter_id, costume, is_loser_side),
     FOREIGN KEY (person_id) REFERENCES people(id),
     FOREIGN KEY (game_id) REFERENCES games(id),
     FOREIGN KEY (team_id) REFERENCES teams(id),
     FOREIGN KEY (fighter_id) REFERENCES fighters(id)
 );
-CREATE TABLE IF NOT EXISTS frame_data (
+CREATE TABLE IF NOT EXISTS scores (
     game_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    score INTEGER NOT NULL CHECK (score >= 0),
+    UNIQUE (game_id, team_id, score),
+    FOREIGN KEY (game_id) REFERENCES games(id),
+    FOREIGN KEY (team_id) REFERENCES teams(id)
+);
+CREATE TABLE IF NOT EXISTS frames (
+    id INTEGER PRIMARY KEY NOT NULL,
+    game_id INTEGER NOT NULL CHECK (game_id > 0),
+    slot INTEGER NOT NULL,
     time_stamp TIMESTAMP NOT NULL,
     frame_number INTEGER NOT NULL,
     frames_left INTEGER NOT NULL,
@@ -184,15 +198,15 @@ CREATE TABLE IF NOT EXISTS frame_data (
     hitstun FLOAT NOT NULL,
     shield FLOAT NOT NULL,
     status_id INTEGER NOT NULL,
-    hash40_id INTEGER NOT NULL,
     hit_status_id INTEGER NOT NULL,
+    hash40 INTEGER NOT NULL,
     stocks INTEGER NOT NULL,
-    attack_connected BOOLEAN NOT NULL,
-    facing_left BOOLEAN NOT NULL,
-    opponent_in_hitlag BOOLEAN NOT NULL,
+    attack_connected BOOLEAN NOT NULL CHECK (attack_connected IN (0, 1)),
+    facing_left BOOLEAN NOT NULL CHECK (facing_left IN (0, 1)),
+    opponent_in_hitlag BOOLEAN NOT NULL CHECK (opponent_in_hitlag IN (0, 1)),
     FOREIGN KEY (game_id) REFERENCES games(id),
     FOREIGN KEY (status_id) REFERENCES status_enums(id),
-    FOREIGN KEY (hash40_id) REFERENCES motions(hash40),
+    FOREIGN KEY (hash40) REFERENCES motions(hash40),
     FOREIGN KEY (hit_status_id) REFERENCES hit_status_enums(id)
 );
 
