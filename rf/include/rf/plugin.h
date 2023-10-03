@@ -4,40 +4,41 @@
 
 C_BEGIN
 
-struct video_player;
+struct plugin;
 
 struct video_player_interface
 {
     /*!
-     * \brief Open a video file and decode the first frame. Video
-     * player should pause.
+     * \brief Open a video file and decode the first frame. If pause is
+     * true, then the video player should be in a paused state. Otherwise,
+     * resume normal playback.
      * \note ReFramed will guarantee that this function won't be called
      * twice in a row. close() will always be called first if necessary.
      */
-    int (*open_file)(struct video_player* player, const char* file_name);
+    int (*open_file)(struct plugin* plugin, const char* file_name, int pause);
     
     /*!
      * \brief Close the video. Player should reset everything.
      * \note ReFramed will guarantee that this function won't be called
      * twice in a row.
      */
-    void (*close)(struct video_player* player);
+    void (*close)(struct plugin* plugin);
     
     /*!
      * \brief Return true if a video is currently open. If the video is closed,
      * then this should return false.
      */
-    int (*is_open)(struct video_player* player);
+    int (*is_open)(struct plugin* plugin);
     
     /*!
      * \brief Begin normal playback of the video stream.
      */
-    void (*play)(struct video_player* player);
+    void (*play)(struct plugin* plugin);
     
     /*!
      * \brief Pause the video stream.
      */
-    void (*pause)(struct video_player* player);
+    void (*pause)(struct plugin* plugin);
     
     /*!
      * \brief Advance by N number of video-frames (not game-frames).
@@ -52,39 +53,68 @@ struct video_player_interface
      * \param frames The number of frames to seek. Can be negative. This
      * value is guaranteed to be "small", i.e. in the range of -30 to 30.
      */
-    void (*step)(struct video_player* player, int frames);
+    void (*step)(struct plugin* plugin, int frames);
     
-    void (*seek)(struct video_player* player, int num, int den);
+    /*!
+     * \brief Seek to a specific timestamp in the video.
+     *
+     * Seeking should not pause playback. If playback is paused, then the frame
+     * seeked to should be decoded and displayed.
+     *
+     * The offset is specified in units of num/den. For example, if you want to
+     * seek to 00:05 in the video, you could call seek(5, 1, 1), or
+     * equivalently if you know the offset in "game frames" where the game is
+     * running at 60 fps, seek(300, 1, 60) would achieve the same result.
+     * \note The video offset does NOT correspond linearly with the game's
+     * frame data. The most obvious example of why this is not true is if the
+     * game is paused, the video will continue but there will be a large gap in
+     * between the timestamps of the frames where the game was paused.
+     */
+    void (*seek)(struct plugin* plugin, uint64_t offset, int num, int den);
+    
+    /*!
+     * \brief Get the current video offset in units of num/den.
+     */
+    uint64_t (*offset)(struct plugin* plugin, int num, int den);
+    
+    /*!
+     * \brief Get the total video duration in units of num/den.
+     */
+    uint64_t (*duration)(struct plugin* plugin, int num, int den);
     
     /*!
      * \brief Return true if the video is currently playing, otherwise false.
      */
-    int (*is_playing)(struct video_player* player);
-    
-    
+    int (*is_playing)(struct plugin* plugin);
     
     /*!
      * \brief Set the volume in percent.
      */
-    void (*set_volume)(struct video_player* player, int percent);
+    void (*set_volume)(struct plugin* plugin, int percent);
+    
+    /*!
+     * \brief Get the current volume in percent.
+     */
+    int (*volume)(struct plugin* plugin);
 };
 
-struct plugin;
-
-struct plugin_info
+struct ui_interface
 {
-    const char* name;
-    const char* category;
-    const char* author;
-    const char* contact;
-    const char* description;
+    void* (*create)(struct plugin* plugin);
+    void (*destroy)(struct plugin* plugin, void* view);
 };
 
 struct plugin_factory
 {
     struct plugin* (*create)(void);
     void (*destroy)(struct plugin* plugin);
-    struct plugin_info info;
+    struct ui_interface* ui;
+    struct video_player_interface* video;
+    const char* name;
+    const char* category;
+    const char* author;
+    const char* contact;
+    const char* description;
 };
 
 struct plugin_interface

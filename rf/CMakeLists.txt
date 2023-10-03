@@ -66,6 +66,25 @@ add_library (rf ${RF_LIB_TYPE}
     "templates/config.h.in"
     "${PROJECT_BINARY_DIR}/include/rf/config.h"
 
+    "include/rf/backtrace.h"
+    "include/rf/btree.h"
+    "include/rf/cli_colors.h"
+    "include/rf/db_ops.h"
+    "include/rf/dynlib.h"
+    "include/rf/hash.h"
+    "include/rf/hm.h"
+    "include/rf/init.h"
+    "include/rf/log.h"
+    "include/rf/mem.h"
+    "include/rf/mfile.h"
+    "include/rf/mstream.h"
+    "include/rf/plugin.h"
+    "include/rf/plugin_manager.h"
+    "include/rf/rb.h"
+    "include/rf/str.h"
+    "include/rf/utf8.h"
+    "include/rf/vec.h"
+
     "src/btree.c"
     "src/db_ops.c"
     "src/hash.c"
@@ -74,31 +93,18 @@ add_library (rf ${RF_LIB_TYPE}
     "src/log.c"
     "src/mem.c"
     "src/mstream.c"
+    "src/plugin_manager.c"
     "src/rb.c"
     "src/str.c"
     "src/vec.c"
 
-    "include/rf/backtrace.h"
-    "include/rf/btree.h"
-    "include/rf/cli_colors.h"
-    "include/rf/db_ops.h"
-    "include/rf/hash.h"
-    "include/rf/hm.h"
-    "include/rf/init.h"
-    "include/rf/log.h"
-    "include/rf/mem.h"
-    "include/rf/mfile.h"
-    "include/rf/mstream.h"
-    "include/rf/rb.h"
-    "include/rf/str.h"
-    "include/rf/utf8.h"
-    "include/rf/vec.h"
-
     $<$<PLATFORM_ID:Linux>:src/platform/linux/backtrace_linux.c>
+    $<$<PLATFORM_ID:Linux>:src/platform/linux/dynlib_linux.c>
     $<$<PLATFORM_ID:Linux>:src/platform/linux/mfile_linux.c>
     $<$<PLATFORM_ID:Linux>:src/platform/linux/utf8_linux.c>
 
     $<$<PLATFORM_ID:Windows>:src/platform/win32/backtrace_win32.c>
+    $<$<PLATFORM_ID:Windows>:src/platform/win32/dynlib_win32.c>
     $<$<PLATFORM_ID:Windows>:src/platform/win32/mfile_win32.c>
     $<$<PLATFORM_ID:Windows>:src/platform/win32/utf8_win32.c>)
 target_include_directories (rf
