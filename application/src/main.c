@@ -5,6 +5,8 @@
 #include "vh/mstream.h"
 #include "vh/str.h"
 
+#include "vh/plugin_manager.h"
+
 /*#include <iup.h>*/
 
 #include <stdio.h>
@@ -606,6 +608,9 @@ int main(int argc, char** argv)
     import_mapping_info(dbi, db, "migrations/mappingInfo.json");
     import_hash40(dbi, db, "ParamLabels.csv");
     import_all_rfr(dbi, db);
+
+    struct plugin* plugin = plugin_create("FFMpeg Video");
+    plugin_destroy(plugin);
 
     /*
     import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-09-51 - Singles Bracket - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 1 (0-0) - Hollow Bastion.rfr");

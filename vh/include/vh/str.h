@@ -28,7 +28,6 @@ str_view(struct str str)
     };
     return view;
 }
-
 static inline struct str_view
 cstr_view(const char* str)
 {
@@ -37,6 +36,20 @@ cstr_view(const char* str)
         (int)strlen(str)
     };
     return view;
+}
+
+static inline int
+str_ends_with(struct str_view str, struct str_view cmp)
+{
+    if (str.len < cmp.len)
+        return 0;
+    const char* off = str.data + str.len - cmp.len;
+    return memcmp(off, cmp.data, cmp.len) == 0;
+}
+static inline int
+cstr_ends_with(struct str_view str, const char* cmp)
+{
+    return str_ends_with(str, cstr_view(cmp));
 }
 
 static inline int
