@@ -1,0 +1,61 @@
+#pragma once
+
+/* Options ----------------------------------------------------------------- */
+
+#cmakedefine VH_BTREE_64BIT_KEYS
+#cmakedefine VH_BTREE_64BIT_CAPACITY
+#cmakedefine VH_MEM_BACKTRACE
+#cmakedefine VH_MEM_DEBUGGING
+#cmakedefine VH_TESTS
+#cmakedefine VH_VEC_64BIT_CAPACITY
+
+#define VH_${VH_LIB_TYPE}
+#define VH_BTREE_EXPAND_FACTOR    ${VH_BTREE_EXPAND_FACTOR}
+#define VH_BTREE_MIN_CAPACITY     ${VH_BTREE_MIN_CAPACITY}
+#define VH_HM_EXPAND_FACTOR       ${VH_HM_EXPAND_FACTOR}
+#define VH_HM_MIN_CAPACITY        ${VH_HM_MIN_CAPACITY}
+#define VH_HM_REHASH_AT_PERCENT   ${VH_HM_REHASH_AT_PERCENT}
+#define VH_MEM_BACKTRACE_SIZE     ${VH_MEM_BACKTRACE_SIZE}
+#define VH_VEC_EXPAND_FACTOR      ${VH_VEC_EXPAND_FACTOR}
+#define VH_VEC_MIN_CAPACITY       ${VH_VEC_MIN_CAPACITY}u
+
+#define VH_THREADLOCAL ${VH_THREADLOCAL}
+
+/* Symbol visibility ------------------------------------------------------- */
+#if defined(VH_SHARED)
+#   if defined(VH_BUILDING)
+#       define VH_PUBLIC_API ${VH_API_EXPORT}
+#   else
+#       define VH_PUBLIC_API ${VH_API_IMPORT}
+#   endif
+#   define VH_PRIVATE_API ${VH_API_LOCAL}
+#else
+#   define VH_PUBLIC_API
+#   define VH_PRIVATE_API
+#endif
+
+/* Version string ---------------------------------------------------------- */
+#define VH_VERSION_MAJOR ${PROJECT_VERSION_MAJOR}
+#define VH_VERSION_MINOR ${PROJECT_VERSION_MINOR}
+#define VH_VERSION_PATCH ${PROJECT_VERSION_PATCH}
+#define VH_VERSION_STR \
+        VH_STRINGIFY(VH_VERSION_MAJOR) "." VH_STRINGIFY(VH_VERSION_MINOR) "." VH_STRINGIFY(VH_VERSION_PATCH)
+
+#define VH_VERSION \
+        ((VH_VERSION_MAJOR << 24) | (VH_VERSION_MINOR << 16) | (VH_VERSION_PATCH << 8) | /* release candidate */ 0)
+
+/* C++ macros -------------------------------------------------------------- */
+#if defined(__cplusplus)
+#   define C_BEGIN extern "C" {
+#   define C_END }
+#else
+#   define C_BEGIN
+#   define C_END
+#endif
+
+/* printf formatting ------------------------------------------------------- */
+#if defined(__GNUC__) || defined(__clang__)
+#   define VH_PRINTF_FORMAT(fmt, params) __attribute__((format(printf, fmt, params)))
+#else
+#   define VH_PRINTF_FORMAT(fmt, params)
+#endif

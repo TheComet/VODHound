@@ -11,12 +11,6 @@ option(ASM686 "Enable building i686 assembly implementation")
 option(AMD64 "Enable building amd64 assembly implementation")
 option(ZLIB_PIC "Generate position independent code" OFF)
 
-set(INSTALL_BIN_DIR "${CMAKE_INSTALL_PREFIX}/bin" CACHE PATH "Installation directory for executables")
-set(INSTALL_LIB_DIR "${CMAKE_INSTALL_PREFIX}/lib" CACHE PATH "Installation directory for libraries")
-set(INSTALL_INC_DIR "${CMAKE_INSTALL_PREFIX}/include" CACHE PATH "Installation directory for headers")
-set(INSTALL_MAN_DIR "${CMAKE_INSTALL_PREFIX}/share/man" CACHE PATH "Installation directory for manual pages")
-set(INSTALL_PKGCONFIG_DIR "${CMAKE_INSTALL_PREFIX}/share/pkgconfig" CACHE PATH "Installation directory for pkgconfig (.pc) files")
-
 include(CheckTypeSize)
 include(CheckFunctionExists)
 include(CheckIncludeFile)
@@ -156,3 +150,12 @@ if(MSVC)
 		PRIVATE _CRT_SECURE_NO_DEPRECATE 
 		PRIVATE _CRT_NONSTDC_NO_DEPRECATE)
 endif()
+
+install (
+    TARGETS zlibstatic
+    EXPORT VODHoundTargets
+    INCLUDES DESTINATION ${VODHOUND_INSTALL_INCLUDEDIR}
+    ARCHIVE DESTINATION ${VODHOUND_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${VODHOUND_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${VODHOUND_INSTALL_BINDIR})
+
