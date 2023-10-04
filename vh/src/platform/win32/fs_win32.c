@@ -24,7 +24,8 @@ path_set(struct path* path, struct str_view str)
 int
 path_join(struct path* path, struct str_view trailing)
 {
-    if (path->str.len && path->str.data[path->str.len - 1] != '\\')
+    if (path->str.len && path->str.data[path->str.len - 1] != '/'
+            && path->str.data[path->str.len - 1] != '\\')
         if (cstr_append(&path->str, "\\") != 0)
             return -1;
     if (str_append(&path->str, trailing) != 0)
@@ -73,8 +74,9 @@ fs_dir_files_matching(struct strlist* out, const char* path, int (*match)(struct
     if (dwError != ERROR_NO_MORE_FILES)
         goto error;
 
-    path_deinit(&correct_path);
     FindClose(hFind);
+    path_deinit(&correct_path);
+
     return 0;
 
     error             : FindClose(hFind);
