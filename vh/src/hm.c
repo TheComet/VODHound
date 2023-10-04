@@ -114,7 +114,7 @@ malloc_and_init_storage(hm_size key_size, hm_size value_size, hm_size table_coun
     assert(IS_POWER_OF_2(table_count));
 
     /* Store the hashes, keys and values in one contiguous chunk of memory */
-    storage = malloc((sizeof(hash32) + (size_t)key_size + (size_t)value_size) * (size_t)table_count);
+    storage = mem_alloc((sizeof(hash32) + (size_t)key_size + (size_t)value_size) * (size_t)table_count);
     if (storage == NULL)
         return NULL;
 
@@ -146,13 +146,13 @@ resize_rehash(struct hm* hm, hm_size new_table_count)
             continue;
         if (hm_insert(&new_hm, KEY(hm, i), VALUE(hm, i)) != 0)
         {
-            free(new_hm.storage);
+            mem_free(new_hm.storage);
             return -1;
         }
     }
 
     /* Swap storage and free old */
-    free(hm->storage);
+    mem_free(hm->storage);
     hm->storage = new_hm.storage;
     hm->table_count = new_table_count;
 
@@ -177,7 +177,7 @@ hm_create_with_options(
         hm_size table_count,
         hash32_func hash_func)
 {
-    struct hm* hm = malloc(sizeof(*hm));
+    struct hm* hm = mem_alloc(sizeof(*hm));
     if (hm == NULL)
         return NULL;
 
@@ -229,7 +229,7 @@ void
 hm_deinit(struct hm* hm)
 {
     STATS_REPORT(hm);
-    free(hm->storage);
+    mem_free(hm->storage);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -237,7 +237,7 @@ void
 hm_free(struct hm* hm)
 {
     hm_deinit(hm);
-    free(hm);
+    mem_free(hm);
 }
 
 /* ------------------------------------------------------------------------- */

@@ -209,7 +209,7 @@ static struct db*
 open_and_prepare(const char* uri)
 {
     int ret;
-    struct db* ctx = malloc(sizeof *ctx);
+    struct db* ctx = mem_alloc(sizeof *ctx);
     if (ctx == NULL)
         goto oom;
     memset(ctx, 0, sizeof *ctx);
@@ -227,7 +227,7 @@ open_and_prepare(const char* uri)
     return ctx;
 
 migrate_db_failed             :
-open_db_failed                : free(ctx);
+open_db_failed                : mem_free(ctx);
 oom                           : return NULL;
 }
 
@@ -270,7 +270,7 @@ close_db(struct db* ctx)
     sqlite3_finalize(ctx->motion_add);
 
     sqlite3_close(ctx->db);
-    free(ctx);
+    mem_free(ctx);
 }
 
 static int

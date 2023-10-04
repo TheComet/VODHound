@@ -4,8 +4,8 @@
 #include "vh/mfile.h"
 #include "vh/mstream.h"
 #include "vh/str.h"
-
-#include "vh/plugin_manager.h"
+#include "vh/plugin.h"
+#include "vh/plugin_loader.h"
 
 /*#include <iup.h>*/
 
@@ -500,19 +500,19 @@ int import_rfr_framedata_into_db(struct db_interface* dbi, struct db* db, struct
         if (uncompressed_size == 0 || uncompressed_size > 128*1024*1024)
             return -1;
 
-        void* uncompressed_data = malloc(uncompressed_size);
+        void* uncompressed_data = mem_alloc(uncompressed_size);
         if (uncompress(
             (uint8_t*)uncompressed_data, &uncompressed_size,
             (const uint8_t*)mstream_ptr(ms), mstream_bytes_left(ms)) != Z_OK)
         {
-            free(uncompressed_data);
+            mem_free(uncompressed_data);
             return -1;
         }
 
         struct mstream uncompressed_stream = mstream_from_memory(
                 uncompressed_data, uncompressed_size);
         int result = import_rfr_framedata_1_5_into_db(dbi, db, &uncompressed_stream, game_id);
-        free(uncompressed_data);
+        mem_free(uncompressed_data);
         return result;
     }
 
@@ -609,8 +609,16 @@ int main(int argc, char** argv)
     import_hash40(dbi, db, "ParamLabels.csv");
     import_all_rfr(dbi, db);
 
-    struct plugin* plugin = plugin_create("FFMpeg Video");
-    plugin_destroy(plugin);
+    struct strlist sl;
+    strlist_init(&sl);
+    plugin_scan(&sl);
+    for (int i = 0; i != (int)strlist_count(&sl); ++i)
+    {
+        struct plugin plugin;
+        plugin_load(&plugin, strlist_get(&sl, i));
+        log_dbg("'%s' by %s: %s\n", plugin.i->name, plugin.i->author, plugin.i->description);
+        plugin_unload(&plugin);
+    }
 
     /*
     import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-09-51 - Singles Bracket - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 1 (0-0) - Hollow Bastion.rfr");

@@ -35,7 +35,7 @@ struct vec*
 vec_create(const vec_size element_size)
 {
     struct vec* vec;
-    if ((vec = malloc(sizeof *vec)) == NULL)
+    if ((vec = mem_alloc(sizeof *vec)) == NULL)
         return NULL;
     vec_init(vec, element_size);
     return vec;
@@ -66,7 +66,7 @@ vec_free(struct vec* vec)
 {
     assert(vec);
     vec_deinit(vec);
-    free(vec);
+    mem_free(vec);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -90,7 +90,7 @@ vec_compact(struct vec* vec)
     if (vec->count == 0)
     {
         if (vec->data != NULL)
-            free(vec->data);
+            mem_free(vec->data);
         vec->data = NULL;
         vec->capacity = 0;
     }
@@ -121,7 +121,7 @@ vec_clear_compact(struct vec* vec)
     assert(vec);
 
     if (vec->data != NULL)
-        free(vec->data);
+        mem_free(vec->data);
     vec->count = 0;
     vec->capacity = 0;
     vec->data = NULL;
@@ -243,7 +243,7 @@ vec_insert_emplace(struct vec* vec, vec_idx index)
      * because it's possible the user will want to insert at the very end of
      * the vec.
      */
-    assert(index <= vec->count);
+    assert(index <= (vec_idx)vec->count);
 
     /* re-allocate? */
     if (vec->count == vec->capacity)
@@ -292,9 +292,9 @@ void
 vec_erase_index(struct vec* vec, vec_idx index)
 {
     assert(vec);
-    assert(index < vec->count);
+    assert(index < (vec_idx)vec->count);
 
-    if (index == vec->count - 1)
+    if (index == (vec_idx)vec->count - 1)
         /* last element doesn't require memory shifting, just pop it */
         vec_pop(vec);
     else
@@ -335,7 +335,7 @@ vec_idx
 vec_find(const struct vec* vec, const void* element)
 {
     vec_idx i;
-    for (i = 0; i != vec_count(vec); ++i)
+    for (i = 0; i != (vec_idx)vec_count(vec); ++i)
     {
         void* current_element = vec_get(vec, i);
         if (memcmp(current_element, element, vec->element_size) == 0)
@@ -388,7 +388,7 @@ vec_realloc(struct vec *vec,
     if (!vec->data)
     {
         new_capacity = (new_capacity == 0 ? VH_VEC_MIN_CAPACITY : new_capacity);
-        vec->data = malloc((new_capacity + 1) * vec->element_size);
+        vec->data = mem_alloc((new_capacity + 1) * vec->element_size);
         if (!vec->data)
             return -1;
         vec->capacity = new_capacity;

@@ -5,7 +5,7 @@
 
 /* ------------------------------------------------------------------------- */
 static int
-btree_realloc(struct btree* btree, btree_size new_capacity)
+btree_mem_realloc(struct btree* btree, btree_size new_capacity)
 {
     /* clamp to minimum configured capacity */
     if (new_capacity < VH_BTREE_MIN_CAPACITY)
@@ -17,7 +17,7 @@ btree_realloc(struct btree* btree, btree_size new_capacity)
      */
     if (!btree->data)
     {
-        btree->data = malloc(new_capacity * BTREE_KV_SIZE(btree));
+        btree->data = mem_alloc(new_capacity * BTREE_KV_SIZE(btree));
         if (!btree->data)
             return -1;
         btree->capacity = new_capacity;
@@ -25,12 +25,12 @@ btree_realloc(struct btree* btree, btree_size new_capacity)
     }
 
     /*
-     * If the new capacity is larger than the old capacity, then we realloc
+     * If the new capacity is larger than the old capacity, then we mem_realloc
      * before shifting around the data.
      */
     if (new_capacity >= btree->capacity)
     {
-        void* new_data = realloc(btree->data, new_capacity * BTREE_KV_SIZE(btree));
+        void* new_data = mem_realloc(btree->data, new_capacity * BTREE_KV_SIZE(btree));
         if (!new_data)
             return -1;
         btree->data = new_data;
@@ -49,19 +49,19 @@ btree_realloc(struct btree* btree, btree_size new_capacity)
     }
 
     /*
-     * If the new capacity is smaller than the old capacity, we have to realloc
+     * If the new capacity is smaller than the old capacity, we have to mem_realloc
      * after moving around the data as to not read from memory out of bounds
      * of the buffer.
      */
     if (new_capacity < btree->capacity)
     {
-        void* new_data = realloc(btree->data, new_capacity * BTREE_KV_SIZE(btree));
+        void* new_data = mem_realloc(btree->data, new_capacity * BTREE_KV_SIZE(btree));
         if (new_data)
             btree->data = new_data;
         else
         {
             /*
-             * This should really never happen, but if the realloc to a smaller
+             * This should really never happen, but if the mem_realloc to a smaller
              * size fails, the btree will be in a consistent state if the
              * capacity is updated to the new capacity.
              */
@@ -77,7 +77,7 @@ btree_realloc(struct btree* btree, btree_size new_capacity)
 struct btree*
 btree_create(btree_size value_size)
 {
-    struct btree* btree = malloc(sizeof *btree);
+    struct btree* btree = mem_alloc(sizeof *btree);
     if (btree == NULL)
         return NULL;
     btree_init(btree, value_size);
@@ -109,7 +109,7 @@ btree_free(struct btree* btree)
 {
     assert(btree);
     btree_deinit(btree);
-    free(btree);
+    mem_free(btree);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -117,7 +117,7 @@ int
 btree_reserve(struct btree* btree, btree_size size)
 {
     if (btree->capacity < size)
-        if (btree_realloc(btree, size) != 0)
+        if (btree_mem_realloc(btree, size) != 0)
             return -1;
 
     return 0;
@@ -174,9 +174,9 @@ btree_insert_new(struct btree* btree, btree_key key, const void* value)
 
     assert(btree);
 
-    /* May need to realloc */
+    /* May need to mem_realloc */
     if (BTREE_NEEDS_REALLOC(btree))
-        if (btree_realloc(btree, btree->capacity * VH_BTREE_EXPAND_FACTOR) != 0)
+        if (btree_mem_realloc(btree, btree->capacity * VH_BTREE_EXPAND_FACTOR) != 0)
             return -1;
 
     /* lookup location in btree to insert */
@@ -213,9 +213,9 @@ btree_emplace_new(struct btree* btree, btree_key key)
 
     assert(btree);
 
-    /* May need to realloc */
+    /* May need to mem_realloc */
     if (BTREE_NEEDS_REALLOC(btree))
-        if (btree_realloc(btree, btree->capacity * VH_BTREE_EXPAND_FACTOR) != 0)
+        if (btree_mem_realloc(btree, btree->capacity * VH_BTREE_EXPAND_FACTOR) != 0)
             return NULL;
 
     /* lookup location in btree to insert */
@@ -269,9 +269,9 @@ btree_insert_or_get(struct btree* btree, btree_key key, const void* value, void*
     assert(value);
     assert(inserted_value);
 
-    /* May need to realloc */
+    /* May need to mem_realloc */
     if (BTREE_NEEDS_REALLOC(btree))
-        if (btree_realloc(btree, btree->capacity * VH_BTREE_EXPAND_FACTOR) != 0)
+        if (btree_mem_realloc(btree, btree->capacity * VH_BTREE_EXPAND_FACTOR) != 0)
             return -1;
 
     /* lookup location in btree to insert */
@@ -308,9 +308,9 @@ btree_emplace_or_get(struct btree* btree, btree_key key)
     assert(btree);
     assert(btree->value_size > 0);
 
-    /* May need to realloc */
+    /* May need to mem_realloc */
     if (BTREE_NEEDS_REALLOC(btree))
-        if (btree_realloc(btree, btree->capacity * VH_BTREE_EXPAND_FACTOR) != 0)
+        if (btree_mem_realloc(btree, btree->capacity * VH_BTREE_EXPAND_FACTOR) != 0)
             return NULL;
 
     /* lookup location in btree to insert */
@@ -528,12 +528,12 @@ btree_compact(struct btree* btree)
     if (btree_count(btree) == 0)
     {
         if (btree->data != NULL)
-            free(btree->data);
+            mem_free(btree->data);
         btree->data = NULL;
         btree->capacity = 0;
     }
     else
     {
-        btree_realloc(btree, btree_count(btree));
+        btree_mem_realloc(btree, btree_count(btree));
     }
 }

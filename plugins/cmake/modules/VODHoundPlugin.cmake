@@ -24,10 +24,15 @@ function (vodhound_add_plugin NAME)
     
     if (${VODHOUND_${PLUGIN_NAME}})
         include (TestVisibilityMacros)
-        test_visibility_macros (
-            PLUGIN_API_EXPORT
-            PLUGIN_API_IMPORT
-            PLUGIN_API_LOCAL)
+        check_c_source_compiles ("__declspec(dllexport) void foo(void); int main(void) { return 0; }" DLLEXPORT_VISIBILITY)
+        check_c_source_compiles ("__attribute__((visibility(\"default\"))) void foo(void); int main(void) { return 0; }" DEFAULT_VISIBILITY)
+        if (DLLEXPORT_VISIBILITY)
+            set (PLUGIN_API "__declspec(dllexport)")
+        elseif (DEFAULT_VISIBILITY)
+            set (PLUGIN_API "__attribute__((visibility(\"default\")))")
+        else ()
+            message (FATAL_ERROR "Don't know how to define visibility macros for this compiler")
+        endif ()
         
         add_library (${TARGET_NAME} SHARED
             ${${PLUGIN_NAME}_SOURCES}
@@ -38,7 +43,8 @@ function (vodhound_add_plugin NAME)
         target_compile_definitions (${TARGET_NAME}
             PRIVATE
                 PLUGIN_BUILDING
-                "PLUGIN_VERSION=((${PROJECT_VERSION_MAJOR}<<24) | (${PROJECT_VERSION_MINOR}<<16) | (${PROJECT_VERSION_PATCH}<<8))")
+                "PLUGIN_VERSION=((${PROJECT_VERSION_MAJOR}<<24) | (${PROJECT_VERSION_MINOR}<<16) | (${PROJECT_VERSION_PATCH}<<8))"
+                "PLUGIN_API=${PLUGIN_API}")
         target_link_libraries (${TARGET_NAME}
             PRIVATE
                 VODHound::vh)

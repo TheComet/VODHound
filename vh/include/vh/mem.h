@@ -3,15 +3,22 @@
 #include "vh/config.h"
 #include <stdint.h>
 
-#if defined(VH_MEMORY_DEBUGGING)
-#   define MALLOC   mem_malloc
-#   define FREE     mem_free
-#   define REALLOC  mem_realloc
-#else
+#if !defined(VH_MEMORY_DEBUGGING)
 #   include <stdlib.h>
-#   define MALLOC   malloc
-#   define FREE     free
-#   define REALLOC  realloc
+#   define mem_alloc     malloc
+#   define mem_free      free
+#   define mem_realloc   realloc
+#endif
+
+#if defined(_WIN32)
+#   include <malloc.h>
+#	define mem_size  _msize
+#elif defined(__APPLE__)
+#   include <malloc/malloc.h>
+#   define mem_size  malloc_size
+#else
+#   include <malloc.h>
+#   define mem_size  malloc_usable_size
 #endif
 
 C_BEGIN
@@ -44,7 +51,7 @@ mem_threadlocal_deinit(void);
  * additional work to monitor and track down memory leaks.
  */
 VH_PUBLIC_API void*
-mem_malloc(size_t size);
+mem_alloc(size_t size);
 
 /*!
  * @brief Does the same thing as a normal call to realloc(), but does some

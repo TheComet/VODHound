@@ -71,6 +71,7 @@ add_library (vh ${VH_LIB_TYPE}
     "include/vh/cli_colors.h"
     "include/vh/db_ops.h"
     "include/vh/dynlib.h"
+    "include/vh/fs.h"
     "include/vh/hash.h"
     "include/vh/hm.h"
     "include/vh/init.h"
@@ -79,7 +80,7 @@ add_library (vh ${VH_LIB_TYPE}
     "include/vh/mfile.h"
     "include/vh/mstream.h"
     "include/vh/plugin.h"
-    "include/vh/plugin_manager.h"
+    "include/vh/plugin_loader.h"
     "include/vh/rb.h"
     "include/vh/str.h"
     "include/vh/utf8.h"
@@ -93,18 +94,20 @@ add_library (vh ${VH_LIB_TYPE}
     "src/log.c"
     "src/mem.c"
     "src/mstream.c"
-    "src/plugin_manager.c"
+    "src/plugin_loader.c"
     "src/rb.c"
     "src/str.c"
     "src/vec.c"
 
     $<$<PLATFORM_ID:Linux>:src/platform/linux/backtrace_linux.c>
     $<$<PLATFORM_ID:Linux>:src/platform/linux/dynlib_linux.c>
+    $<$<PLATFORM_ID:Linux>:src/platform/linux/fs_linux.c>
     $<$<PLATFORM_ID:Linux>:src/platform/linux/mfile_linux.c>
     $<$<PLATFORM_ID:Linux>:src/platform/linux/utf8_linux.c>
 
     $<$<PLATFORM_ID:Windows>:src/platform/win32/backtrace_win32.c>
     $<$<PLATFORM_ID:Windows>:src/platform/win32/dynlib_win32.c>
+    $<$<PLATFORM_ID:Windows>:src/platform/win32/fs_win32.c>
     $<$<PLATFORM_ID:Windows>:src/platform/win32/mfile_win32.c>
     $<$<PLATFORM_ID:Windows>:src/platform/win32/utf8_win32.c>)
 target_include_directories (vh

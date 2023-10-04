@@ -17,10 +17,11 @@ C_BEGIN
 
 #if defined(VH_VEC_64BIT)
 typedef uint64_t vec_size;
+typedef int64_t vec_idx;
 #else
 typedef uint32_t vec_size;
+typedef int32_t vec_idx;
 #endif
-typedef intptr_t vec_idx;
 
 struct vec
 {
@@ -248,7 +249,7 @@ static inline void*
 vec_get(const struct vec* vector, vec_idx index)
 {
     assert(vector);
-    assert(index < vector->count);
+    assert(index < (vec_idx)vector->count);
     return vector->data + index * vector->element_size;
 }
 

@@ -58,7 +58,7 @@ mem_threadlocal_init(void)
 
 /* ------------------------------------------------------------------------- */
 void*
-mem_malloc(uintptr_t size)
+mem_alloc(uintptr_t size)
 {
     void* p = NULL;
     report_info_t info = {0};
