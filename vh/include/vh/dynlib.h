@@ -4,6 +4,9 @@
 
 C_BEGIN
 
+VH_PUBLIC_API int
+dynlib_add_path(const char* path);
+
 VH_PUBLIC_API void*
 dynlib_open(const char* file_name);
 

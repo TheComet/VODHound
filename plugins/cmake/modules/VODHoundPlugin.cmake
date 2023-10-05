@@ -72,6 +72,9 @@ function (vodhound_add_plugin NAME)
         set_property (
             DIRECTORY "${PROJECT_SOURCE_DIR}"
             PROPERTY VS_STARTUP_PROJECT ${TARGET_NAME})
+        if (TARGET application)
+            add_dependencies (application ${TARGET_NAME})
+        endif ()
         install (
             TARGETS ${TARGET_NAME}
             LIBRARY DESTINATION "${VODHOUND_INSTALL_PLUGINDIR}"

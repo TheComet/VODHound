@@ -6,7 +6,7 @@
 int
 str_set(struct str* str, struct str_view view)
 {
-    void* new_data = mem_realloc(str->data, view.len);
+    void* new_data = mem_realloc(str->data, view.len + 1);
     if (new_data == NULL)
         return -1;
 
@@ -27,13 +27,21 @@ str_deinit(struct str* str)
 int
 str_append(struct str* str, struct str_view other)
 {
-    void* new_data = mem_realloc(str->data, str->len + other.len);
+    void* new_data = mem_realloc(str->data, str->len + other.len + 1);
     if (new_data == NULL)
         return -1;
     str->data = new_data;
     memcpy(str->data + str->len, other.data, other.len);
     str->len += other.len;
     return 0;
+}
+
+void
+str_terminate(struct str* str)
+{
+    /* There should always be enough memory for a trailing character */
+    if (str->data)
+        str->data[str->len] = '\0';
 }
 
 int
@@ -69,7 +77,7 @@ int
 strlist_add(struct strlist* sl, struct str_view str)
 {
     strlist_size insert_size = sizeof(struct strlist_view) + str.len;
-    while (sl->m_used + insert_size > sl->m_alloc)
+    while (sl->m_used + insert_size + 1 > sl->m_alloc)
     {
         strlist_size old_alloc = sl->m_alloc;
         strlist_size table_size = sl->count * sizeof(struct strlist_view);

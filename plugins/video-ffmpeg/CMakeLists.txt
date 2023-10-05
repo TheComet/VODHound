@@ -11,8 +11,13 @@ vodhound_add_plugin (${PROJECT_NAME}
     SOURCES
         "src/decoder.c"
         "src/plugin.c"
+        
+        "$<$<PLATFORM_ID:Windows>:src/win32/canvas_win32.c>"
+        "$<$<PLATFORM_ID:Windows>:src/win32/gfx_win32.c>"
     HEADERS
+        "include/${PROJECT_NAME}/canvas.h"
         "include/${PROJECT_NAME}/decoder.h"
+        "include/${PROJECT_NAME}/gfx.h"
     INCLUDES
         "include")
 

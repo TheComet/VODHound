@@ -11,6 +11,9 @@ struct ui_interface
 {
     void* (*create)(struct plugin_data* plugin);
     void (*destroy)(struct plugin_data* plugin, void* view);
+
+    /* TODO: Debug only, will be removed in the future */
+    void (*main)(struct plugin_data* plugin, void* view);
 };
 
 struct video_player_interface
@@ -77,7 +80,7 @@ struct video_player_interface
      * game is paused, the video will continue but there will be a large gap in
      * between the timestamps of the frames where the game was paused.
      */
-    void (*seek)(struct plugin_data* plugin, uint64_t offset, int num, int den);
+    int (*seek)(struct plugin_data* plugin, uint64_t offset, int num, int den);
     
     /*!
      * \brief Get the current video offset in units of num/den.

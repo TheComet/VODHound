@@ -28,10 +28,10 @@ path_view(struct path path)
 	return str_view(path.str);
 }
 
-static inline int
+static inline void
 path_terminate(struct path* path)
 {
-	return str_terminate(&path->str);
+	str_terminate(&path->str);
 }
 
 VH_PUBLIC_API int
@@ -44,9 +44,9 @@ VH_PUBLIC_API int
 path_join(struct path* path, struct str_view str);
 
 VH_PUBLIC_API int
-fs_dir_files(struct strlist* out, const char* path);
+fs_list(struct strlist* out, struct str_view path);
 
 VH_PUBLIC_API int
-fs_dir_files_matching(struct strlist* out, const char* path, int (*match)(struct str_view str));
+fs_list_matching(struct strlist* out, struct str_view path, int (*match)(struct str_view str, const void* param), const void* param);
 
 C_END

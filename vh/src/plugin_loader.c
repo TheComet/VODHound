@@ -7,38 +7,53 @@
 
 #include <stddef.h>
 
-#define PLUGIN_DIR "share/VODHound/plugins"
+#define PLUGIN_DIR_ "share/VODHound/plugins"
+static struct str_view PLUGIN_DIR = {
+    PLUGIN_DIR_,
+    sizeof(PLUGIN_DIR_) - 1
+};
 
-static int match_dynlib_extension(struct str_view str)
+static int match_expected_filename(struct str_view str, const void* param)
 {
-    return cstr_ends_with(str, ".so") ||
-        cstr_ends_with(str, ".dll") ||
-        cstr_ends_with(str, ".Dll") ||
-        cstr_ends_with(str, ".DLL");
+    const struct str_view* expected = param;
+    return str_equal(str_remove_file_ext(str), *expected);
 }
 
 int
 plugin_scan(struct strlist* names)
 {
-    struct strlist plugin_files;
-    struct path fname;
+    struct strlist subdirs;
+    struct strlist files;
+    struct path file_path;
 
-    path_init(&fname);
-    strlist_init(&plugin_files);
+    strlist_init(&subdirs);
+    strlist_init(&files);
+    path_init(&file_path);
 
-    if (fs_dir_files_matching(&plugin_files, PLUGIN_DIR, match_dynlib_extension) != 0)
+    if (fs_list(&subdirs, PLUGIN_DIR) != 0)
         goto list_dir_failed;
 
-    for (int i = 0; i != (int)strlist_count(&plugin_files); ++i)
+    for (int i = 0; i != (int)strlist_count(&subdirs); ++i)
     {
-        if (path_set(&fname, cstr_view(PLUGIN_DIR)) != 0)
+        struct str_view fname = strlist_get(&subdirs, i);
+        if (path_set(&file_path, PLUGIN_DIR) != 0)
             goto error;
-        if (path_join(&fname, strlist_get(&plugin_files, i)) != 0)
+        if (path_join(&file_path, fname) != 0)
             goto error;
-        if (path_terminate(&fname) != 0)
+        if (fs_list_matching(&files, str_view(file_path.str), match_expected_filename, &fname) != 0)
             goto error;
+        if (strlist_count(&files) == 0)
+            continue;
 
-        void* lib = dynlib_open(fname.str.data);
+        path_terminate(&file_path);
+        if (dynlib_add_path(file_path.str.data) != 0)
+            continue;
+
+        if (path_join(&file_path, strlist_get(&files, 0)) != 0)
+            goto error;
+        path_terminate(&file_path);
+
+        void* lib = dynlib_open(file_path.str.data);
         if (lib == NULL)
             continue;
 
@@ -62,34 +77,49 @@ plugin_scan(struct strlist* names)
 
 error:
 list_dir_failed:
-    strlist_deinit(&plugin_files);
-    path_deinit(&fname);
+    path_deinit(&file_path);
+    strlist_deinit(&files);
+    strlist_deinit(&subdirs);
     return -1;
 }
 
 int
 plugin_load(struct plugin* plugin, struct str_view name)
 {
-    struct strlist plugin_files;
-    struct path fname;
+    struct strlist subdirs;
+    struct strlist files;
+    struct path file_path;
 
-    path_init(&fname);
-    strlist_init(&plugin_files);
+    strlist_init(&subdirs);
+    strlist_init(&files);
+    path_init(&file_path);
 
-    if (fs_dir_files_matching(&plugin_files, PLUGIN_DIR, match_dynlib_extension) != 0)
+    if (fs_list(&subdirs, PLUGIN_DIR) != 0)
         goto list_dir_failed;
 
-    for (int i = 0; i != (int)strlist_count(&plugin_files); ++i)
+    for (int i = 0; i != (int)strlist_count(&subdirs); ++i)
     {
-        if (path_set(&fname, cstr_view(PLUGIN_DIR)) != 0)
+        struct str_view fname = strlist_get(&subdirs, i);
+        if (path_set(&file_path, PLUGIN_DIR) != 0)
             goto error;
-        if (path_join(&fname, strlist_get(&plugin_files, i)) != 0)
+        if (path_join(&file_path, fname) != 0)
             goto error;
-        if (path_terminate(&fname) != 0)
+        if (fs_list_matching(&files, str_view(file_path.str), match_expected_filename, &fname) != 0)
             goto error;
-        log_dbg("%s\n", fname.str.data);
+        if (strlist_count(&files) == 0)
+            continue;
 
-        void* lib = dynlib_open(fname.str.data);
+        path_terminate(&file_path);
+        if (dynlib_add_path(file_path.str.data) != 0)
+            continue;
+
+        if (path_join(&file_path, strlist_get(&files, 0)) != 0)
+            goto error;
+        path_terminate(&file_path);
+
+        log_dbg("%s\n", file_path.str.data);
+
+        void* lib = dynlib_open(file_path.str.data);
         if (lib == NULL)
             continue;
 
@@ -100,7 +130,7 @@ plugin_load(struct plugin* plugin, struct str_view name)
             continue;
         }
 
-        if (cstr_cmp(name, pi->name) == 0)
+        if (cstr_equal(name, pi->name))
         {
             plugin->handle = lib;
             plugin->i = pi;
@@ -111,14 +141,16 @@ plugin_load(struct plugin* plugin, struct str_view name)
     }
 
 success:
-    strlist_deinit(&plugin_files);
-    path_deinit(&fname);
+    path_deinit(&file_path);
+    strlist_deinit(&files);
+    strlist_deinit(&subdirs);
     return 0;
 
 error:
 list_dir_failed : 
-    strlist_deinit(&plugin_files);
-    path_deinit(&fname);
+    path_deinit(&file_path);
+    strlist_deinit(&files);
+    strlist_deinit(&subdirs);
     return -1;
 }
 

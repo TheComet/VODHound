@@ -33,8 +33,8 @@ add_subdirectory ("thirdparty/json-c")
 add_subdirectory ("thirdparty/zlib-1.2.11")
 #add_subdirectory ("thirdparty/iup-cmake")
 add_subdirectory ("vh")
-add_subdirectory ("plugins")
 add_subdirectory ("application")
+add_subdirectory ("plugins")
 
 # "application" target should be the startup project in VS
 set_property(

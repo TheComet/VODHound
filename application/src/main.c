@@ -295,17 +295,17 @@ int import_rfr_metadata_1_7_into_db(struct db_interface* dbi, struct db* db, str
     else
     {
         const char* long_name = "Winner's Round";
-        if (cstr_cmp(round_type, "WR") == 0)         long_name = "Winner's Round";
-        else if (cstr_cmp(round_type, "WQF") == 0)   long_name = "Winner's Quarter Finals";
-        else if (cstr_cmp(round_type, "WSF") == 0)   long_name = "Winner's Semi Finals";
-        else if (cstr_cmp(round_type, "WF") == 0)    long_name = "Winner's Finals";
-        else if (cstr_cmp(round_type, "LR") == 0)    long_name = "Loser's Round";
-        else if (cstr_cmp(round_type, "LQF") == 0)   long_name = "Loser's Quarter Finals";
-        else if (cstr_cmp(round_type, "LSF") == 0)   long_name = "Loser's Semi Finals";
-        else if (cstr_cmp(round_type, "LF") == 0)    long_name = "Loser's Finals";
-        else if (cstr_cmp(round_type, "GF") == 0)    long_name = "Grand Finals";
-        else if (cstr_cmp(round_type, "GFR") == 0)   long_name = "Grand Finals Reset";
-        else if (cstr_cmp(round_type, "Pools") == 0) long_name = "Pools";
+        if (cstr_equal(round_type, "WR"))         long_name = "Winner's Round";
+        else if (cstr_equal(round_type, "WQF"))   long_name = "Winner's Quarter Finals";
+        else if (cstr_equal(round_type, "WSF"))   long_name = "Winner's Semi Finals";
+        else if (cstr_equal(round_type, "WF"))    long_name = "Winner's Finals";
+        else if (cstr_equal(round_type, "LR"))    long_name = "Loser's Round";
+        else if (cstr_equal(round_type, "LQF"))   long_name = "Loser's Quarter Finals";
+        else if (cstr_equal(round_type, "LSF"))   long_name = "Loser's Semi Finals";
+        else if (cstr_equal(round_type, "LF"))    long_name = "Loser's Finals";
+        else if (cstr_equal(round_type, "GF"))    long_name = "Grand Finals";
+        else if (cstr_equal(round_type, "GFR"))   long_name = "Grand Finals Reset";
+        else if (cstr_equal(round_type, "Pools")) long_name = "Pools";
 
         int round_type_id = dbi->round_type_add_or_get(db, round_type, cstr_view(long_name));
         if (round_type_id < 0)
@@ -605,9 +605,10 @@ int main(int argc, char** argv)
     IupMessage("Hello World 1", "Hello world from IUP.");
     IupClose();*/
 
+    /*
     import_mapping_info(dbi, db, "migrations/mappingInfo.json");
     import_hash40(dbi, db, "ParamLabels.csv");
-    import_all_rfr(dbi, db);
+    import_all_rfr(dbi, db);*/
 
     struct strlist sl;
     strlist_init(&sl);
@@ -617,6 +618,14 @@ int main(int argc, char** argv)
         struct plugin plugin;
         plugin_load(&plugin, strlist_get(&sl, i));
         log_dbg("'%s' by %s: %s\n", plugin.i->name, plugin.i->author, plugin.i->description);
+        struct plugin_data* data = plugin.i->create();
+        void* ui = plugin.i->ui->create(data);
+        if (plugin.i->video->open_file(data, "C:\\Users\\AlexanderMurray\\Downloads\\pika-dj-mixups.mp4", 1) == 0)
+        {
+            plugin.i->ui->main(data, ui);
+            plugin.i->video->close(data);
+        }
+        plugin.i->ui->destroy(data, ui);
         plugin_unload(&plugin);
     }
 

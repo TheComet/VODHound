@@ -75,11 +75,8 @@ cstr_append(struct str* str, const char* other)
     return str_append(str, cstr_view(other));
 }
 
-static inline int
-str_terminate(struct str* str)
-{
-    return str_append(str, cstr_view2("", 1));
-}
+VH_PUBLIC_API void
+str_terminate(struct str* str);
 
 static inline void
 str_replace_char(struct str* str, char search, char replace)
@@ -104,10 +101,45 @@ cstr_ends_with(struct str_view str, const char* cmp)
     return str_ends_with(str, cstr_view(cmp));
 }
 
-static inline int
-cstr_cmp(struct str_view str, const char* cstr)
+static inline struct str_view
+str_remove_end(struct str_view str, struct str_view cmp)
 {
-    return memcmp(str.data, cstr, (size_t)str.len);
+    if (str.len < cmp.len)
+        return str;
+    const char* off = str.data + str.len - cmp.len;
+    if (memcmp(off, cmp.data, cmp.len))
+        return str;
+    str.len -= cmp.len;
+    return str;
+}
+static inline struct str_view
+cstr_remove_end(struct str_view str, const char* cmp)
+{
+    return str_remove_end(str, cstr_view(cmp));
+}
+
+static inline struct str_view
+str_remove_file_ext(struct str_view str)
+{
+    int len = str.len;
+    while (len--)
+        if (str.data[len] == '.')
+        {
+            str.len = len;
+            return str;
+        }
+    return str;
+}
+
+static inline int
+str_equal(struct str_view s1, struct str_view s2)
+{
+    return s1.len == s2.len && memcmp(s1.data, s2.data, s1.len) == 0;
+}
+static inline int
+cstr_equal(struct str_view str, const char* cstr)
+{
+    return memcmp(str.data, cstr, (size_t)str.len) == 0;
 }
 
 VH_PUBLIC_API int

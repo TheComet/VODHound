@@ -24,6 +24,21 @@ last_error_free(char* str)
     LocalFree(str);
 }
 
+int
+dynlib_add_path(const char* path)
+{
+    /* This function does not appear to add duplicates so it's safe to call it
+     * multiple times */
+    if (!SetDllDirectoryA(path))
+    {
+        char* error = last_error_create();
+        log_err("Failed to add DLL search path: %s: %s", path, error);
+        last_error_free(error);
+        return -1;
+    }
+    return 0;
+}
+
 void*
 dynlib_open(const char* file_name)
 {
