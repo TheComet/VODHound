@@ -1,5 +1,6 @@
 #include "video-ffmpeg/canvas.h"
 #include "video-ffmpeg/decoder.h"
+#include "video-ffmpeg/gfx.h"
 
 #include "vh/log.h"
 #include "vh/mem.h"
@@ -9,6 +10,7 @@ struct plugin_data
 {
     struct canvas* canvas;
     struct decoder decoder;
+    struct gfx* gfx;
 };
 
 static struct plugin_data*
@@ -28,17 +30,28 @@ void* ui_create(struct plugin_data* plugin)
     plugin->canvas = canvas_create();
     if (plugin->canvas == NULL)
         return NULL;
-    return canvas_get_native_window_handle(plugin->canvas);
+
+    plugin->gfx = gfx_create(plugin->canvas);
+    if (plugin->gfx == NULL)
+    {
+        canvas_destroy(plugin->canvas);
+        return NULL;
+    }
+
+    return canvas_get_native_handle(plugin->canvas);
 }
 void ui_destroy(struct plugin_data* plugin, void* ui)
 {
-    if (ui == canvas_get_native_window_handle(plugin->canvas))
+    if (ui == canvas_get_native_handle(plugin->canvas))
+    {
+        gfx_destroy(plugin->gfx, plugin->canvas);
         canvas_destroy(plugin->canvas);
+    }
 }
 
 void ui_main(struct plugin_data* plugin, void* ui)
 {
-    if (ui == canvas_get_native_window_handle(plugin->canvas))
+    if (ui == canvas_get_native_handle(plugin->canvas))
         canvas_main_loop(plugin->canvas);
 }
 

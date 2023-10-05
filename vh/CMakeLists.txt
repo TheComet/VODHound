@@ -83,6 +83,7 @@ add_library (vh ${VH_LIB_TYPE}
     "include/vh/plugin_loader.h"
     "include/vh/rb.h"
     "include/vh/str.h"
+    "include/vh/thread.h"
     "include/vh/utf8.h"
     "include/vh/vec.h"
 
@@ -99,17 +100,19 @@ add_library (vh ${VH_LIB_TYPE}
     "src/str.c"
     "src/vec.c"
 
-    $<$<PLATFORM_ID:Linux>:src/platform/linux/backtrace_linux.c>
-    $<$<PLATFORM_ID:Linux>:src/platform/linux/dynlib_linux.c>
-    $<$<PLATFORM_ID:Linux>:src/platform/linux/fs_linux.c>
-    $<$<PLATFORM_ID:Linux>:src/platform/linux/mfile_linux.c>
-    $<$<PLATFORM_ID:Linux>:src/platform/linux/utf8_linux.c>
+    $<$<PLATFORM_ID:Linux>:src/linux/backtrace_linux.c>
+    $<$<PLATFORM_ID:Linux>:src/linux/dynlib_linux.c>
+    $<$<PLATFORM_ID:Linux>:src/linux/fs_linux.c>
+    $<$<PLATFORM_ID:Linux>:src/linux/mfile_linux.c>
+    $<$<PLATFORM_ID:Linux>:src/linux/thread_linux.c>
+    $<$<PLATFORM_ID:Linux>:src/linux/utf8_linux.c>
 
-    $<$<PLATFORM_ID:Windows>:src/platform/win32/backtrace_win32.c>
-    $<$<PLATFORM_ID:Windows>:src/platform/win32/dynlib_win32.c>
-    $<$<PLATFORM_ID:Windows>:src/platform/win32/fs_win32.c>
-    $<$<PLATFORM_ID:Windows>:src/platform/win32/mfile_win32.c>
-    $<$<PLATFORM_ID:Windows>:src/platform/win32/utf8_win32.c>)
+    $<$<PLATFORM_ID:Windows>:src/win32/backtrace_win32.c>
+    $<$<PLATFORM_ID:Windows>:src/win32/dynlib_win32.c>
+    $<$<PLATFORM_ID:Windows>:src/win32/fs_win32.c>
+    $<$<PLATFORM_ID:Windows>:src/win32/mfile_win32.c>
+    $<$<PLATFORM_ID:Windows>:src/win32/thread_win32.c>
+    $<$<PLATFORM_ID:Windows>:src/win32/utf8_win32.c>)
 target_include_directories (vh
     PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>

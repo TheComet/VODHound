@@ -31,6 +31,10 @@ if (VODHOUND_FFMPEG_VIDEO)
         PRIVATE FFMPEG::swresample
         PRIVATE FFMPEG::swscale)
 
+    if (WIN32)
+        target_link_libraries (${PROJECT_NAME} PRIVATE d3d11 d3dx11)
+    endif ()
+
     # On Windows we have to copy the DLLs to our binary directory
     if (WIN32 OR CYGWIN)
         foreach (LIB ${FFMPEG_LIBRARIES})

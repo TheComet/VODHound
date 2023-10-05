@@ -596,20 +596,6 @@ import_all_rfr(struct db_interface* dbi, struct db*  db)
 
 int main(int argc, char** argv)
 {
-    struct db_interface* dbi = db("sqlite");
-    struct db* db = dbi->open_and_prepare("rf.db");
-    if (db == NULL)
-        goto open_db_failed;
-/*
-    IupOpen(&argc, &argv);
-    IupMessage("Hello World 1", "Hello world from IUP.");
-    IupClose();*/
-
-    /*
-    import_mapping_info(dbi, db, "migrations/mappingInfo.json");
-    import_hash40(dbi, db, "ParamLabels.csv");
-    import_all_rfr(dbi, db);*/
-
     struct strlist sl;
     strlist_init(&sl);
     plugin_scan(&sl);
@@ -628,6 +614,19 @@ int main(int argc, char** argv)
         plugin.i->ui->destroy(data, ui);
         plugin_unload(&plugin);
     }
+
+    struct db_interface* dbi = db("sqlite");
+    struct db* db = dbi->open_and_prepare("rf.db");
+    if (db == NULL)
+        goto open_db_failed;
+/*
+    IupOpen(&argc, &argv);
+    IupMessage("Hello World 1", "Hello world from IUP.");
+    IupClose();*/
+
+    import_mapping_info(dbi, db, "migrations/mappingInfo.json");
+    import_hash40(dbi, db, "ParamLabels.csv");
+    import_all_rfr(dbi, db);
 
     /*
     import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-09-51 - Singles Bracket - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 1 (0-0) - Hollow Bastion.rfr");

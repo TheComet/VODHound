@@ -5,4 +5,4 @@ struct gfx*
 gfx_create(struct canvas* canvas);
 
 void
-gfx_destroy(struct canvas* canvas);
+gfx_destroy(struct gfx* gfx, struct canvas* canvas);

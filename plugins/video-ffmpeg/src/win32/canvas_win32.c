@@ -87,7 +87,7 @@ canvas_destroy(struct canvas* canvas)
 }
 
 void*
-canvas_get_native_window_handle(struct canvas* canvas)
+canvas_get_native_handle(struct canvas* canvas)
 {
     return canvas->hWnd;
 }
