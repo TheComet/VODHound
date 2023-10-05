@@ -5,15 +5,15 @@
 
 C_BEGIN
 
-struct plugin_data;
+struct plugin_ctx;
 
 struct ui_interface
 {
-    void* (*create)(struct plugin_data* plugin);
-    void (*destroy)(struct plugin_data* plugin, void* view);
+    void* (*create)(struct plugin_ctx* plugin);
+    void (*destroy)(struct plugin_ctx* plugin, void* view);
 
     /* TODO: Debug only, will be removed in the future */
-    void (*main)(struct plugin_data* plugin, void* view);
+    void (*main)(struct plugin_ctx* plugin, void* view);
 };
 
 struct video_player_interface
@@ -25,30 +25,30 @@ struct video_player_interface
      * \note VODHound will guarantee that this function won't be called
      * twice in a row. close() will always be called first if necessary.
      */
-    int (*open_file)(struct plugin_data* plugin, const char* file_name, int pause);
+    int (*open_file)(struct plugin_ctx* plugin, const char* file_name, int pause);
     
     /*!
      * \brief Close the video. Player should reset everything.
      * \note VODHound will guarantee that this function won't be called
      * twice in a row.
      */
-    void (*close)(struct plugin_data* plugin);
+    void (*close)(struct plugin_ctx* plugin);
     
     /*!
      * \brief Return true if a video is currently open. If the video is closed,
      * then this should return false.
      */
-    int (*is_open)(struct plugin_data* plugin);
+    int (*is_open)(struct plugin_ctx* plugin);
     
     /*!
      * \brief Begin normal playback of the video stream.
      */
-    void (*play)(struct plugin_data* plugin);
+    void (*play)(struct plugin_ctx* plugin);
     
     /*!
      * \brief Pause the video stream.
      */
-    void (*pause)(struct plugin_data* plugin);
+    void (*pause)(struct plugin_ctx* plugin);
     
     /*!
      * \brief Advance by N number of video-frames (not game-frames).
@@ -63,7 +63,7 @@ struct video_player_interface
      * \param frames The number of frames to seek. Can be negative. This
      * value is guaranteed to be "small", i.e. in the range of -30 to 30.
      */
-    void (*step)(struct plugin_data* plugin, int frames);
+    void (*step)(struct plugin_ctx* plugin, int frames);
     
     /*!
      * \brief Seek to a specific timestamp in the video.
@@ -80,40 +80,40 @@ struct video_player_interface
      * game is paused, the video will continue but there will be a large gap in
      * between the timestamps of the frames where the game was paused.
      */
-    int (*seek)(struct plugin_data* plugin, uint64_t offset, int num, int den);
+    int (*seek)(struct plugin_ctx* plugin, uint64_t offset, int num, int den);
     
     /*!
      * \brief Get the current video offset in units of num/den.
      */
-    uint64_t (*offset)(struct plugin_data* plugin, int num, int den);
+    uint64_t (*offset)(struct plugin_ctx* plugin, int num, int den);
     
     /*!
      * \brief Get the total video duration in units of num/den.
      */
-    uint64_t (*duration)(struct plugin_data* plugin, int num, int den);
+    uint64_t (*duration)(struct plugin_ctx* plugin, int num, int den);
     
     /*!
      * \brief Return true if the video is currently playing, otherwise false.
      */
-    int (*is_playing)(struct plugin_data* plugin);
+    int (*is_playing)(struct plugin_ctx* plugin);
     
     /*!
      * \brief Set the volume in percent.
      */
-    void (*set_volume)(struct plugin_data* plugin, int percent);
+    void (*set_volume)(struct plugin_ctx* plugin, int percent);
     
     /*!
      * \brief Get the current volume in percent.
      */
-    int (*volume)(struct plugin_data* plugin);
+    int (*volume)(struct plugin_ctx* plugin);
 };
 
 struct plugin_interface
 {
     uint32_t plugin_version;
     uint32_t vh_version;
-    struct plugin_data* (*create)(void);
-    void (*destroy)(struct plugin_data* plugin);
+    struct plugin_ctx* (*create)(void);
+    void (*destroy)(struct plugin_ctx* plugin);
     struct ui_interface* ui;
     struct video_player_interface* video;
     const char* name;

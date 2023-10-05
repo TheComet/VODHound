@@ -596,6 +596,12 @@ import_all_rfr(struct db_interface* dbi, struct db*  db)
 
 int main(int argc, char** argv)
 {
+
+    /*
+        IupOpen(&argc, &argv);
+        IupMessage("Hello World 1", "Hello world from IUP.");
+        IupClose();*/
+
     struct strlist sl;
     strlist_init(&sl);
     plugin_scan(&sl);
@@ -604,29 +610,25 @@ int main(int argc, char** argv)
         struct plugin plugin;
         plugin_load(&plugin, strlist_get(&sl, i));
         log_dbg("'%s' by %s: %s\n", plugin.i->name, plugin.i->author, plugin.i->description);
-        struct plugin_data* data = plugin.i->create();
-        void* ui = plugin.i->ui->create(data);
-        if (plugin.i->video->open_file(data, "C:\\Users\\AlexanderMurray\\Downloads\\pika-dj-mixups.mp4", 1) == 0)
+        struct plugin_ctx* ctx = plugin.i->create();
+        void* ui = plugin.i->ui->create(ctx);
+        if (plugin.i->video->open_file(ctx, "C:\\Users\\Startklar\\Downloads\\Prefers_Land_Behind.mp4", 1) == 0)
         {
-            plugin.i->ui->main(data, ui);
-            plugin.i->video->close(data);
+            plugin.i->ui->main(ctx, ui);
+            plugin.i->video->close(ctx);
         }
-        plugin.i->ui->destroy(data, ui);
+        plugin.i->ui->destroy(ctx, ui);
         plugin_unload(&plugin);
     }
-
+    /*
     struct db_interface* dbi = db("sqlite");
     struct db* db = dbi->open_and_prepare("rf.db");
     if (db == NULL)
         goto open_db_failed;
-/*
-    IupOpen(&argc, &argv);
-    IupMessage("Hello World 1", "Hello world from IUP.");
-    IupClose();*/
 
     import_mapping_info(dbi, db, "migrations/mappingInfo.json");
     import_hash40(dbi, db, "ParamLabels.csv");
-    import_all_rfr(dbi, db);
+    import_all_rfr(dbi, db);*/
 
     /*
     import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-09-51 - Singles Bracket - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 1 (0-0) - Hollow Bastion.rfr");
@@ -640,7 +642,7 @@ int main(int argc, char** argv)
     import_rfr_into_db(dbi, db, "reframed/2023-09-20_20-11-47 - Singles Bracket - Bo3 (Pools 4) - TheComet (Pikachu) vs karsten187 (Wolf) - Game 2 (0-1) - Small Battlefield.rfr");
 */
 
-    dbi->close(db);
+    //dbi->close(db);
     return EXIT_SUCCESS;
 
     open_db_failed : return -1;
