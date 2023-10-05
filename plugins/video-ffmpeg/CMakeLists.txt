@@ -18,7 +18,7 @@ vodhound_add_plugin (${PROJECT_NAME}
     INCLUDES
         "include")
 
-if (VODHOUND_FFMPEG_VIDEO)
+if (VODHOUND_VIDEO_FFMPEG)
     if (CMAKE_PLATFORM_ID MATCHES Windows)
         set (DEFAULT_GFX "DX11")
         set (POSSIBLE_GFX "DX11;WGL")
@@ -26,20 +26,19 @@ if (VODHOUND_FFMPEG_VIDEO)
         set (DEFAULT_GFX "GLX")
         set (POSSIBLE_GFX "GLX")
     endif ()
-    message (FATAL_ERROR ".${DEFAULT_GFX}")
-    set (VODHOUND_FFMPEG_VIDEO_GFX ${DEFAULT_GFX} CACHE STRING "Which graphics API to use for rendering")
-    set_property (CACHE VODHOUND_FFMPEG_VIDEO_GFX PROPERTY STRINGS ${POSSIBLE_GFX})
+    set (VODHOUND_VIDEO_FFMPEG_GFX ${DEFAULT_GFX} CACHE STRING "Which graphics API to use for rendering")
+    set_property (CACHE VODHOUND_VIDEO_FFMPEG_GFX PROPERTY STRINGS ${POSSIBLE_GFX})
 
-    if (VODHOUND_FFMPEG_VIDEO_GFX MATCHES "DX11")
+    if (VODHOUND_VIDEO_FFMPEG_GFX MATCHES "DX11")
         target_sources (${PROJECT_NAME} PRIVATE
             "src/canvas_win32_dx.c"
             "src/gfx_dx11.c")
         target_link_libraries (${PROJECT_NAME} PRIVATE d3d11)
-    elseif (VODHOUND_FFMPEG_VIDEO_GFX MATCHES "WGL")
+    elseif (VODHOUND_VIDEO_FFMPEG_GFX MATCHES "WGL")
         target_sources (${PROJECT_NAME} PRIVATE
             "src/canvas_win32_gl.c"
             "src/gfx_gl.c")
-    elseif (VODHOUND_FFMPEG_VIDEO_GFX MATCHES "GLX")
+    elseif (VODHOUND_VIDEO_FFMPEG_GFX MATCHES "GLX")
         target_sources (${PROJECT_NAME} PRIVATE
             "src/canvas_glx.c"
             "src/gfx_gl.c")

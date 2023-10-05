@@ -1,9 +1,5 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
-#include <d3d11.h>
-/*
-#include <d3dx11.h>
-#include <d3dx10.h>*/
 
 #include "video-ffmpeg/canvas.h"
 #include "video-ffmpeg/gfx.h"
@@ -61,12 +57,13 @@ gfx_create(struct canvas* canvas)
 	scd.Windowed = TRUE;                                    // windowed/full-screen mode
 
 	// create a device, device context and swap chain using the information in the scd struct
+	D3D_FEATURE_LEVEL DX11 = D3D_FEATURE_LEVEL_11_0;
 	D3D11CreateDeviceAndSwapChain(NULL,
 		D3D_DRIVER_TYPE_HARDWARE,
 		NULL,
-		NULL,
-		NULL,
-		NULL,
+		D3D11_CREATE_DEVICE_DEBUG,
+		&DX11,
+		1,
 		D3D11_SDK_VERSION,
 		&scd,
 		&gfx->swapchain,
@@ -98,10 +95,9 @@ gfx_destroy(struct gfx* gfx, struct canvas* canvas)
 	mutex_deinit(gfx->mutex);
 
 	// close and release all existing COM objects
-	/*
 	gfx->swapchain->Release();
 	gfx->dev->Release();
-	gfx->devcon->Release();*/
+	gfx->devcon->Release();
 
 	mem_free(gfx);
 }
