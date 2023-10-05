@@ -6,7 +6,7 @@
 #include "vh/thread.h"
 
 int
-thread_start(struct thread* t, void* (*func)(void*), const void* args)
+thread_start(struct thread* t, void* (*func)(const void*), const void* args)
 {
     HANDLE hThread = CreateThread(
         NULL,  /* Security attributes*/

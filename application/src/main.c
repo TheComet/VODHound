@@ -7,7 +7,7 @@
 #include "vh/plugin.h"
 #include "vh/plugin_loader.h"
 
-/*#include <iup.h>*/
+#include <iup.h>
 
 #include <stdio.h>
 #include <ctype.h>
@@ -594,13 +594,148 @@ import_all_rfr(struct db_interface* dbi, struct db*  db)
     } while (0);
 }
 
-int main(int argc, char** argv)
+static Ihandle*
+create_replay_browser(void)
 {
+    Ihandle *groups, *filter_label, *filters, *replays;
+    Ihandle *vbox, *hbox, *sbox;
 
+    groups = IupList(NULL);
+    IupSetAttribute(groups, "EXPAND", "YES");
+
+    sbox = IupSbox(groups);
+    IupSetAttribute(sbox, "DIRECTION", "SOUTH");
+    IupSetAttribute(sbox, "COLOR", "225 225 225");
+
+    filter_label = IupLabel("Filters:");
+    IupSetAttribute(filter_label, "PADDING", "10x5");
+    filters = IupText(NULL);
+    IupSetAttribute(filters, "EXPAND", "HORIZONTAL");
+    hbox = IupHbox(filter_label, filters, NULL);
+
+    replays = IupTree();
+    IupSetHandle("replays", replays);
+
+    return IupVbox(sbox, hbox, replays, NULL);
+}
+
+static Ihandle*
+create_plugin_view(void)
+{
+    Ihandle* empty_tab = IupCanvas(NULL);
+    IupSetAttribute(empty_tab, "TABTITLE", "+");
+    return IupTabs(empty_tab, NULL);
+}
+
+static Ihandle*
+create_center_view(void)
+{
+    Ihandle *replays, *plugins;
+    Ihandle *sbox, *hbox;
+
+    replays = create_replay_browser();
+    plugins = create_plugin_view();
+    sbox = IupSbox(replays);
+    IupSetAttribute(sbox, "COLOR", "225 225 225");
+    IupSetAttribute(sbox, "DIRECTION", "EAST");
+    return IupHbox(sbox, plugins, NULL);
+}
+
+static Ihandle*
+create_menus(void)
+{
+    Ihandle* item_connect = IupItem("&Connect...", NULL);
+    Ihandle* item_import_rfp = IupItem("&Import Replay Pack\tCtrl+I", NULL);
+    Ihandle* item_quit = IupItem("&Quit\t\t\t\t\tCtrl+Q", NULL);
+    Ihandle* file_menu = IupMenu(
+        item_connect,
+        item_import_rfp,
+        IupSeparator(),
+        item_quit,
+        NULL);
+
+    Ihandle* item_motion_labels_editor = IupItem("Motion Labels Editor", NULL);
+    Ihandle* item_path_manager = IupItem("Path Manager", NULL);
+    Ihandle* tools_menu = IupMenu(
+        item_motion_labels_editor,
+        item_path_manager,
+        NULL);
+
+    Ihandle* sub_menu_file = IupSubmenu("&File", file_menu);
+    Ihandle* sub_menu_tools = IupSubmenu("&Tools", tools_menu);
+
+    return IupMenu(
+        sub_menu_file,
+        sub_menu_tools,
+        NULL);
+}
+
+static Ihandle*
+create_statusbar(void)
+{
+    Ihandle* connection_status = IupLabel("Disconnected");
+    IupSetAttribute(connection_status, "NAME", "STATUSBAR");
+    IupSetAttribute(connection_status, "EXPAND", "HORIZONTAL");
+    IupSetAttribute(connection_status, "PADDING", "10x5");
+    IupSetAttribute(connection_status, "ALIGNMENT", "ARIGHT");
+    return connection_status;
+}
+
+static Ihandle*
+create_main_dialog(void)
+{
+    Ihandle* center = create_center_view();
+
+    Ihandle* vbox = IupVbox(
+        create_center_view(),
+        create_statusbar(),
+        NULL);
+
+    Ihandle* dlg = IupDialog(vbox);
+    IupSetAttributeHandle(dlg, "MENU", create_menus());
+    return dlg;
+}
+
+int main(int argc, char **argv)
+{
+    IupOpen(&argc, &argv);
+    Ihandle* dlg = create_main_dialog();
+    IupShowXY(dlg, IUP_CENTER, IUP_CENTER);
+
+    Ihandle* replays = IupGetHandle("replays");
     /*
-        IupOpen(&argc, &argv);
-        IupMessage("Hello World 1", "Hello world from IUP.");
-        IupClose();*/
+    IupSetAttribute(replays, "TITLE", "Replays");
+    IupSetAttribute(replays, "ADDBRANCH0", "2023-08-20");
+    IupSetAttribute(replays, "ADDBRANCH1", "19:45 Game 1");
+    IupSetAttribute(replays, "ADDLEAF2", "Metadata");
+    IupSetAttribute(replays, "ADDLEAF3", "Video");
+    IupSetAttribute(replays, "INSERTBRANCH2", "19:52 Game 2");
+    IupSetAttribute(replays, "ADDLEAF5", "Metadata");
+    IupSetAttribute(replays, "ADDLEAF6", "Video");
+    IupSetAttribute(replays, "INSERTBRANCH1", "2023-08-22");
+    IupSetAttribute(replays, "ADDBRANCH8", "12:25 Game 1");
+    IupSetAttribute(replays, "ADDLEAF9", "Metadata");
+    IupSetAttribute(replays, "ADDLEAF10", "Video");
+    IupSetAttribute(replays, "INSERTBRANCH9", "12:28 Game 2");
+    IupSetAttribute(replays, "ADDLEAF12", "Metadata");
+    IupSetAttribute(replays, "ADDLEAF13", "Video");
+    IupSetAttribute(replays, "INSERTBRANCH12", "12:32 Game 3");
+    IupSetAttribute(replays, "ADDLEAF15", "Metadata");
+    IupSetAttribute(replays, "ADDLEAF16", "Video");*/
+
+IupSetAttribute(replays, "TITLE0", "Figures");
+IupSetAttribute(replays, "ADDLEAF0", "Other");
+IupSetAttribute(replays, "ADDBRANCH1", "triangle");
+IupSetAttribute(replays, "ADDLEAF2", "equilateral");
+IupSetAttribute(replays, "ADDLEAF3", "isoceles");
+IupSetAttribute(replays, "ADDLEAF4", "scalenus");
+IupSetAttribute(replays, "INSERTBRANCH2", "parallelogram");
+IupSetAttribute(replays, "ADDLEAF6", "square");
+IupSetAttribute(replays, "ADDLEAF7", "diamond");
+
+    //IupSetAttribute(replays, "ADDLEAF2","19:45 Game 1");
+    IupMainLoop();
+    IupClose();
 
     struct strlist sl;
     strlist_init(&sl);

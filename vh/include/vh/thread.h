@@ -6,15 +6,15 @@ C_BEGIN
 
 struct thread
 {
-	void* handle;
+    void* handle;
 };
 struct mutex
 {
-	void* handle;
+    void* handle;
 };
 
 VH_PUBLIC_API int
-thread_start(struct thread* t, void* (*func)(void*), const void* args);
+thread_start(struct thread* t, void* (*func)(void*), void* args);
 
 VH_PUBLIC_API int
 thread_join(struct thread t, int timeout_ms);

@@ -3,6 +3,12 @@
 
 #include <dlfcn.h>
 
+int
+dynlib_add_path(const char* path)
+{
+    return 0;
+}
+
 void*
 dynlib_open(const char* file_name)
 {

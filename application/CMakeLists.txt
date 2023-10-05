@@ -9,9 +9,9 @@ target_include_directories (application
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
 target_link_libraries (application
     PRIVATE
-        vh)
-        #iup
-        #iupimglib)
+        vh
+        iup
+        iupimglib)
 
 set_target_properties (application PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY ${VODHOUND_BUILD_BINDIR}

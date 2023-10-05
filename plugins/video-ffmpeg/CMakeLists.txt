@@ -19,10 +19,13 @@ vodhound_add_plugin (${PROJECT_NAME}
         "include")
 
 if (VODHOUND_VIDEO_FFMPEG)
-    if (CMAKE_PLATFORM_ID MATCHES Windows)
+    if (CMAKE_SYSTEM_NAME MATCHES Windows)
         set (DEFAULT_GFX "DX11")
         set (POSSIBLE_GFX "DX11;WGL")
-    elseif (CMAKE_PLATFORM_ID MATCHES Linux)
+    elseif (CMAKE_SYSTEM_NAME MATCHES CYGWIN)
+        set (DEFAULT_GFX "WGL")
+        set (POSSIBLE_GFX "DX11;WGL")
+    elseif (CMAKE_SYSTEM_NAME MATCHES Linux)
         set (DEFAULT_GFX "GLX")
         set (POSSIBLE_GFX "GLX")
     endif ()
@@ -70,9 +73,9 @@ if (VODHOUND_VIDEO_FFMPEG)
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different "${DLL_FILENAME}" "${VODHOUND_BUILD_PLUGINDIR}/${PROJECT_NAME}"
                 COMMENT "Copying FFMPEG DLL ${DLL_FILENAME} to runtime dir ${VODHOUND_BUILD_PLUGINDIR}/${PROJECT_NAME}"
                 VERBATIM)
-			install (
-				FILES ${DLL_FILENAME}
-				DESTINATION "${VODHOUND_INSTALL_PLUGINDIR}/${PROJECT_NAME}")
+            install (
+                FILES ${DLL_FILENAME}
+                DESTINATION "${VODHOUND_INSTALL_PLUGINDIR}/${PROJECT_NAME}")
         endforeach ()
     endif ()
 endif ()

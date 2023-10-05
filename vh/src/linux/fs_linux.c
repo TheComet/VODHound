@@ -3,7 +3,7 @@
 #include <sys/types.h>
 #include <dirent.h>
 
-static int match_all(struct str_view str) { (void)str;  return 1; }
+static int match_all(struct str_view str, const void* param) { (void)str; (void)param;  return 1; }
 
 void
 path_set_take(struct path* path, struct str str)
@@ -35,23 +35,26 @@ path_join(struct path* path, struct str_view trailing)
 }
 
 int
-fs_dir_files(struct strlist* out, const char* path)
+fs_list(struct strlist* out, struct str_view path)
 {
-    return fs_dir_files_matching(out, path, match_all);
+    return fs_list_matching(out, path, match_all, NULL);
 }
 
 int
-fs_dir_files_matching(struct strlist* out, const char* path, int (*match)(struct str_view str))
+fs_list_matching(
+        struct strlist* out,
+        struct str_view path,
+        int (*match)(struct str_view str, const void* param),
+        const void* param)
 {
     DIR* dp;
     struct dirent* ep;
     struct path correct_path;
 
     path_init(&correct_path);
-    if (path_set(&correct_path, cstr_view(path)) != 0)
+    if (path_set(&correct_path, path) != 0)
         goto str_set_failed;
-    if (path_terminate(&correct_path) != 0)
-        goto first_file_failed;
+    path_terminate(&correct_path);
 
     dp = opendir(correct_path.str.data);
     if (!dp)
@@ -62,7 +65,9 @@ fs_dir_files_matching(struct strlist* out, const char* path, int (*match)(struct
         if (ep->d_type == DT_REG)
         {
             struct str_view fname = cstr_view(ep->d_name);
-            if (match(fname))
+            if (cstr_equal(fname, ".") || cstr_equal(fname, ".."))
+                continue;
+            if (match(fname, param))
                 if (strlist_add(out, fname) != 0)
                     goto error;
         }

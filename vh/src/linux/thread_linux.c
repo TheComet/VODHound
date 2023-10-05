@@ -1,4 +1,5 @@
 #include "vh/log.h"
+#include "vh/mem.h"
 #include "vh/thread.h"
 
 #define _GNU_SOURCE
@@ -8,7 +9,7 @@
 #include <signal.h>
 
 int
-thread_start(struct thread* t, void* (*func)(const void*), const void* args)
+thread_start(struct thread* t, void* (*func)(void*), void* args)
 {
     int rc;
     pthread_attr_t attr;
@@ -33,12 +34,12 @@ thread_join(struct thread t, int timeout_ms)
 
     clock_gettime(CLOCK_REALTIME, &ts);
     off.tv_sec = timeout_ms / 1000;
-    off.tv_nsec = (timeout_ms - ts.tv_sec * 1000) * 1e6;
+    off.tv_nsec = (timeout_ms - ts.tv_sec * 1000) * 1000000;
     ts.tv_nsec += off.tv_nsec;
-    while (ts.tv_nsec >= 1e9)
+    while (ts.tv_nsec >= 1000000000)
     {
         ts.tv_sec += 1;
-        ts.tv_nsec -= 1e9;
+        ts.tv_nsec -= 1000000000;
     }
     ts.tv_sec += off.tv_sec;
 
@@ -57,7 +58,7 @@ void
 mutex_init(struct mutex* m)
 {
     pthread_mutexattr_t attr;
-    m->handle = malloc(sizeof(pthread_mutex_t));
+    m->handle = mem_alloc(sizeof(pthread_mutex_t));
     pthread_mutexattr_init(&attr);
     pthread_mutex_init(m->handle, &attr);
     pthread_mutexattr_destroy(&attr);
@@ -67,7 +68,7 @@ void
 mutex_init_recursive(struct mutex* m)
 {
     pthread_mutexattr_t attr;
-    m->handle = malloc(sizeof(pthread_mutex_t));
+    m->handle = mem_alloc(sizeof(pthread_mutex_t));
     pthread_mutexattr_init(&attr);
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init(m->handle, &attr);
