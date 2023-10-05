@@ -8,4 +8,4 @@ install (
     DESTINATION "${VODHOUND_BUILD_CMAKEDIR}/modules")
 
 message (STATUS "adding ffmpeg-video")
-add_subdirectory ("ffmpeg-video")
+add_subdirectory ("video-ffmpeg")

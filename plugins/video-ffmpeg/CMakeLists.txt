@@ -2,21 +2,23 @@ cmake_minimum_required (VERSION 3.21)
 
 list (APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 
-project ("FFMpeg Video"
+project ("video-ffmpeg"
     VERSION 0.0.1
     LANGUAGES C)
 
 include (VODHoundPlugin)
 vodhound_add_plugin (${PROJECT_NAME}
     SOURCES
+        "src/decoder.c"
         "src/plugin.c"
     HEADERS
+        "include/${PROJECT_NAME}/decoder.h"
     INCLUDES
         "include")
 
-if (VODHOUND_FFMPEG_VIDEO AND FALSE)
+if (VODHOUND_FFMPEG_VIDEO)
     find_package (FFMPEG COMPONENTS avcodec avformat avutil avdevice swscale swresample REQUIRED)
-    target_link_libraries (plugin-${PLUGIN_NAME}
+    target_link_libraries (${PROJECT_NAME}
         PRIVATE FFMPEG::avutil
         PRIVATE FFMPEG::avcodec
         PRIVATE FFMPEG::avformat
@@ -37,14 +39,13 @@ if (VODHOUND_FFMPEG_VIDEO AND FALSE)
                 message (FATAL_ERROR "Failed to find DLL matching library ${LIB}")
             endif ()
 
-            add_custom_command (TARGET plugin-${PLUGIN_NAME} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E make_directory "${REFRAMED_BUILD_PLUGINDEPSDIR}"
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${DLL_FILENAME}" "${REFRAMED_BUILD_PLUGINDEPSDIR}"
-                COMMENT "Copying FFMPEG DLL ${DLL_FILENAME} to runtime dir ${REFRAMED_BUILD_PLUGINDEPSDIR}"
+            add_custom_command (TARGET ${PROJECT_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${DLL_FILENAME}" "${VODHOUND_BUILD_PLUGINDIR}/${PROJECT_NAME}"
+                COMMENT "Copying FFMPEG DLL ${DLL_FILENAME} to runtime dir ${VODHOUND_BUILD_PLUGINDIR}/${PROJECT_NAME}"
                 VERBATIM)
 			install (
 				FILES ${DLL_FILENAME}
-				DESTINATION ${REFRAMED_INSTALL_PLUGINDEPSDIR})
+				DESTINATION "${VODHOUND_INSTALL_PLUGINDIR}/${PROJECT_NAME}")
         endforeach ()
     endif ()
 endif ()
