@@ -7,7 +7,8 @@
 #include "vh/plugin.h"
 #include "vh/plugin_loader.h"
 
-#include <iup.h>
+#include "iup.h"
+#include "iup3d.h"
 
 #include <stdio.h>
 #include <ctype.h>
@@ -601,7 +602,7 @@ create_replay_browser(void)
     Ihandle *vbox, *hbox, *sbox;
 
     groups = IupList(NULL);
-    IupSetAttribute(groups, "EXPAND", "YES");
+    IupSetAttributes(groups, "EXPAND=YES, 1=All, VALUE=1");
 
     sbox = IupSbox(groups);
     IupSetAttribute(sbox, "DIRECTION", "SOUTH");
@@ -614,7 +615,7 @@ create_replay_browser(void)
     hbox = IupHbox(filter_label, filters, NULL);
 
     replays = IupTree();
-    IupSetHandle("replays", replays);
+    IupSetHandle("replay_browser", replays);
 
     return IupVbox(sbox, hbox, replays, NULL);
 }
@@ -622,9 +623,11 @@ create_replay_browser(void)
 static Ihandle*
 create_plugin_view(void)
 {
-    Ihandle* empty_tab = IupCanvas(NULL);
-    IupSetAttribute(empty_tab, "TABTITLE", "+");
-    return IupTabs(empty_tab, NULL);
+    /*Ihandle* empty_tab = IupCanvas(NULL);
+    IupSetAttribute(empty_tab, "TABTITLE", "+");*/
+    Ihandle* tabs = IupTabs(/*empty_tab,*/ NULL);
+    IupSetHandle("plugin_view", tabs);
+    return tabs;
 }
 
 static Ihandle*
@@ -684,8 +687,6 @@ create_statusbar(void)
 static Ihandle*
 create_main_dialog(void)
 {
-    Ihandle* center = create_center_view();
-
     Ihandle* vbox = IupVbox(
         create_center_view(),
         create_statusbar(),
@@ -693,68 +694,86 @@ create_main_dialog(void)
 
     Ihandle* dlg = IupDialog(vbox);
     IupSetAttributeHandle(dlg, "MENU", create_menus());
+    IupSetAttribute(dlg, "SIZE", "800x400");
     return dlg;
 }
 
 int main(int argc, char **argv)
 {
     IupOpen(&argc, &argv);
+    IupSetGlobal("UTF8MODE", "Yes");
+    Iup3DOpen();
     Ihandle* dlg = create_main_dialog();
     IupShowXY(dlg, IUP_CENTER, IUP_CENTER);
 
-    Ihandle* replays = IupGetHandle("replays");
-    /*
+    Ihandle* replays = IupGetHandle("replay_browser");
     IupSetAttribute(replays, "TITLE", "Replays");
-    IupSetAttribute(replays, "ADDBRANCH0", "2023-08-20");
-    IupSetAttribute(replays, "ADDBRANCH1", "19:45 Game 1");
-    IupSetAttribute(replays, "ADDLEAF2", "Metadata");
-    IupSetAttribute(replays, "ADDLEAF3", "Video");
-    IupSetAttribute(replays, "INSERTBRANCH2", "19:52 Game 2");
-    IupSetAttribute(replays, "ADDLEAF5", "Metadata");
-    IupSetAttribute(replays, "ADDLEAF6", "Video");
+    IupSetAttribute(replays, "ADDBRANCH", "2023-08-20");
+    IupSetAttribute(replays, "ADDLEAF1", "19:45 Game 1");
+    IupSetAttribute(replays, "ADDLEAF2", "19:52 Game 2");
     IupSetAttribute(replays, "INSERTBRANCH1", "2023-08-22");
-    IupSetAttribute(replays, "ADDBRANCH8", "12:25 Game 1");
-    IupSetAttribute(replays, "ADDLEAF9", "Metadata");
-    IupSetAttribute(replays, "ADDLEAF10", "Video");
-    IupSetAttribute(replays, "INSERTBRANCH9", "12:28 Game 2");
-    IupSetAttribute(replays, "ADDLEAF12", "Metadata");
-    IupSetAttribute(replays, "ADDLEAF13", "Video");
-    IupSetAttribute(replays, "INSERTBRANCH12", "12:32 Game 3");
-    IupSetAttribute(replays, "ADDLEAF15", "Metadata");
-    IupSetAttribute(replays, "ADDLEAF16", "Video");*/
+    IupSetAttribute(replays, "ADDLEAF4", "12:25 Game 1");
+    IupSetAttribute(replays, "ADDLEAF5", "12:28 Game 2");
+    IupSetAttribute(replays, "ADDLEAF6", "12:32 Game 3");
 
-IupSetAttribute(replays, "TITLE0", "Figures");
-IupSetAttribute(replays, "ADDLEAF0", "Other");
-IupSetAttribute(replays, "ADDBRANCH1", "triangle");
-IupSetAttribute(replays, "ADDLEAF2", "equilateral");
-IupSetAttribute(replays, "ADDLEAF3", "isoceles");
-IupSetAttribute(replays, "ADDLEAF4", "scalenus");
-IupSetAttribute(replays, "INSERTBRANCH2", "parallelogram");
-IupSetAttribute(replays, "ADDLEAF6", "square");
-IupSetAttribute(replays, "ADDLEAF7", "diamond");
-
-    //IupSetAttribute(replays, "ADDLEAF2","19:45 Game 1");
-    IupMainLoop();
-    IupClose();
-
+    Ihandle* plugin_view = IupGetHandle("plugin_view");
     struct strlist sl;
+    struct plugin plugin;
+    struct plugin_ctx* plugin_ctx;
+    Ihandle* plugin_ui;
+    int video_open = 0;
+
     strlist_init(&sl);
     plugin_scan(&sl);
     for (int i = 0; i != (int)strlist_count(&sl); ++i)
     {
-        struct plugin plugin;
-        plugin_load(&plugin, strlist_get(&sl, i));
-        log_dbg("'%s' by %s: %s\n", plugin.i->name, plugin.i->author, plugin.i->description);
-        struct plugin_ctx* ctx = plugin.i->create();
-        void* ui = plugin.i->ui->create(ctx);
-        if (plugin.i->video->open_file(ctx, "C:\\Users\\Startklar\\Downloads\\Prefers_Land_Behind.mp4", 1) == 0)
+        struct str_view name = strlist_get(&sl, i);
+        if (cstr_equal(name, "FFmpeg Video Player"))
         {
-            plugin.i->ui->main(ctx, ui);
-            plugin.i->video->close(ctx);
+            if (plugin_load(&plugin, strlist_get(&sl, i)) != 0)
+                goto plugin_load_failed;
+            log_dbg("'%s' by %s: %s\n", plugin.i->name, plugin.i->author, plugin.i->description);
+            if ((plugin_ctx = plugin.i->create()) == NULL)
+                goto create_plugin_ctx_failed;
+            if ((plugin_ui = plugin.i->ui->create(plugin_ctx)) == NULL)
+                goto create_plugin_ui_failed;
+            IupSetAttribute(plugin_ui, "TABTITLE", plugin.i->name);
+            if (IupAppend(plugin_view, plugin_ui) == NULL)
+                goto add_to_ui_failed;
+            IupMap(plugin_ui);
+            IupRefresh(plugin_ui);
+            //video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\Startklar\\Downloads\\Prefers_Land_Behind.mp4", 1) == 0;
+            video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\AlexanderMurray\\Downloads\\pika-dj-mixups.mp4", 1) == 0;
+            if (!video_open)
+                goto open_video_failed;
+
+            break;
+            
+            open_video_failed        : IupUnmap(plugin_ui);
+            add_to_ui_failed         : plugin.i->ui->destroy(plugin_ctx, plugin_ui);
+            create_plugin_ui_failed  : plugin.i->destroy(plugin_ctx);
+            create_plugin_ctx_failed : plugin_unload(&plugin);
+            plugin_load_failed       : break;
         }
-        plugin.i->ui->destroy(ctx, ui);
+    }
+    strlist_deinit(&sl);
+
+    IupMainLoop();
+
+    if (video_open)
+    {
+        plugin.i->video->close(plugin_ctx);
+        IupUnmap(plugin_ui);
+        plugin.i->ui->destroy(plugin_ctx, plugin_ui);
+        plugin.i->destroy(plugin_ctx);
         plugin_unload(&plugin);
     }
+
+    IupDestroy(dlg);
+    Iup3DClose();
+    IupClose();
+
+    return EXIT_SUCCESS;
     /*
     struct db_interface* dbi = db("sqlite");
     struct db* db = dbi->open_and_prepare("rf.db");

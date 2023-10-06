@@ -12,39 +12,23 @@ vodhound_add_plugin (${PROJECT_NAME}
         "src/decoder.c"
         "src/plugin.c"
     HEADERS
-        "include/${PROJECT_NAME}/canvas.h"
         "include/${PROJECT_NAME}/decoder.h"
         "include/${PROJECT_NAME}/gfx.h"
     INCLUDES
-        "include")
+        "include"
+    LIBS
+        VODHound::vh
+        IUP::iup
+        IUP::3d)
 
 if (VODHOUND_VIDEO_FFMPEG)
-    if (CMAKE_SYSTEM_NAME MATCHES Windows)
-        set (DEFAULT_GFX "DX11")
-        set (POSSIBLE_GFX "DX11;WGL")
-    elseif (CMAKE_SYSTEM_NAME MATCHES CYGWIN)
-        set (DEFAULT_GFX "WGL")
-        set (POSSIBLE_GFX "DX11;WGL")
-    elseif (CMAKE_SYSTEM_NAME MATCHES Linux)
-        set (DEFAULT_GFX "GLX")
-        set (POSSIBLE_GFX "GLX")
-    endif ()
-    set (VODHOUND_VIDEO_FFMPEG_GFX ${DEFAULT_GFX} CACHE STRING "Which graphics API to use for rendering")
-    set_property (CACHE VODHOUND_VIDEO_FFMPEG_GFX PROPERTY STRINGS ${POSSIBLE_GFX})
-
-    if (VODHOUND_VIDEO_FFMPEG_GFX MATCHES "DX11")
-        target_sources (${PROJECT_NAME} PRIVATE
-            "src/canvas_win32_dx.c"
-            "src/gfx_dx11.c")
+    if (IUP3D_GFX MATCHES "DX11")
+        target_sources (${PROJECT_NAME} PRIVATE "src/gfx_dx11.c")
         target_link_libraries (${PROJECT_NAME} PRIVATE d3d11)
-    elseif (VODHOUND_VIDEO_FFMPEG_GFX MATCHES "WGL")
-        target_sources (${PROJECT_NAME} PRIVATE
-            "src/canvas_win32_gl.c"
-            "src/gfx_gl.c")
-    elseif (VODHOUND_VIDEO_FFMPEG_GFX MATCHES "GLX")
-        target_sources (${PROJECT_NAME} PRIVATE
-            "src/canvas_glx.c"
-            "src/gfx_gl.c")
+    elseif (IUP3D_GFX MATCHES "WGL")
+        target_sources (${PROJECT_NAME} PRIVATE "src/gfx_gl.c")
+    elseif (IUP3D_GFX MATCHES "GLX")
+        target_sources (${PROJECT_NAME} PRIVATE "src/gfx_gl.c")
     endif ()
 
     find_package (FFMPEG COMPONENTS avcodec avformat avutil avdevice swscale swresample REQUIRED)

@@ -1,8 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
-#include <d3d11.h>
 
-#include "video-ffmpeg/canvas.h"
 #include "video-ffmpeg/gfx.h"
 
 #include "vh/log.h"
@@ -14,10 +12,6 @@ struct gfx
 	struct thread thread;
 	struct mutex mutex;
 	char request_stop;
-
-	IDXGISwapChain* swapchain;             // the pointer to the swap chain interface
-	ID3D11Device* dev;                     // the pointer to our Direct3D device interface
-	ID3D11DeviceContext* devcon;           // the pointer to our Direct3D device context
 };
 
 static void*
@@ -37,40 +31,11 @@ render_thread(void* args)
 }
 
 struct gfx*
-gfx_create(struct canvas* canvas)
+gfx_create(struct Ihandle* canvas)
 {
 	struct gfx* gfx = mem_alloc(sizeof *gfx);
 	if (gfx == NULL)
 		goto alloc_gfx_failed;
-
-	// create a struct to hold information about the swap chain
-	DXGI_SWAP_CHAIN_DESC scd;
-
-	// clear out the struct for use
-	ZeroMemory(&scd, sizeof(DXGI_SWAP_CHAIN_DESC));
-
-	// fill the swap chain description struct
-	scd.BufferCount = 1;                                    // one back buffer
-	scd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;     // use 32-bit color
-	scd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;      // how swap chain is to be used
-	scd.OutputWindow = canvas_get_native_handle(canvas);    // the window to be used
-	scd.SampleDesc.Count = 4;                               // how many multisamples
-	scd.Windowed = TRUE;                                    // windowed/full-screen mode
-
-	// create a device, device context and swap chain using the information in the scd struct
-	D3D_FEATURE_LEVEL DX11 = D3D_FEATURE_LEVEL_11_0;
-	D3D11CreateDeviceAndSwapChain(NULL,
-		D3D_DRIVER_TYPE_HARDWARE,
-		NULL,
-		D3D11_CREATE_DEVICE_DEBUG,
-		&DX11,
-		1,
-		D3D11_SDK_VERSION,
-		&scd,
-		&gfx->swapchain,
-		&gfx->dev,
-		NULL,
-		&gfx->devcon);
 
 	mutex_init(&gfx->mutex);
 	gfx->request_stop = 0;
@@ -86,7 +51,7 @@ gfx_create(struct canvas* canvas)
 }
 
 void
-gfx_destroy(struct gfx* gfx, struct canvas* canvas)
+gfx_destroy(struct gfx* gfx, struct Ihandle* canvas)
 {
 	mutex_lock(gfx->mutex);
 		gfx->request_stop = 1;
@@ -94,11 +59,6 @@ gfx_destroy(struct gfx* gfx, struct canvas* canvas)
 	thread_join(gfx->thread, 0);
 
 	mutex_deinit(gfx->mutex);
-
-	// close and release all existing COM objects
-	gfx->swapchain->Release();
-	gfx->dev->Release();
-	gfx->devcon->Release();
 
 	mem_free(gfx);
 }

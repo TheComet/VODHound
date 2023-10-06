@@ -6,14 +6,12 @@
 C_BEGIN
 
 struct plugin_ctx;
+typedef struct Ihandle_ Ihandle;
 
 struct ui_interface
 {
-    void* (*create)(struct plugin_ctx* plugin);
-    void (*destroy)(struct plugin_ctx* plugin, void* view);
-
-    /* TODO: Debug only, will be removed in the future */
-    void (*main)(struct plugin_ctx* plugin, void* view);
+    Ihandle* (*create)(struct plugin_ctx* plugin);
+    void (*destroy)(struct plugin_ctx* plugin, Ihandle* view);
 };
 
 struct video_player_interface

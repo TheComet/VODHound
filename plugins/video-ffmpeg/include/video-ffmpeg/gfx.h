@@ -1,8 +1,8 @@
-struct canvas;
+typedef struct Ihandle_ Ihandle;
 struct gfx;
 
 struct gfx*
-gfx_create(struct canvas* canvas);
+gfx_create(Ihandle* canvas);
 
 void
-gfx_destroy(struct gfx* gfx, struct canvas* canvas);
+gfx_destroy(struct gfx* gfx, Ihandle* canvas);

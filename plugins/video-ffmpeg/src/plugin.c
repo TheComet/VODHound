@@ -1,4 +1,3 @@
-#include "video-ffmpeg/canvas.h"
 #include "video-ffmpeg/decoder.h"
 #include "video-ffmpeg/gfx.h"
 
@@ -6,9 +5,12 @@
 #include "vh/mem.h"
 #include "vh/plugin.h"
 
+#include "iup.h"
+#include "iup3d.h"
+
 struct plugin_ctx
 {
-    struct canvas* canvas;
+    Ihandle* canvas;
     struct decoder decoder;
     struct gfx* gfx;
 };
@@ -16,7 +18,9 @@ struct plugin_ctx
 static struct plugin_ctx*
 create(void)
 {
-    return mem_alloc(sizeof(struct plugin_ctx));
+    struct plugin_ctx* ctx = mem_alloc(sizeof(struct plugin_ctx));
+    memset(ctx, NULL, sizeof *ctx);
+    return ctx;
 }
 
 static void
@@ -25,43 +29,49 @@ destroy(struct plugin_ctx* ctx)
     mem_free(ctx);
 }
 
-void* ui_create(struct plugin_ctx* ctx)
+Ihandle* ui_create(struct plugin_ctx* ctx)
 {
-    ctx->canvas = canvas_create();
+    if (ctx->canvas)
+        return NULL;
+
+    ctx->canvas = Iup3DCanvas(NULL);
     if (ctx->canvas == NULL)
         return NULL;
 
     ctx->gfx = gfx_create(ctx->canvas);
     if (ctx->gfx == NULL)
     {
-        canvas_destroy(ctx->canvas);
+        IupDestroy(ctx->canvas);
         return NULL;
     }
 
-    return canvas_get_native_handle(ctx->canvas);
+    return ctx->canvas;
 }
-void ui_destroy(struct plugin_ctx* ctx, void* ui)
+void ui_destroy(struct plugin_ctx* ctx, Ihandle* ui)
 {
-    if (ui == canvas_get_native_handle(ctx->canvas))
-    {
-        gfx_destroy(ctx->gfx, ctx->canvas);
-        canvas_destroy(ctx->canvas);
-    }
-}
+    if (ctx->canvas != ui)
+        return;
 
-void ui_main(struct plugin_ctx* ctx, void* ui)
-{
-    if (ui == canvas_get_native_handle(ctx->canvas))
-        canvas_main_loop(ctx->canvas);
+    gfx_destroy(ctx->gfx, ctx->canvas);
+    IupDestroy(ctx->canvas);
 }
 
 struct ui_interface ui = {
     ui_create,
-    ui_destroy,
-    ui_main
+    ui_destroy
 };
 
-int video_open_file(struct plugin_ctx* ctx, const char* file_name, int pause) { return decoder_open_file(&ctx->decoder, file_name, pause); }
+int video_open_file(struct plugin_ctx* ctx, const char* file_name, int pause)
+{
+    int ret = decoder_open_file(&ctx->decoder, file_name, pause);
+    if (ret == 0 && ctx->canvas)
+    {
+        decode_next_frame(&ctx->decoder);
+        Iup3DSwapBuffers(ctx->canvas);
+    }
+
+    return ret;
+}
 void video_close(struct plugin_ctx* ctx) { decoder_close(&ctx->decoder); }
 int video_is_open(struct plugin_ctx* ctx) { return 0; }
 void video_play(struct plugin_ctx* ctx) {}
@@ -97,5 +107,5 @@ PLUGIN_API struct plugin_interface plugin = {
     "video",
     "TheComet",
     "@TheComet93",
-    "Decodes videos using FFmpeg libraries and displays them on an OpenGL 3.3 surface."
+    "Decodes videos using FFmpeg libraries."
 };

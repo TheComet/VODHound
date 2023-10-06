@@ -44,10 +44,11 @@ function (vodhound_add_plugin NAME)
                 "PLUGIN_API=${PLUGIN_API}")
         target_link_libraries (${TARGET_NAME}
             PRIVATE
-                VODHound::vh)
+                ${${PLUGIN_NAME}_LIBS})
         set_target_properties (${TARGET_NAME}
             PROPERTIES
                 PREFIX ""
+                MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>
                 LIBRARY_OUTPUT_DIRECTORY "${VODHOUND_BUILD_PLUGINDIR}/${TARGET_NAME}"
                 LIBRARY_OUTPUT_DIRECTORY_DEBUG "${VODHOUND_BUILD_PLUGINDIR}/${TARGET_NAME}"
                 LIBRARY_OUTPUT_DIRECTORY_RELEASE "${VODHOUND_BUILD_PLUGINDIR}/${TARGET_NAME}"
