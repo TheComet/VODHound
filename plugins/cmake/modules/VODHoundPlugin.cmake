@@ -11,7 +11,8 @@ function (vodhound_add_plugin NAME)
     set (oneValueArgs "")
     set (multiValueArgs
         SOURCES 
-        HEADERS 
+        HEADERS
+        DEFINES
         INCLUDES
         LIBS
         DATA)
@@ -39,6 +40,7 @@ function (vodhound_add_plugin NAME)
                 ${${PLUGIN_NAME}_INCLUDES})
         target_compile_definitions (${TARGET_NAME}
             PRIVATE
+                ${${PLUGIN_NAME}_DEFINES}
                 PLUGIN_BUILDING
                 "PLUGIN_VERSION=((${PROJECT_VERSION_MAJOR}<<24) | (${PROJECT_VERSION_MINOR}<<16) | (${PROJECT_VERSION_PATCH}<<8))"
                 "PLUGIN_API=${PLUGIN_API}")

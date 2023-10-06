@@ -31,6 +31,9 @@ target_link_libraries (iup3d
         iup
         vh
         $<$<PLATFORM_ID:Windows>:d3d11>)
+target_compile_definitions (iup3d
+    PRIVATE
+        $<$<CONFIG:Debug>:DEBUG>)
 set_target_properties (iup3d
     PROPERTIES
         DEBUG_POSTFIX "d"
