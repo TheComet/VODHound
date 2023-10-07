@@ -9,7 +9,7 @@
 
 int
 decoder_open_file(struct decoder* decoder, const char* file_name, int pause)
-{ 
+{
     log_info("Opening file '%s'\n", file_name);
 
     int result;
@@ -165,6 +165,7 @@ decoder_open_file(struct decoder* decoder, const char* file_name, int pause)
 void
 decoder_close(struct decoder* decoder)
 {
+    log_info("Closing video stream\n");
     av_frame_free(&decoder->current_frame);
     av_packet_free(&decoder->current_packet);
     avcodec_close(decoder->vcodec_ctx);
@@ -189,7 +190,7 @@ decoder_seek_near_keyframe(struct decoder* decoder, int64_t target_ts)
     // Seek and decode frame
     int seek_result = av_seek_frame(decoder->input_ctx, decoder->vstream_idx, target_ts, AVSEEK_FLAG_BACKWARD);
 
-    /* 
+    /*
      * Some files don't start with a keyframe (mp4's created by Nintendo Switch)
      * in which case the above seek will fail. Try again and seek to any frame.
      */

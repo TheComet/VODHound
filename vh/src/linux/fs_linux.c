@@ -62,15 +62,12 @@ fs_list_matching(
 
     while ((ep = readdir(dp)) != NULL)
     {
-        if (ep->d_type == DT_REG)
-        {
-            struct str_view fname = cstr_view(ep->d_name);
-            if (cstr_equal(fname, ".") || cstr_equal(fname, ".."))
-                continue;
-            if (match(fname, param))
-                if (strlist_add(out, fname) != 0)
-                    goto error;
-        }
+        struct str_view fname = cstr_view(ep->d_name);
+        if (cstr_equal(fname, ".") || cstr_equal(fname, ".."))
+            continue;
+        if (match(fname, param))
+            if (strlist_add(out, fname) != 0)
+                goto error;
     }
 
     closedir(dp);
