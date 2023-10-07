@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <ctype.h>
 
-#include "json.h"
+#include "json-c/json.h"
 #include "zlib.h"
 
 static int newline_or_end(char b) { return b == '\r' || b == '\n' || b == '\0'; }
@@ -748,7 +748,7 @@ int main(int argc, char **argv)
                 goto open_video_failed;
 
             break;
-            
+
             open_video_failed        : IupUnmap(plugin_ui);
             add_to_ui_failed         : plugin.i->ui->destroy(plugin_ctx, plugin_ui);
             create_plugin_ui_failed  : plugin.i->destroy(plugin_ctx);

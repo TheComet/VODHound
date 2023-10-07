@@ -24,10 +24,6 @@ set (VODHOUND_INSTALL_INCLUDEDIR "include")
 set (VODHOUND_INSTALL_CMAKEDIR "share/VODHound/cmake")
 set (VODHOUND_INSTALL_PLUGINDIR "share/VODHound/plugins")
 
-# Need to compile static libraries with position independent code on because
-# rfcommon is a shared library
-set (ZLIB_PIC ON CACHE INTERNAL "")
-
 # Configure IUP
 set (IUP_BUILD_BINDIR ${VODHOUND_BUILD_BINDIR} CACHE INTERNAL "")
 set (IUP_INSTALL_BINDIR ${VODHOUND_INSTALL_BINDIR} CACHE INTERNAL "")
@@ -35,9 +31,16 @@ set (IUP_INSTALL_LIBDIR ${VODHOUND_INSTALL_LIBDIR} CACHE INTERNAL "")
 set (IUP_INSTALL_INCLUDEDIR ${VODHOUND_INSTALL_INCLUDEDIR} CACHE INTERNAL "")
 set (IUP_EXAMPLES OFF CACHE INTERNAL "")
 
+find_package (ZLIB)
+if (NOT ZLIB_FOUND AND NOT TARGET ZLIB::ZLIB)
+    # Need to compile static libraries with position independent code on because
+    # rfcommon is a shared library
+    set (ZLIB_PIC ON CACHE INTERNAL "" FORCE)
+    add_subdirectory ("thirdparty/zlib-1.2.11")
+endif ()
+
 add_subdirectory ("thirdparty/sqlite-3.43.1")
 add_subdirectory ("thirdparty/json-c")
-add_subdirectory ("thirdparty/zlib-1.2.11")
 add_subdirectory ("thirdparty/iup-cmake")
 add_subdirectory ("vh")
 add_subdirectory ("iup3d")

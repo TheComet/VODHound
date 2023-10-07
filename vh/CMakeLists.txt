@@ -128,14 +128,13 @@ target_compile_definitions (vh
         VH_BUILDING
         $<$<C_COMPILER_ID:MSVC>:_CRT_SECURE_NO_WARNINGS>)
 target_link_libraries (vh
-    PUBLIC
-        json-c
-        zlibstatic
-        sqlite
+    PRIVATE
         $<$<PLATFORM_ID:Linux>:${CMAKE_DL_LIBS}>
         $<$<PLATFORM_ID:Windows>:$<$<BOOL:${VH_MEM_BACKTRACE}>:Dbghelp>>
         $<$<PLATFORM_ID:Windows>:wsock32>
-        $<$<PLATFORM_ID:Windows>:ws2_32>)
+        $<$<PLATFORM_ID:Windows>:ws2_32>
+        VODHound::json-c
+        sqlite)
 set_target_properties (vh
     PROPERTIES
         MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>
@@ -193,7 +192,7 @@ add_custom_command (TARGET vh POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_SOURCE_DIR}/migrations ${VODHOUND_BUILD_BINDIR}/migrations
     COMMENT "Copying DB migration scripts"
     VERBATIM)
-    
+
 ###############################################################################
 # Install targets
 ###############################################################################

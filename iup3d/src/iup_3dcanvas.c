@@ -6,16 +6,11 @@
 
 #include "iup.h"
 #include "iup3d.h"
-#include "iupcbs.h"
-#include "iupkey.h"
 
 #include "iup_object.h"
 #include "iup_register.h"
-#include "iup_attrib.h"
-#include "iup_str.h"
-#include "iup_stdcontrols.h"
-#include "iup_layout.h"
-#include "iup_drv.h"
+
+#include <stddef.h>
 
 
 void iupdrv3DCanvasInitClass(Iclass* ic);

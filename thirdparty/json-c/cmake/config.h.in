@@ -1,12 +1,12 @@
 
 /* Enable RDRAND Hardware RNG Hash Seed */
-#cmakedefine ENABLE_RDRAND "@ENABLE_RDRAND@"
+#cmakedefine ENABLE_RDRAND "@JSON_C_ENABLE_RDRAND@"
 
 /* Override json_c_get_random_seed() with custom code */
-#cmakedefine OVERRIDE_GET_RANDOM_SEED @OVERRIDE_GET_RANDOM_SEED@
+#cmakedefine OVERRIDE_GET_RANDOM_SEED "@JSON_C_OVERRIDE_GET_RANDOM_SEED@"
 
 /* Enable partial threading support */
-#cmakedefine ENABLE_THREADING "@@"
+#cmakedefine ENABLE_THREADING "@JSON_C_ENABLE_THREADING@"
 
 /* Define if .gnu.warning accepts long strings. */
 #cmakedefine HAS_GNU_WARNING_LONG "@@"
@@ -186,7 +186,7 @@
 #define PACKAGE_NAME "@PROJECT_NAME@"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "@PROJECT_NAME@ @CPACK_PACKAGE_VERSION_MAJOR@.@CPACK_PACKAGE_VERSION_MINOR@.@CPACK_PACKAGE_VERSION_PATCH@"
+#define PACKAGE_STRING "@PROJECT_NAME@ @PROJECT_VERSION_MAJOR@.@PROJECT_VERSION_MINOR@.@PROJECT_VERSION_PATCH@"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "@PROJECT_NAME@"
@@ -195,7 +195,7 @@
 #define PACKAGE_URL "https://github.com/json-c/json-c"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "@CPACK_PACKAGE_VERSION_MAJOR@.@CPACK_PACKAGE_VERSION_MINOR@.@CPACK_PACKAGE_VERSION_PATCH@"
+#define PACKAGE_VERSION "@PROJECT_VERSION_MAJOR@.@PROJECT_VERSION_MINOR@.@PROJECT_VERSION_PATCH@"
 
 /* The number of bytes in type int */
 #cmakedefine SIZEOF_INT @SIZEOF_INT@
@@ -222,7 +222,7 @@
 #cmakedefine STDC_HEADERS
 
 /* Version number of package */
-#define VERSION "@CPACK_PACKAGE_VERSION_MAJOR@.@CPACK_PACKAGE_VERSION_MINOR@.@CPACK_PACKAGE_VERSION_PATCH@"
+#define VERSION "@PROJECT_VERSION_MAJOR@.@PROJECT_VERSION_MINOR@.@PROJECT_VERSION_PATCH@"
 
 /* Define to empty if `const' does not conform to ANSI C. */
 #cmakedefine const

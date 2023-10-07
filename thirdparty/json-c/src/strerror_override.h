@@ -9,7 +9,7 @@
 #include "config.h"
 #include <errno.h>
 
-#include "json_object.h" /* for JSON_EXPORT */
+#include "json-c/json_object.h" /* for JSON_EXPORT */
 
 #ifdef __cplusplus
 extern "C" {

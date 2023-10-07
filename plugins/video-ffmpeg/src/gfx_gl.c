@@ -1,4 +1,3 @@
-#include "video-ffmpeg/canvas.h"
 #include "video-ffmpeg/gfx.h"
 
 #include "vh/log.h"
@@ -29,7 +28,7 @@ render_thread(void* args)
 }
 
 struct gfx*
-gfx_create(struct canvas* canvas)
+gfx_create(Ihandle* canvas)
 {
     struct gfx* gfx = mem_alloc(sizeof *gfx);
     if (gfx == NULL)
@@ -49,7 +48,7 @@ gfx_create(struct canvas* canvas)
 }
 
 void
-gfx_destroy(struct gfx* gfx, struct canvas* canvas)
+gfx_destroy(struct gfx* gfx, Ihandle* canvas)
 {
     mutex_lock(gfx->mutex);
         gfx->request_stop = 1;

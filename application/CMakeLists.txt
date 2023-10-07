@@ -9,7 +9,9 @@ target_include_directories (application
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
 target_link_libraries (application
     PRIVATE
-        vh
+        VODHound::vh
+        VODHound::json-c
+        ZLIB::ZLIB
         IUP::iup
         IUP::3d
         IUP::imglib)
