@@ -9,7 +9,7 @@
  *
  */
 
-#include "config.h"
+#include "json-c/config.h"
 
 #include <limits.h>
 

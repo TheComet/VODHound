@@ -9,7 +9,7 @@
  *
  */
 
-#include "config.h"
+#include "json-c/config.h"
 
 #include <stdarg.h>
 #include <stdio.h>

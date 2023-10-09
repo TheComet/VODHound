@@ -100,14 +100,14 @@ add_library (vh ${VH_LIB_TYPE}
     "src/str.c"
     "src/vec.c"
 
-    $<$<PLATFORM_ID:Linux>:src/linux/backtrace_linux.c>
+    $<$<PLATFORM_ID:Linux>:$<$<BOOL:${VH_MEM_BACKTRACE}>:src/linux/backtrace_linux.c>>
     $<$<PLATFORM_ID:Linux>:src/linux/dynlib_linux.c>
     $<$<PLATFORM_ID:Linux>:src/linux/fs_linux.c>
     $<$<PLATFORM_ID:Linux>:src/linux/mfile_linux.c>
     $<$<PLATFORM_ID:Linux>:src/linux/thread_linux.c>
     $<$<PLATFORM_ID:Linux>:src/linux/utf8_linux.c>
 
-    $<$<PLATFORM_ID:Windows>:src/win32/backtrace_win32.c>
+    $<$<PLATFORM_ID:Windows>:$<$<BOOL:${VH_MEM_BACKTRACE}>:src/win32/backtrace_win32.c>>
     $<$<PLATFORM_ID:Windows>:src/win32/dynlib_win32.c>
     $<$<PLATFORM_ID:Windows>:src/win32/fs_win32.c>
     $<$<PLATFORM_ID:Windows>:src/win32/mfile_win32.c>

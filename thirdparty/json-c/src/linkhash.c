@@ -10,7 +10,7 @@
  *
  */
 
-#include "config.h"
+#include "json-c/config.h"
 
 #include <assert.h>
 #include <limits.h>

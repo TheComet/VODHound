@@ -70,7 +70,7 @@ function (vodhound_add_plugin NAME)
             endforeach ()
             install (
                 FILES ${${TARGET_NAME}_DATA}
-                DESTINATION "${VODHOUND_INSTALL_DATADIR}/${TARGET_NAME}")
+                DESTINATION "${VODHOUND_INSTALL_DATADIR}/${TARGET_NAME}/")
         endif ()
         set_property (
             DIRECTORY "${PROJECT_SOURCE_DIR}"
@@ -80,7 +80,7 @@ function (vodhound_add_plugin NAME)
         endif ()
         install (
             TARGETS ${TARGET_NAME}
-            LIBRARY DESTINATION "${VODHOUND_INSTALL_PLUGINDIR}"
-            RUNTIME DESTINATION "${VODHOUND_INSTALL_PLUGINDIR}")
+            LIBRARY DESTINATION "${VODHOUND_INSTALL_PLUGINDIR}/${TARGET_NAME}/"
+            RUNTIME DESTINATION "${VODHOUND_INSTALL_PLUGINDIR}/${TARGET_NAME}/")
     endif ()
 endfunction ()

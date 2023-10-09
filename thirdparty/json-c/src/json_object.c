@@ -8,7 +8,7 @@
  *
  */
 
-#include "config.h"
+#include "json-c/config.h"
 
 #include "strerror_override.h"
 
@@ -43,15 +43,15 @@
 #endif
 
 #ifndef SSIZE_T_MAX
-#if SIZEOF_SSIZE_T == SIZEOF_INT
-#define SSIZE_T_MAX INT_MAX
-#elif SIZEOF_SSIZE_T == SIZEOF_LONG
-#define SSIZE_T_MAX LONG_MAX
-#elif SIZEOF_SSIZE_T == SIZEOF_LONG_LONG
-#define SSIZE_T_MAX LLONG_MAX
-#else
-#error Unable to determine size of ssize_t
-#endif
+# if SIZEOF_SSIZE_T == SIZEOF_INT
+#  define SSIZE_T_MAX INT_MAX
+# elif SIZEOF_SSIZE_T == SIZEOF_LONG
+#  define SSIZE_T_MAX LONG_MAX
+# elif SIZEOF_SSIZE_T == SIZEOF_LONG_LONG
+#  define SSIZE_T_MAX LLONG_MAX
+# else
+#  error Unable to determine size of ssize_t
+# endif
 #endif
 
 const char *json_number_chars = "0123456789.+-eE"; /* Unused, but part of public API, drop for 1.0 */

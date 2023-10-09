@@ -9,7 +9,7 @@
  *
  */
 
-#include "config.h"
+#include "json-c/config.h"
 #undef realloc
 
 #include "strerror_override.h"

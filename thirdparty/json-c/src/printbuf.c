@@ -13,7 +13,7 @@
  * (https://www.opensource.org/licenses/mit-license.php)
  */
 
-#include "config.h"
+#include "json-c/config.h"
 
 #include <errno.h>
 #include <limits.h>

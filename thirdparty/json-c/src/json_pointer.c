@@ -6,7 +6,7 @@
  *
  */
 
-#include "config.h"
+#include "json-c/config.h"
 
 #include "strerror_override.h"
 
