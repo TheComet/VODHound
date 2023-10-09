@@ -30,5 +30,8 @@ decoder_seek_near_keyframe(struct decoder* decoder, int64_t target_ts);
 int
 decode_next_frame(struct decoder* decoder);
 
+void
+decoder_frame_size(const struct decoder* decoder, int* w, int* h);
+
 const void*
 decoder_rgb24_data(const struct decoder* decoder);

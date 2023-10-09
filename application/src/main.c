@@ -712,9 +712,9 @@ int main(int argc, char **argv)
      * widgets. Not sure if this is a bug or not, but SIZE seems to be the only
      * way to set the initial size of the window.
      */
-    IupSetAttribute(dlg, "SIZE", "800x500");
-    IupShowXY(dlg, IUP_CENTER, IUP_CENTER);
-    IupSetAttribute(dlg, "SIZE", NULL);
+    IupSetAttribute(dlg, "SIZE", "800x400");
+    IupShowXY(dlg, 0, 0);
+    //IupSetAttribute(dlg, "SIZE", NULL);
 
     Ihandle* replays = IupGetHandle("replay_browser");
     IupSetAttribute(replays, "TITLE", "Replays");
@@ -754,8 +754,8 @@ int main(int argc, char **argv)
             IupMap(plugin_ui);
             IupRefresh(plugin_ui);
             IupSetInt(plugin_view, "VALUEPOS", insert_pos);
-            //video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\Startklar\\Downloads\\Prefers_Land_Behind.mp4", 1) == 0;
-            video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\AlexanderMurray\\Downloads\\pika-dj-mixups.mp4", 1) == 0;
+            video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\Startklar\\Downloads\\Prefers_Land_Behind.mp4", 1) == 0;
+            //video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\AlexanderMurray\\Downloads\\pika-dj-mixups.mp4", 1) == 0;
             //video_open = plugin.i->video->open_file(plugin_ctx, "/home/thecomet/videos/ssbu/2023-07-11 - Stino/2023-07-11_19-34-14.mkv", 1) == 0;
             if (!video_open)
                 goto open_video_failed;

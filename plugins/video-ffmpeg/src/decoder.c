@@ -438,6 +438,13 @@ decode_next_frame(struct decoder* decoder)
     return 0;
 }
 
+void
+decoder_frame_size(const struct decoder* decoder, int* w, int* h)
+{
+    *w = decoder->vcodec_ctx->width;
+    *h = decoder->vcodec_ctx->height;
+}
+
 const void*
 decoder_rgb24_data(const struct decoder* decoder)
 {

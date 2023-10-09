@@ -88,6 +88,19 @@ str_replace_char(struct str* str, char search, char replace)
 }
 
 static inline int
+str_starts_with(struct str_view str, struct str_view cmp)
+{
+    if (str.len < cmp.len)
+        return 0;
+    return memcmp(str.data, cmp.data, cmp.len) == 0;
+}
+static inline int
+cstr_starts_with(struct str_view str, const char* cmp)
+{
+    return str_starts_with(str, cstr_view(cmp));
+}
+
+static inline int
 str_ends_with(struct str_view str, struct str_view cmp)
 {
     if (str.len < cmp.len)

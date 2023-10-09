@@ -28,6 +28,15 @@ path_view(struct path path)
 	return str_view(path.str);
 }
 
+static inline struct str
+path_take_str(struct path path)
+{
+	struct str str = path.str;
+	path.str.data = NULL;
+	path.str.len = 0;
+	return str;
+}
+
 static inline void
 path_terminate(struct path* path)
 {
@@ -47,6 +56,10 @@ VH_PUBLIC_API int
 fs_list(struct strlist* out, struct str_view path);
 
 VH_PUBLIC_API int
-fs_list_matching(struct strlist* out, struct str_view path, int (*match)(struct str_view str, const void* param), const void* param);
+fs_list_matching(
+	struct strlist* out,
+	struct str_view path,
+	int (*match)(struct str_view str, const void* param),
+	const void* param);
 
 C_END

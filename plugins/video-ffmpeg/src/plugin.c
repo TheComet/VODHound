@@ -9,6 +9,7 @@
 #include "iupgfx.h"
 
 #include <string.h>
+#include <stdio.h>
 
 struct plugin_ctx
 {
@@ -68,8 +69,12 @@ int video_open_file(struct plugin_ctx* ctx, const char* file_name, int pause)
     int ret = decoder_open_file(&ctx->decoder, file_name, pause);
     if (ret == 0 && ctx->canvas)
     {
+        char buf[22];  /* max len of int is 10 + null -- 10*2+1+null = 22 */
+        int w, h;
         decode_next_frame(&ctx->decoder);
-        IupSetAttribute(ctx->canvas, "TEXSIZE", "960x540");
+        decoder_frame_size(&ctx->decoder, &w, &h);
+        snprintf(buf, 22, "%dx%d", w, h);
+        IupSetAttribute(ctx->canvas, "TEXSIZE", buf);
         IupSetAttribute(ctx->canvas, "TEXRGBA", decoder_rgb24_data(&ctx->decoder));
         IupRedraw(ctx->canvas, 0);
     }
@@ -103,10 +108,21 @@ struct video_player_interface controls = {
     video_volume
 };
 
-PLUGIN_API struct plugin_interface plugin = {
+PLUGIN_API struct plugin_interface plugin_video_player = {
     PLUGIN_VERSION,
     0,
     create, destroy, &ui, &controls,
+    "FFmpeg Video Player",
+    "video",
+    "TheComet",
+    "@TheComet93",
+    "Decodes videos using FFmpeg libraries."
+};
+
+PLUGIN_API struct plugin_interface plugin_vod_review = {
+    PLUGIN_VERSION,
+    0,
+    create, destroy,& ui,& controls,
     "FFmpeg Video Player",
     "video",
     "TheComet",
