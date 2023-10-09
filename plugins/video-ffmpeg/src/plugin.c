@@ -122,8 +122,8 @@ PLUGIN_API struct plugin_interface plugin_video_player = {
 PLUGIN_API struct plugin_interface plugin_vod_review = {
     PLUGIN_VERSION,
     0,
-    create, destroy,& ui,& controls,
-    "FFmpeg Video Player",
+    create, destroy, &ui, &controls,
+    "VOD Review",
     "video",
     "TheComet",
     "@TheComet93",

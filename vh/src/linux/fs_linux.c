@@ -5,11 +5,14 @@
 
 static int match_all(struct str_view str, const void* param) { (void)str; (void)param;  return 1; }
 
-void
-path_set_take(struct path* path, struct str str)
+struct path
+path_take_str(struct str* str)
 {
-    path->str = str;
-    str_replace_char(&path->str, '\\', '/');
+    struct path path = { *str };
+    str->data = NULL;
+    str->len = 0;
+    str_replace_char(&path.str, '\\', '/');
+    return path;
 }
 
 int

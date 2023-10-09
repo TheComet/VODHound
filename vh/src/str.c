@@ -76,11 +76,11 @@ strlist_deinit(struct strlist* sl)
 int
 strlist_add(struct strlist* sl, struct str_view str)
 {
-    strlist_size insert_size = sizeof(struct strlist_view) + str.len;
+    strlist_size insert_size = sizeof(struct strlist_str) + str.len;
     while (sl->m_used + insert_size + 1 > sl->m_alloc)
     {
         strlist_size old_alloc = sl->m_alloc;
-        strlist_size table_size = sl->count * sizeof(struct strlist_view);
+        strlist_size table_size = sl->count * sizeof(struct strlist_str);
         /* NOTE: allocated size must always be aligned because the string table is
          * placed at the end of the buffer! */
         sl->m_alloc = sl->m_alloc == 0 ? 32 : sl->m_alloc * 2;
@@ -92,7 +92,7 @@ strlist_add(struct strlist* sl, struct str_view str)
             sl->data + sl->m_alloc - table_size,
             sl->data + old_alloc - table_size,
             table_size);
-        sl->strs = (struct strlist_view*)(sl->data + sl->m_alloc) - 1;
+        sl->strs = (struct strlist_str*)(sl->data + sl->m_alloc) - 1;
     }
 
     strlist_size insert_offset = sl->count ?

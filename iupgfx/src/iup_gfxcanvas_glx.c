@@ -234,7 +234,7 @@ static int Redraw_CB(Ihandle* ih, float x, float y)
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glUseProgram(0);
 
-    IupGfxSwapBuffers(ih);
+    glXSwapBuffers(ctx->display, ctx->window);
 
     return IUP_DEFAULT;
 }
@@ -337,27 +337,22 @@ void iupdrvGfxCanvasInitClass(Iclass* ic)
     ic->Destroy = CanvasDestroyMethod;
 }
 
-void iupdrvGfxSetTexture(Ihandle* ih, int id, const char* value)
+int iupdrvGfxCanvasGetTexWidth(Ihandle* ih)
 {
 
 }
 
-/* ------------ Public API ------------------------------------------------- */
-
-int IupGfxIsCurrent(Ihandle* ih)
+int iupdrvGfxCanvasGetTexHeight(Ihandle* ih)
 {
-    (void)ih;
-    return 1;
+
 }
 
-void IupGfxMakeCurrent(Ihandle* ih)
+void iupdrvGfxCanvasSetTexSize(Ihandle* ih, int width, int height)
 {
-    Context3D* ctx = (Context3D*)iupAttribGet(ih, "_IUP_GLXCONTEXT");
-    glXMakeCurrent(ctx->display, ctx->window, ctx->gl);
+
 }
 
-void IupGfxSwapBuffers(Ihandle* ih)
+void iupdrvGfxCanvasSetTexRGBA(Ihandle* ih, int id, const char* value)
 {
-    Context3D* ctx = (Context3D*)iupAttribGet(ih, "_IUP_GLXCONTEXT");
-    glXSwapBuffers(ctx->display, ctx->window);
+
 }

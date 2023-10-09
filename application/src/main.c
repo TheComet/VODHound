@@ -742,7 +742,6 @@ int main(int argc, char **argv)
         {
             if (plugin_load(&plugin, strlist_get(&sl, i)) != 0)
                 goto plugin_load_failed;
-            log_dbg("'%s' by %s: %s\n", plugin.i->name, plugin.i->author, plugin.i->description);
             if ((plugin_ctx = plugin.i->create()) == NULL)
                 goto create_plugin_ctx_failed;
             if ((plugin_ui = plugin.i->ui->create(plugin_ctx)) == NULL)
@@ -754,9 +753,9 @@ int main(int argc, char **argv)
             IupMap(plugin_ui);
             IupRefresh(plugin_ui);
             IupSetInt(plugin_view, "VALUEPOS", insert_pos);
-            video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\Startklar\\Downloads\\Prefers_Land_Behind.mp4", 1) == 0;
+            //video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\Startklar\\Downloads\\Prefers_Land_Behind.mp4", 1) == 0;
             //video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\AlexanderMurray\\Downloads\\pika-dj-mixups.mp4", 1) == 0;
-            //video_open = plugin.i->video->open_file(plugin_ctx, "/home/thecomet/videos/ssbu/2023-07-11 - Stino/2023-07-11_19-34-14.mkv", 1) == 0;
+            video_open = plugin.i->video->open_file(plugin_ctx, "/home/thecomet/videos/ssbu/2023-07-11 - Stino/2023-07-11_19-34-14.mkv", 1) == 0;
             if (!video_open)
                 goto open_video_failed;
 

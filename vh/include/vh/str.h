@@ -60,6 +60,15 @@ cstr_view2(const char* str, int len)
 VH_PUBLIC_API int
 str_set(struct str* str, struct str_view view);
 
+static inline struct str
+str_take(struct str* other)
+{
+    struct str s = *other;
+    other->data = NULL;
+    other->len = 0;
+    return s;
+}
+
 static inline int
 cstr_set(struct str* str, const char* cstr)
 {
@@ -158,7 +167,7 @@ cstr_equal(struct str_view str, const char* cstr)
 VH_PUBLIC_API int
 str_hex_to_u64(struct str_view str, uint64_t* out);
 
-struct strlist_view
+struct strlist_str
 {
     strlist_idx off;
     strlist_idx len;
@@ -167,7 +176,7 @@ struct strlist_view
 struct strlist
 {
     char* data;
-    struct strlist_view* strs;
+    struct strlist_str* strs;
     strlist_size count;     /* Number of strings in list*/
     strlist_size m_used;
     strlist_size m_alloc;
@@ -188,6 +197,13 @@ strlist_deinit(struct strlist* sl);
 
 int
 strlist_add(struct strlist* sl, struct str_view str);
+
+static inline void
+strlist_clear(struct strlist* sl)
+{
+    sl->count = 0;
+    sl->m_used = 0;
+}
 
 #define strlist_count(sl) ((sl)->count)
 
