@@ -1,6 +1,6 @@
 cmake_minimum_required (VERSION 3.21)
 
-project ("iup3d"
+project ("iupgfx"
     VERSION 0.0.1
     LANGUAGES C)
 
@@ -17,24 +17,25 @@ endif ()
 set (IUP3D_GFX ${DEFAULT_GFX} CACHE STRING "Which graphics API to use for rendering")
 set_property (CACHE IUP3D_GFX PROPERTY STRINGS ${POSSIBLE_GFX})
 
-add_library (iup3d ${IUP_LIB_TYPE}
-    "include/iup3d.h"
-    "src/iup_3dcanvas.c")
-target_include_directories (iup3d
+add_library (iupgfx ${IUP_LIB_TYPE}
+    "include/iupgfx.h"
+    "src/iup_gfxcanvas.c")
+target_include_directories (iupgfx
     PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
     PRIVATE
-        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/../thirdparty/iup-cmake/src>)
-target_link_libraries (iup3d
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/../thirdparty/iup-cmake/src>
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>)
+target_link_libraries (iupgfx
     PRIVATE
         iup
         vh
-        $<$<PLATFORM_ID:Windows>:d3d11>)
-target_compile_definitions (iup3d
+        $<$<PLATFORM_ID:Windows>:dgfx11>)
+target_compile_definitions (iupgfx
     PRIVATE
         $<$<CONFIG:Debug>:DEBUG>)
-set_target_properties (iup3d
+set_target_properties (iupgfx
     PROPERTIES
         DEBUG_POSTFIX "d"
         MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>
@@ -49,7 +50,7 @@ set_target_properties (iup3d
         ARCHIVE_OUTPUT_DIRECTORY_RELEASE ${IUP_BUILD_LIBDIR})
 
 if (IUP3D_GFX MATCHES "DX11")
-    target_sources (${PROJECT_NAME} PRIVATE "src/iup_3dcanvas_win32_dx11.c")
+    target_sources (${PROJECT_NAME} PRIVATE "src/iup_gfxcanvas_win32_dx11.c")
     target_link_libraries (${PROJECT_NAME}
         PRIVATE
             d3d11
@@ -57,13 +58,18 @@ if (IUP3D_GFX MATCHES "DX11")
             d3dcompiler
             dxguid)
 elseif (IUP3D_GFX MATCHES "WGL")
-    target_sources (${PROJECT_NAME} PRIVATE "src/iup_3dcanvas_win32_gl.c")
+    target_sources (${PROJECT_NAME} PRIVATE "src/iup_gfxcanvas_win32_gl.c")
 elseif (IUP3D_GFX MATCHES "GLX")
-    target_sources (${PROJECT_NAME} PRIVATE "src/iup_3dcanvas_glx.c")
+    find_package (OpenGL REQUIRED)
+    target_sources (${PROJECT_NAME} PRIVATE
+        "src/iup_gfxcanvas_glx.c"
+        "src/gl/shader.c"
+        "src/gl/api.c")
+    target_link_libraries (${PROJECT_NAME} PRIVATE OpenGL::GLX)
 endif ()
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows" AND IUP_LIB_TYPE MATCHES "SHARED")
-    target_sources (iup3d PRIVATE "src/iup3d.def")
+    target_sources (iupgfx PRIVATE "src/iupgfx.def")
 endif ()
 
-add_library (IUP::3d ALIAS iup3d)
+add_library (IUP::gfx ALIAS iupgfx)

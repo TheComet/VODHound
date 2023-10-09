@@ -19,7 +19,7 @@ vodhound_add_plugin (${PROJECT_NAME}
     LIBS
         VODHound::vh
         IUP::iup
-        IUP::3d)
+        IUP::gfx)
 
 if (VODHOUND_VIDEO_FFMPEG)
     if (IUP3D_GFX MATCHES "DX11")

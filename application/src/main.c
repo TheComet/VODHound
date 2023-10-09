@@ -8,7 +8,7 @@
 #include "vh/plugin_loader.h"
 
 #include "iup.h"
-#include "iup3d.h"
+#include "iupgfx.h"
 
 #include <stdio.h>
 #include <ctype.h>
@@ -623,9 +623,9 @@ create_replay_browser(void)
 static Ihandle*
 create_plugin_view(void)
 {
-    /*Ihandle* empty_tab = IupCanvas(NULL);
-    IupSetAttribute(empty_tab, "TABTITLE", "+");*/
-    Ihandle* tabs = IupTabs(/*empty_tab,*/ NULL);
+    Ihandle* empty_tab = IupCanvas(NULL);
+    IupSetAttribute(empty_tab, "TABTITLE", "+");
+    Ihandle* tabs = IupTabs(empty_tab, NULL);
     IupSetHandle("plugin_view", tabs);
     return tabs;
 }
@@ -694,7 +694,8 @@ create_main_dialog(void)
 
     Ihandle* dlg = IupDialog(vbox);
     IupSetAttributeHandle(dlg, "MENU", create_menus());
-    IupSetAttribute(dlg, "SIZE", "800x400");
+    IupSetAttribute(dlg, "TITLE", "VODHound");
+    IupSetAttribute(dlg, "MINSIZE", "600x600");
     return dlg;
 }
 
@@ -702,9 +703,18 @@ int main(int argc, char **argv)
 {
     IupOpen(&argc, &argv);
     IupSetGlobal("UTF8MODE", "Yes");
-    Iup3DOpen();
+    IupGfxOpen();
     Ihandle* dlg = create_main_dialog();
+
+    /*
+     * If we don't clear SIZE after showing the dialog, then when resizing the
+     * window smaller than the size, RESIZE_CB is no longer called on some
+     * widgets. Not sure if this is a bug or not, but SIZE seems to be the only
+     * way to set the initial size of the window.
+     */
+    IupSetAttribute(dlg, "SIZE", "800x500");
     IupShowXY(dlg, IUP_CENTER, IUP_CENTER);
+    IupSetAttribute(dlg, "SIZE", NULL);
 
     Ihandle* replays = IupGetHandle("replay_browser");
     IupSetAttribute(replays, "TITLE", "Replays");
@@ -738,10 +748,12 @@ int main(int argc, char **argv)
             if ((plugin_ui = plugin.i->ui->create(plugin_ctx)) == NULL)
                 goto create_plugin_ui_failed;
             IupSetAttribute(plugin_ui, "TABTITLE", plugin.i->name);
-            if (IupAppend(plugin_view, plugin_ui) == NULL)
+            int insert_pos = IupGetChildCount(plugin_view) - 1;
+            if (IupInsert(plugin_view, IupGetChild(plugin_view, insert_pos), plugin_ui) == NULL)
                 goto add_to_ui_failed;
             IupMap(plugin_ui);
             IupRefresh(plugin_ui);
+            IupSetInt(plugin_view, "VALUEPOS", insert_pos);
             //video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\Startklar\\Downloads\\Prefers_Land_Behind.mp4", 1) == 0;
             //video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\AlexanderMurray\\Downloads\\pika-dj-mixups.mp4", 1) == 0;
             video_open = plugin.i->video->open_file(plugin_ctx, "/home/thecomet/videos/ssbu/2023-07-11 - Stino/2023-07-11_19-34-14.mkv", 1) == 0;
@@ -764,14 +776,15 @@ int main(int argc, char **argv)
     if (video_open)
     {
         plugin.i->video->close(plugin_ctx);
-        IupUnmap(plugin_ui);
+        IupDetach(plugin_ui);
+        IupRefresh(plugin_view);
         plugin.i->ui->destroy(plugin_ctx, plugin_ui);
         plugin.i->destroy(plugin_ctx);
         plugin_unload(&plugin);
     }
 
     IupDestroy(dlg);
-    Iup3DClose();
+    IupGfxClose();
     IupClose();
 
     return EXIT_SUCCESS;

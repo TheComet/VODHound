@@ -6,7 +6,9 @@
 #include "vh/plugin.h"
 
 #include "iup.h"
-#include "iup3d.h"
+#include "iupgfx.h"
+
+#include <string.h>
 
 struct plugin_ctx
 {
@@ -19,7 +21,7 @@ static struct plugin_ctx*
 create(void)
 {
     struct plugin_ctx* ctx = mem_alloc(sizeof(struct plugin_ctx));
-    memset(ctx, NULL, sizeof *ctx);
+    memset(ctx, 0, sizeof *ctx);
     return ctx;
 }
 
@@ -34,7 +36,7 @@ Ihandle* ui_create(struct plugin_ctx* ctx)
     if (ctx->canvas)
         return NULL;
 
-    ctx->canvas = Iup3DCanvas(NULL);
+    ctx->canvas = IupGfxCanvas(NULL);
     if (ctx->canvas == NULL)
         return NULL;
 
@@ -65,10 +67,7 @@ int video_open_file(struct plugin_ctx* ctx, const char* file_name, int pause)
 {
     int ret = decoder_open_file(&ctx->decoder, file_name, pause);
     if (ret == 0 && ctx->canvas)
-    {
         decode_next_frame(&ctx->decoder);
-        Iup3DSwapBuffers(ctx->canvas);
-    }
 
     return ret;
 }

@@ -3,8 +3,8 @@
  *
  * See Copyright Notice in "iup.h"
  */
- 
-#ifndef __IUP3D_H 
+
+#ifndef __IUP3D_H
 #define __IUP3D_H
 
 #ifdef __cplusplus
@@ -21,14 +21,14 @@ extern "C" {
 #define IUP_NO    "NO"
 #endif
 
-void Iup3DOpen(void);
-void Iup3DClose(void);
+void IupGfxOpen(void);
+void IupGfxClose(void);
 
-Ihandle *Iup3DCanvas(const char *action);
+Ihandle *IupGfxCanvas(const char *action);
 
-void Iup3DMakeCurrent(Ihandle* ih);
-int Iup3DIsCurrent(Ihandle* ih);
-void Iup3DSwapBuffers(Ihandle* ih);
+void IupGfxMakeCurrent(Ihandle* ih);
+int IupGfxIsCurrent(Ihandle* ih);
+void IupGfxSwapBuffers(Ihandle* ih);
 
 #ifdef __cplusplus
 }

@@ -13,7 +13,7 @@ target_link_libraries (application
         VODHound::json-c
         ZLIB::ZLIB
         IUP::iup
-        IUP::3d
+        IUP::gfx
         IUP::imglib)
 
 set_target_properties (application PROPERTIES

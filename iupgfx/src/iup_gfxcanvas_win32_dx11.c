@@ -300,7 +300,7 @@ static void CanvasDestroyMethod(Ihandle* ih)
     log_dbg("CanvasDestroyMethod\n");
     Context3D* ctx = (Context3D*)iupAttribGet(ih, "_IUP_D3D11CONTEXT");
     mem_free(ctx);
-    iupAttribSet(ih, "_IUP_D3D11CONTEXT", NULL);;
+    iupAttribSet(ih, "_IUP_D3D11CONTEXT", NULL);
 }
 
 void iupdrv3DCanvasInitClass(Iclass* ic)

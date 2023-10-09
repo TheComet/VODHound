@@ -5,15 +5,25 @@
  */
 
 #include "iup.h"
-#include "iup3d.h"
+#include "iupgfx.h"
 
 #include "iup_object.h"
 #include "iup_register.h"
 
 #include <stddef.h>
 
+int iupdrvGfxInit(void);
+void iupdrvGfxDeInit(void);
+void iupdrvGfxCanvasInitClass(Iclass* ic);
+void iupdrvGfxSetTexture(Ihandle* ih, int id, const char* value);
 
-void iupdrv3DCanvasInitClass(Iclass* ic);
+static int iGfxCanvasSetTexture(Ihandle* ih, int id, const char* value)
+{
+    if (!ih->handle)  /* Do not execute before map */
+        return 0;
+    iupdrvGfxSetTexture(ih, id, value);
+    return 0;
+}
 
 static Iclass* i3DCanvasNewClass(void)
 {
@@ -28,16 +38,16 @@ static Iclass* i3DCanvasNewClass(void)
 
     ic->New = i3DCanvasNewClass;
 
-    iupClassRegisterCallback(ic, "SWAPBUFFERS_CB", "");
     iupClassRegisterAttribute(ic, "ERROR", NULL, NULL, NULL, NULL, IUPAF_READONLY | IUPAF_NO_INHERIT);
+    iupClassRegisterAttributeId(ic, "TEXTURE", NULL, iGfxCanvasSetTexture, IUPAF_NOT_MAPPED | IUPAF_WRITEONLY | IUPAF_NO_INHERIT);
 
-    iupdrv3DCanvasInitClass(ic);
+    iupdrvGfxCanvasInitClass(ic);
 
     return ic;
 }
 
 static int a = 0;
-Ihandle* Iup3DCanvas(const char *action)
+Ihandle* IupGfxCanvas(const char *action)
 {
     a++;
     void* params[2];
@@ -46,20 +56,24 @@ Ihandle* Iup3DCanvas(const char *action)
     return IupCreatev("3dcanvas", params);
 }
 
-void Iup3DOpen(void)
+void IupGfxOpen(void)
 {
     if (!IupIsOpened())
         return;
 
     if (!IupGetGlobal("_IUP_GLCANVAS_OPEN"))
     {
+        if (iupdrvGfxInit() != 0)
+            return;
         iupRegisterClass(i3DCanvasNewClass());
         IupSetGlobal("_IUP_GLCANVAS_OPEN", "1");
     }
 }
 
-void Iup3DClose(void)
+void IupGfxClose(void)
 {
+    iupdrvGfxDeInit();
     Iclass* ic = iupRegisterFindClass("3dcanvas");
-    iupUnRegisterClass(ic);
+    if (ic)
+        iupUnRegisterClass(ic);
 }

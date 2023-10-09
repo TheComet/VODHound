@@ -43,7 +43,7 @@ add_subdirectory ("thirdparty/sqlite-3.43.1")
 add_subdirectory ("thirdparty/json-c")
 add_subdirectory ("thirdparty/iup-cmake")
 add_subdirectory ("vh")
-add_subdirectory ("iup3d")
+add_subdirectory ("iupgfx")
 add_subdirectory ("application")
 add_subdirectory ("plugins")
 
