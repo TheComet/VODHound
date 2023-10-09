@@ -29,9 +29,8 @@ target_include_directories (iupgfx
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>)
 target_link_libraries (iupgfx
     PRIVATE
-        iup
-        vh
-        $<$<PLATFORM_ID:Windows>:dgfx11>)
+        IUP::iup
+        VODHound::vh)
 target_compile_definitions (iupgfx
     PRIVATE
         $<$<CONFIG:Debug>:DEBUG>)

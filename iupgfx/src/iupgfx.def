@@ -1,7 +1,7 @@
 EXPORTS
-Iup3DOpen
-Iup3DClose
-Iup3DCanvas
-Iup3DMakeCurrent
-Iup3DIsCurrent
-Iup3DSwapBuffers
+IupGfxOpen
+IupGfxClose
+IupGfxCanvas
+IupGfxMakeCurrent
+IupGfxIsCurrent
+IupGfxSwapBuffers

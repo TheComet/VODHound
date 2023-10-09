@@ -356,8 +356,8 @@ set_target_properties(${PROJECT_NAME}
     PROPERTIES
         VERSION 5.3.0
         SOVERSION 5
-        DEBUG_POSTFIX "d")
-        #MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>)
+        DEBUG_POSTFIX "d"
+        MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>)
 if (NOT JSON_C_DISABLE_BSYMBOLIC AND BSYMBOLIC_WORKS)
     #target_compile_options (json-c PRIVATE "-Wl,-Bsymbolic-functions")
 endif()
