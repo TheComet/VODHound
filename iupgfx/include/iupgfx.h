@@ -26,10 +26,6 @@ void IupGfxClose(void);
 
 Ihandle *IupGfxCanvas(const char *action);
 
-void IupGfxMakeCurrent(Ihandle* ih);
-int IupGfxIsCurrent(Ihandle* ih);
-void IupGfxSwapBuffers(Ihandle* ih);
-
 #ifdef __cplusplus
 }
 #endif

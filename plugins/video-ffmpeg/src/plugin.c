@@ -67,7 +67,19 @@ int video_open_file(struct plugin_ctx* ctx, const char* file_name, int pause)
 {
     int ret = decoder_open_file(&ctx->decoder, file_name, pause);
     if (ret == 0 && ctx->canvas)
+    {
         decode_next_frame(&ctx->decoder);
+        IupSetAttribute(ctx->canvas, "TEXSIZE", "960x540");
+        IupSetAttribute(ctx->canvas, "TEXRGBA", decoder_rgb24_data(&ctx->decoder));
+        IupRedraw(ctx->canvas, 0);
+
+        for (int i = 0; i != 64; ++i)
+        {
+            decode_next_frame(&ctx->decoder);
+            IupSetAttribute(ctx->canvas, "TEXRGBA", decoder_rgb24_data(&ctx->decoder));
+            IupRedraw(ctx->canvas, 0);
+        }
+    }
 
     return ret;
 }

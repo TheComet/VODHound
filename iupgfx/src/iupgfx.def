@@ -2,6 +2,3 @@ EXPORTS
 IupGfxOpen
 IupGfxClose
 IupGfxCanvas
-IupGfxMakeCurrent
-IupGfxIsCurrent
-IupGfxSwapBuffers

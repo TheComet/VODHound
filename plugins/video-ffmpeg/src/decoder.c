@@ -144,13 +144,44 @@ decoder_open_file(struct decoder* decoder, const char* file_name, int pause)
         goto alloc_frame_failed;
     }
 
+    /*
+     * Allocates the raw image buffer and fills in the frame's data
+     * pointers and line sizes.
+     *
+     * NOTE #1: The image buffer has to be manually freed with
+     *          av_free(qEntry->frame.data[0]), as av_frame_unref()
+     *          does not take care of this.
+     */
+    decoder->current_frame_rgba = av_frame_alloc();
+    if (decoder->current_frame_rgba == NULL)
+    {
+        log_err("Failed to allocate RGBA frame\n");
+        goto alloc_rgba_frame_failed;
+    }
+    if (av_image_alloc(
+        decoder->current_frame_rgba->data,      /* Data pointers to be filled in */
+        decoder->current_frame_rgba->linesize,  /* linesizes for the image in dst_data to be filled in */
+        decoder->vcodec_ctx->width,
+        decoder->vcodec_ctx->height,
+        AV_PIX_FMT_RGBA,
+        1                                        /* Alignment */
+    ) < 0)
+    {
+        log_err("Failed to allocate RGBA buffer\n");
+        goto alloc_rgba_buffer_failed;
+    }
+
     /*sourceWidth_ = decoder->vcodec_ctx->width;
     sourceHeight_ = decoder->vcodec_ctx->height;*/
+
+    decoder->reformat_ctx = NULL;
 
     log_info("Video stream initialized\n");
 
     return 0;
 
+    alloc_rgba_buffer_failed         : av_frame_free(&decoder->current_frame_rgba);
+    alloc_rgba_frame_failed          : av_frame_free(&decoder->current_frame);
     alloc_frame_failed               : av_packet_free(&decoder->current_packet);
     alloc_packet_failed              : avcodec_close(decoder->vcodec_ctx);
     open_video_codec_failed          :
@@ -166,6 +197,19 @@ void
 decoder_close(struct decoder* decoder)
 {
     log_info("Closing video stream\n");
+
+    if (decoder->reformat_ctx)
+    {
+        sws_freeContext(decoder->reformat_ctx);
+        decoder->reformat_ctx = NULL;
+    }
+
+    /* NOTE #1: This is the picture buffer we manually allocated */
+    av_free(decoder->current_frame_rgba->data[0]);
+    av_frame_free(&decoder->current_frame_rgba);
+
+    av_frame_unref(decoder->current_frame);
+    av_packet_unref(decoder->current_packet);
     av_frame_free(&decoder->current_frame);
     av_packet_free(&decoder->current_packet);
     avcodec_close(decoder->vcodec_ctx);
@@ -287,8 +331,25 @@ decode_next_frame(struct decoder* decoder)
 
             // Frame is successfully decoded here
 
-            av_frame_unref(decoder->current_frame);
-            av_packet_unref(decoder->current_packet);
+            /* Convert frame to RGB24 format */
+            decoder->reformat_ctx = sws_getCachedContext(decoder->reformat_ctx,
+                decoder->current_frame->width, decoder->current_frame->height, (enum AVPixelFormat)decoder->current_frame->format,
+                decoder->current_frame->width, decoder->current_frame->height, AV_PIX_FMT_RGBA,
+                SWS_POINT, NULL, NULL, NULL);
+
+            sws_scale(decoder->reformat_ctx,
+                decoder->current_frame->data, decoder->current_frame->linesize, 0, decoder->vcodec_ctx->height,
+                decoder->current_frame_rgba->data, decoder->current_frame_rgba->linesize);
+
+            /*
+             * sws_scale() doesn't appear to copy over this data. We make use
+             * of pts, width and height in later stages
+             */
+            decoder->current_frame_rgba->best_effort_timestamp = decoder->current_frame->best_effort_timestamp;
+            decoder->current_frame_rgba->pts                   = decoder->current_frame->pts;
+            decoder->current_frame_rgba->width                 = decoder->current_frame->width;
+            decoder->current_frame_rgba->height                = decoder->current_frame->height;
+
             break;
 
             recv_need_next_pkt      :
@@ -375,6 +436,12 @@ decode_next_frame(struct decoder* decoder)
     }
 
     return 0;
+}
+
+const void*
+decoder_rgb24_data(const struct decoder* decoder)
+{
+    return decoder->current_frame_rgba->data[0];
 }
 
 /*
