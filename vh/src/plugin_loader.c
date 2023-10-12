@@ -21,7 +21,7 @@ static int match_expected_filename(struct str_view str, const void* param)
 
 static int match_plugin_symbols(struct str_view str, const void* param)
 {
-    return cstr_starts_with(str, "plugin");
+    return cstr_starts_with(str, "vh_plugin");
 }
 
 int
@@ -114,7 +114,7 @@ plugin_scan(struct strlist* plugin_names)
                 log_info("  * %s by %s: %s\n", pi->name, pi->author, pi->description);
             else
             {
-                log_warn("  ! Failed to load symbol '%s': %s\n", dynlib_last_error());
+                log_warn("  ! Failed to load symbol '%s': %s\n", symbol_name.data, dynlib_last_error());
                 continue;
             }
 

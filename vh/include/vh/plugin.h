@@ -24,30 +24,30 @@ struct video_player_interface
      * twice in a row. close() will always be called first if necessary.
      */
     int (*open_file)(struct plugin_ctx* plugin, const char* file_name, int pause);
-    
+
     /*!
      * \brief Close the video. Player should reset everything.
      * \note VODHound will guarantee that this function won't be called
      * twice in a row.
      */
     void (*close)(struct plugin_ctx* plugin);
-    
+
     /*!
      * \brief Return true if a video is currently open. If the video is closed,
      * then this should return false.
      */
     int (*is_open)(struct plugin_ctx* plugin);
-    
+
     /*!
      * \brief Begin normal playback of the video stream.
      */
     void (*play)(struct plugin_ctx* plugin);
-    
+
     /*!
      * \brief Pause the video stream.
      */
     void (*pause)(struct plugin_ctx* plugin);
-    
+
     /*!
      * \brief Advance by N number of video-frames (not game-frames).
      * \note N can be negative, which means to go backwards N frames.
@@ -62,7 +62,7 @@ struct video_player_interface
      * value is guaranteed to be "small", i.e. in the range of -30 to 30.
      */
     void (*step)(struct plugin_ctx* plugin, int frames);
-    
+
     /*!
      * \brief Seek to a specific timestamp in the video.
      *
@@ -79,27 +79,27 @@ struct video_player_interface
      * between the timestamps of the frames where the game was paused.
      */
     int (*seek)(struct plugin_ctx* plugin, uint64_t offset, int num, int den);
-    
+
     /*!
      * \brief Get the current video offset in units of num/den.
      */
     uint64_t (*offset)(struct plugin_ctx* plugin, int num, int den);
-    
+
     /*!
      * \brief Get the total video duration in units of num/den.
      */
     uint64_t (*duration)(struct plugin_ctx* plugin, int num, int den);
-    
+
     /*!
      * \brief Return true if the video is currently playing, otherwise false.
      */
     int (*is_playing)(struct plugin_ctx* plugin);
-    
+
     /*!
      * \brief Set the volume in percent.
      */
     void (*set_volume)(struct plugin_ctx* plugin, int percent);
-    
+
     /*!
      * \brief Get the current volume in percent.
      */

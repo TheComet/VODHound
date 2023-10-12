@@ -108,22 +108,11 @@ struct video_player_interface controls = {
     video_volume
 };
 
-PLUGIN_API struct plugin_interface plugin_video_player = {
+PLUGIN_API struct plugin_interface vh_plugin = {
     PLUGIN_VERSION,
     0,
     create, destroy, &ui, &controls,
     "FFmpeg Video Player",
-    "video",
-    "TheComet",
-    "@TheComet93",
-    "Decodes videos using FFmpeg libraries."
-};
-
-PLUGIN_API struct plugin_interface plugin_vod_review = {
-    PLUGIN_VERSION,
-    0,
-    create, destroy, &ui, &controls,
-    "VOD Review",
     "video",
     "TheComet",
     "@TheComet93",

@@ -738,7 +738,7 @@ int main(int argc, char **argv)
     for (int i = 0; i != (int)strlist_count(&sl); ++i)
     {
         struct str_view name = strlist_get(&sl, i);
-        if (cstr_equal(name, "FFmpeg Video Player"))
+        if (cstr_equal(name, "VOD Review"))
         {
             if (plugin_load(&plugin, strlist_get(&sl, i)) != 0)
                 goto plugin_load_failed;
