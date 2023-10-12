@@ -20,6 +20,7 @@ typedef GLint (*PFNGLGETUNIFORMLOCATIONPROC)(GLuint program, const GLchar * name
 typedef void (*PFNGLDELETEPROGRAMPROC)(GLuint program);
 typedef void (*PFNGLUSEPROGRAMPROC)(GLuint program);
 typedef void (*PFNGLUNIFORM1IPROC)(GLint location, GLint v0);
+typedef void (*PFNGLUNIFORM2FPROC)(GLint location, GLfloat v0, GLfloat v1);
 
 typedef void (*PFNGLGENBUFFERSPROC)(GLsizei n, GLuint * buffers);
 typedef void (*PFNGLBINDBUFFERPROC)(GLenum target, GLuint buffer);
@@ -47,6 +48,7 @@ extern PFNGLGETUNIFORMLOCATIONPROC glGetUniformLocation;
 extern PFNGLDELETEPROGRAMPROC glDeleteProgram;
 extern PFNGLUSEPROGRAMPROC glUseProgram;
 extern PFNGLUNIFORM1IPROC glUniform1i;
+extern PFNGLUNIFORM2FPROC glUniform2f;
 
 extern PFNGLGENBUFFERSPROC glGenBuffers;
 extern PFNGLBINDBUFFERPROC glBindBuffer;

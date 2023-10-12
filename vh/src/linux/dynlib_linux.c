@@ -160,7 +160,7 @@ dynlib_symbol_count(void* handle)
 {
     struct link_map* lm;
     if (dlinfo(handle, RTLD_DI_LINKMAP, &lm) != 0)
-        return 0;
+        return -1;
 
     /* Find dynamic symbol table and symbol hash table */
     for (const ElfW(Dyn)* dyn = lm->l_ld; dyn->d_tag != DT_NULL; ++dyn)
@@ -171,7 +171,7 @@ dynlib_symbol_count(void* handle)
             case DT_GNU_HASH : return (int)get_symbol_count_in_GNU_hash_table(
                                         (const uint32_t*)dyn->d_un.d_ptr);
         }
-    return 0;
+    return -1;
 }
 
 const char*
@@ -185,7 +185,7 @@ dynlib_symbol_at(void* handle, int idx)
     size_t symsize = 0;
 
     if (dlinfo(handle, RTLD_DI_LINKMAP, &lm) != 0)
-        return 0;
+        return NULL;
 
     /* Find dynamic symbol table and symbol hash table */
     for (const ElfW(Dyn)* dyn = lm->l_ld; dyn->d_tag != DT_NULL; ++dyn)
@@ -210,7 +210,7 @@ dynlib_symbol_at(void* handle, int idx)
         }
     }
     if (!symtab || !(hashtab || gnuhashtab) || !symsize || !strtab)
-        return 0;
+        return NULL;
 
     size_t offset = symsize * (size_t)(idx + 1);
     const char* addr = (const char*)symtab + offset;
@@ -224,3 +224,7 @@ dynlib_last_error(void)
 {
     return dlerror();
 }
+
+void
+dynlib_last_error_free(void)
+{}

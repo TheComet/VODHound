@@ -712,7 +712,7 @@ int main(int argc, char **argv)
      * widgets. Not sure if this is a bug or not, but SIZE seems to be the only
      * way to set the initial size of the window.
      */
-    IupSetAttribute(dlg, "SIZE", "800x400");
+    //IupSetAttribute(dlg, "SIZE", "400x400");
     IupShowXY(dlg, 0, 0);
     //IupSetAttribute(dlg, "SIZE", NULL);
 
@@ -755,7 +755,7 @@ int main(int argc, char **argv)
             IupSetInt(plugin_view, "VALUEPOS", insert_pos);
             //video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\Startklar\\Downloads\\Prefers_Land_Behind.mp4", 1) == 0;
             //video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\AlexanderMurray\\Downloads\\pika-dj-mixups.mp4", 1) == 0;
-            video_open = plugin.i->video->open_file(plugin_ctx, "/home/thecomet/videos/ssbu/2023-07-11 - Stino/2023-07-11_19-34-14.mkv", 1) == 0;
+            video_open = plugin.i->video->open_file(plugin_ctx, "/home/thecomet/videos/ssbu/2023-09-05 - Stino/2023-09-05_19-49-31.mkv", 1) == 0;
             if (!video_open)
                 goto open_video_failed;
 

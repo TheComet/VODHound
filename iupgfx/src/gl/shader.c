@@ -47,8 +47,11 @@ GLuint gl_load_shader(const char* vs, const char* fs, const char* attribute_bind
     program = glCreateProgram();
     if (program == 0)
     {
-        *error = malloc(sizeof("glCreateProgram() failed"));
-        strcpy(*error, "glCreateShader() failed");
+        if (error)
+        {
+            *error = malloc(sizeof("glCreateProgram() failed"));
+            strcpy(*error, "glCreateShader() failed");
+        }
         goto create_program_failed;
     }
 

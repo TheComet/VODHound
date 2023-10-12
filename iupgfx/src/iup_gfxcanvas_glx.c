@@ -26,28 +26,29 @@ static const struct vertex quad_vertices[6] = {
     {{-1,  1}},
     {{ 1, -1}},
     {{ 1,  1}},
-    {{ 1, -1}},
-    {{-1,  1}}
 };
 static const char* attr_bindings[] = {
-    "vPosition",
+    "v_position",
     NULL
 };
 static const char* vs_quad = "\
-precision mediump float;\n\
-attribute vec2 vPosition;\n\
-varying vec2 fTexCoord;\n\
+//precision mediump float;\n\
+attribute vec2 v_position;\n\
+varying vec2 f_texcoord;\n\
+uniform vec2 u_aspect;\n\
+uniform vec2 u_offset;\n\
 void main() {\
-    // map [-1, 1] to texture coordinate [0, 1]\
-    fTexCoord = vPosition * 2.0 - 1.0;\n\
-    gl_Position = vec4(vPosition, 0.0, 1.0);\n\
+    // map [-1, 1] to texture coordinate [0, 1]\n\
+    f_texcoord = v_position * vec2(1.0, -1.0) * 0.5 + 0.5;\n\
+    f_texcoord = (f_texcoord + u_offset) * u_aspect;\n\
+    gl_Position = vec4(v_position, 0.0, 1.0);\n\
 }";
-static const char* fs_yuv420 = "\
-precision mediump float;\n\
-varying vec2 fTexCoord;\n\
-uniform sampler2D sTex0;\n\
+static const char* fs_quad = "\
+//precision mediump float;\n\
+varying vec2 f_texcoord;\n\
+uniform sampler2D s_texture0;\n\
 void main() {\n\
-    vec3 col0 = texture2D(sTex0, fTexCoord);\n\
+    vec3 col0 = texture2D(s_texture0, f_texcoord);\n\
     gl_FragColor = vec4(col0, 1.0);\n\
 }";
 
@@ -57,9 +58,14 @@ typedef struct Context3D
     GLXContext gl;
     Window window;
     GLuint vbo;
-    GLuint tex[8];
+    GLuint texture[8];
     GLuint program;
-    GLuint sTex[8];
+    GLuint u_aspect;
+    GLuint u_offset;
+    GLuint s_texture[8];
+
+    int canvas_width, canvas_height;
+    int texture_width, texture_height;
 } Context3D;
 
 typedef GLXContext (*glXCreateContextAttribsARBProc)(
@@ -107,7 +113,7 @@ static int CreateGLXContext(Ihandle* ih, Context3D* ctx)
         const char* error = "Failed to retrieve a framebuffer config";
         iupAttribSet(ih, "ERROR", error);
         iupAttribSetStr(ih, "LASTERROR", error);
-        return IUP_NOERROR;
+        goto choose_fbconfig_failed;
     }
 
     glXCreateContextAttribsARBProc glXCreateContextAttribsARB =
@@ -120,9 +126,8 @@ static int CreateGLXContext(Ihandle* ih, Context3D* ctx)
         const char* error = "GLX did not advertise any extensions";
         iupAttribSet(ih, "ERROR", error);
         iupAttribSetStr(ih, "LASTERROR", error);
-        return IUP_NOERROR;
+        goto query_extension_string_failed;
     }
-    log_dbg("GLX extensions: %s\n", glxstr);
 
     if (!ExtensionExistsInString(glxstr, "GLX_ARB_create_context_profile") ||
         !glXCreateContextAttribsARB)
@@ -130,15 +135,17 @@ static int CreateGLXContext(Ihandle* ih, Context3D* ctx)
         const char* error = "GLX does not support GLX_ARB_create_context_profile";
         iupAttribSet(ih, "ERROR", error);
         iupAttribSetStr(ih, "LASTERROR", error);
-        return IUP_NOERROR;
+        goto ARB_create_context_profile_doesnt_exist;
     }
 
-    // Install an X error handler so the application won't exit if GL 3.0
-    // context allocation fails.
-    //
-    // Note this error handler is global.  All display connections in all threads
-    // of a process use the same error handler, so be sure to guard against other
-    // threads issuing X commands while this code is running.
+    /*
+     * Install an X error handler so the application won't exit if GL 3.0
+     * context allocation fails.
+     *
+     * Note this error handler is global.  All display connections in all threads
+     * of a process use the same error handler, so be sure to guard against other
+     * threads issuing X commands while this code is running.
+     */
     ctxErrorOccurred = 0;
     int (*oldHandler)(Display*, XErrorEvent*) =
         XSetErrorHandler(&ctxErrorHandler);
@@ -146,7 +153,7 @@ static int CreateGLXContext(Ihandle* ih, Context3D* ctx)
     int ctx_flags = 0;
     int profile_mask = GLX_CONTEXT_CORE_PROFILE_BIT_ARB;
 #if defined(DEBUG)
-    //ctx_flags |= GLX_CONTEXT_DEBUG_BIT_ARB;
+    ctx_flags |= GLX_CONTEXT_DEBUG_BIT_ARB;
 #endif
 
     int context_attribs[] = {
@@ -160,24 +167,24 @@ static int CreateGLXContext(Ihandle* ih, Context3D* ctx)
     ctx->gl = glXCreateContextAttribsARB(ctx->display, *fbconfigs, 0, True, context_attribs);
     XSync(ctx->display, False);
 
-    // Restore the original error handler
-    XSetErrorHandler( oldHandler );
+    /* Restore the original error handler */
+    XSetErrorHandler(oldHandler);
 
     if (ctxErrorOccurred || !ctx->gl)
     {
-        log_err("Failed to create an OpenGL context\n");
-        return IUP_NOERROR;
+        const char* error = "Failed to create an OpenGL context";
+        iupAttribSet(ih, "ERROR", error);
+        iupAttribSetStr(ih, "LASTERROR", error);
+        goto create_context_failed;
     }
 
-    // Verifying that context is a direct context
-    if (!glXIsDirect(ctx->display, ctx->gl))
-        log_dbg( "Indirect GLX rendering context obtained\n" );
-    else
-        log_dbg( "Direct GLX rendering context obtained\n" );
-
     // set context
-    if (!glXMakeCurrent(ctx->display, ctx->window, ctx->gl)) {
-        glXDestroyContext(ctx->display, ctx->gl);
+    if (!glXMakeCurrent(ctx->display, ctx->window, ctx->gl))
+    {
+        const char* error = "Failed to set OpenGL context as current";
+        iupAttribSet(ih, "ERROR", error);
+        iupAttribSetStr(ih, "LASTERROR", error);
+        goto set_context_failed;
     }
 
     /* Set up quad mesh */
@@ -186,30 +193,44 @@ static int CreateGLXContext(Ihandle* ih, Context3D* ctx)
     glBufferData(GL_ARRAY_BUFFER, sizeof(quad_vertices), quad_vertices, GL_STATIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-    /* Prepare background textures */
-    glGenTextures(1, &ctx->tex[0]);
-    glBindTexture(GL_TEXTURE_2D, ctx->tex[0]);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    ctx->program = gl_load_shader(vs_quad, fs_yuv420, attr_bindings, NULL);
-    ctx->sTex[0] = glGetUniformLocation(ctx->program, "sTex0");
+    XFree(fbconfigs);
 
     return IUP_NOERROR;
+
+set_context_failed                      : glXDestroyContext(ctx->display, ctx->gl);
+create_context_failed                   :
+ARB_create_context_profile_doesnt_exist :
+query_extension_string_failed           : XFree(fbconfigs);
+choose_fbconfig_failed                  : return IUP_NOERROR;
 }
 
 static void DestroyGLXContext(Context3D* ctx)
 {
+    if (glXMakeCurrent(ctx->display, ctx->window, ctx->gl))
+    {
+        if (ctx->program)
+            glDeleteProgram(ctx->program);
+
+        for (int i = 0; i != 8; ++i)
+            if (ctx->texture[i])
+                glDeleteTextures(1, &ctx->texture[i]);
+
+        glDeleteBuffers(1, &ctx->vbo);
+    }
+
     glXDestroyContext(ctx->display, ctx->gl);
 }
 
 static int CanvasResize_CB(Ihandle* ih, int width, int height)
 {
-    log_dbg("resize cb\n");
+    Context3D* ctx = (Context3D*)iupAttribGet(ih, "_IUP_GLXCONTEXT");
+    if (!glXMakeCurrent(ctx->display, ctx->window, ctx->gl))
+        return IUP_DEFAULT;
+
     glViewport(0, 0, width, height);
+    ctx->canvas_width = width;
+    ctx->canvas_height = height;
+
     return IUP_DEFAULT;
 }
 
@@ -217,18 +238,50 @@ static int Redraw_CB(Ihandle* ih, float x, float y)
 {
     Context3D* ctx = (Context3D*)iupAttribGet(ih, "_IUP_GLXCONTEXT");
 
-    glXMakeCurrent(ctx->display, ctx->window, ctx->gl);
+    if (!glXMakeCurrent(ctx->display, ctx->window, ctx->gl))
+        return IUP_DEFAULT;
+
+    if (ctx->program == 0)
+    {
+        char* error;
+        ctx->program = gl_load_shader(vs_quad, fs_quad, attr_bindings, &error);
+        ctx->u_offset = glGetUniformLocation(ctx->program, "u_offset");
+        ctx->u_aspect = glGetUniformLocation(ctx->program, "u_aspect");
+        ctx->s_texture[0] = glGetUniformLocation(ctx->program, "s_texture0");
+        if (ctx->program == 0)
+        {
+            log_err("Failed to load shader: %s\n", error);
+            free(error);
+        }
+    }
+
+    GLfloat offsetx = 0.0, offsety = 0.0, aspectx = 1.0, aspecty = 1.0;
+    GLfloat canvas_ar = (GLfloat)ctx->canvas_width / (GLfloat)ctx->canvas_height;
+    GLfloat texture_ar = (GLfloat)ctx->texture_width / (GLfloat)ctx->texture_height;
+    if (canvas_ar > texture_ar)
+    {
+        offsetx = ((GLfloat)ctx->canvas_height * texture_ar - ctx->canvas_width) / 2.0 / ctx->canvas_width;
+        aspectx = canvas_ar / texture_ar;
+    }
+    else if (canvas_ar < texture_ar)
+    {
+        offsety = ((GLfloat)ctx->canvas_width / texture_ar - ctx->canvas_height) / 2.0 / ctx->canvas_height;
+        aspecty = texture_ar / canvas_ar;
+    }
 
     glBindBuffer(GL_ARRAY_BUFFER, ctx->vbo);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(struct vertex), (void*)offsetof(struct vertex, pos));
 
     glUseProgram(ctx->program);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, ctx->tex[0]);
-    glUniform1i(ctx->sTex[0], 1);
+    glUniform2f(ctx->u_offset, offsetx, offsety);
+    glUniform2f(ctx->u_aspect, aspectx, aspecty);
 
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, ctx->texture[0]);
+    glUniform1i(ctx->s_texture[0], 0);
+
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
     glBindTexture(GL_TEXTURE_2D, 0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -256,6 +309,7 @@ static int CanvasCreateMethod(Ihandle* ih, void** params)
 static int CanvasMapMethod(Ihandle* ih)
 {
     Context3D* ctx = (Context3D*)iupAttribGet(ih, "_IUP_GLXCONTEXT");
+    memset(ctx, 0, sizeof *ctx);
 
     /* Need the X11 display and window handle */
     ctx->display = iupdrvGetDisplay();
@@ -267,6 +321,12 @@ static int CanvasMapMethod(Ihandle* ih)
         ctx->window = (Window)IupGetAttribute(ih, "XWINDOW");  /* works only after mapping the IupCanvas */
     if (!ctx->window)
         return IUP_NOERROR;
+
+    /* "0" is a valid uniform value. -1 is the default, invalid value */
+    ctx->u_aspect = -1;
+    ctx->u_offset = -1;
+    for (int i = 0; i != 8; ++i)
+        ctx->s_texture[i] = -1;
 
     return CreateGLXContext(ih, ctx);
 }
@@ -311,6 +371,7 @@ int iupdrvGfxInit(void)
     LOAD(glDeleteProgram);
     LOAD(glUseProgram);
     LOAD(glUniform1i);
+    LOAD(glUniform2f);
 
     LOAD(glGenBuffers);
     LOAD(glBindBuffer);
@@ -339,20 +400,88 @@ void iupdrvGfxCanvasInitClass(Iclass* ic)
 
 int iupdrvGfxCanvasGetTexWidth(Ihandle* ih)
 {
-
+    Context3D* ctx = (Context3D*)iupAttribGet(ih, "_IUP_GLXCONTEXT");
+    return ctx->texture_width;
 }
 
 int iupdrvGfxCanvasGetTexHeight(Ihandle* ih)
 {
-
+    Context3D* ctx = (Context3D*)iupAttribGet(ih, "_IUP_GLXCONTEXT");
+    return ctx->texture_height;
 }
 
 void iupdrvGfxCanvasSetTexSize(Ihandle* ih, int width, int height)
 {
+    Context3D* ctx = (Context3D*)iupAttribGet(ih, "_IUP_GLXCONTEXT");
 
+    if (!glXMakeCurrent(ctx->display, ctx->window, ctx->gl))
+        return;
+
+    ctx->texture_width = width;
+    ctx->texture_height = height;
+
+    for (int i = 0; i != 8; ++i)
+        if (ctx->texture[i])
+        {
+            glDeleteTextures(1, &ctx->texture[i]);
+            ctx->texture[i] = 0;
+            ctx->s_texture[i] = -1;
+        }
 }
 
 void iupdrvGfxCanvasSetTexRGBA(Ihandle* ih, int id, const char* value)
 {
+    Context3D* ctx = (Context3D*)iupAttribGet(ih, "_IUP_GLXCONTEXT");
 
+    if (id > 7)
+    {
+        char buf[64];
+        snprintf(buf, 64, "Only support 8 textures (requested index %d)", id);
+        iupAttribSet(ih, "ERROR", buf);
+        log_err("%s\n", buf);
+        return;
+    }
+    if (id == IUP_INVALID_ID)
+    {
+        id = 0;
+    }
+    else if (id < 0)
+    {
+        log_err("Invalid ID was passed\n");
+        return;
+    }
+
+    if (!glXMakeCurrent(ctx->display, ctx->window, ctx->gl))
+        return;
+
+    if (ctx->texture[id] == 0)
+    {
+        /* Create a new texture */
+        GLfloat border_color[] = {0.1, 0.1, 0.1, 1.0};
+        glGenTextures(1, &ctx->texture[id]);
+        glBindTexture(GL_TEXTURE_2D, ctx->texture[id]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+        glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border_color);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, ctx->texture_width, ctx->texture_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, value);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+    else
+    {
+        /* Update the existing texture */
+        glBindTexture(GL_TEXTURE_2D, ctx->texture[id]);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, ctx->texture_width, ctx->texture_height, GL_RGBA, GL_UNSIGNED_BYTE, value);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    /* The shader has to be recompiled */
+    if (ctx->program)
+        glDeleteProgram(ctx->program);
+    ctx->program = 0;
+    ctx->u_aspect = -1;
+    ctx->u_offset = -1;
+    for (int i = 0; i != 8; ++i)
+        ctx->s_texture[i] = -1;
 }

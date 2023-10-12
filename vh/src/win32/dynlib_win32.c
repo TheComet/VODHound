@@ -1,28 +1,7 @@
 #include "vh/dynlib.h"
-#include "vh/log.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
-
-static char*
-last_error_create(void)
-{
-    char* str;
-    FormatMessageA(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
-        NULL,
-        GetLastError(),
-        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        (LPSTR)&str,
-        0,
-        NULL);
-    return str;
-}
-static void
-last_error_free(char* str)
-{
-    LocalFree(str);
-}
 
 int
 dynlib_add_path(const char* path)
@@ -30,40 +9,26 @@ dynlib_add_path(const char* path)
     /* This function does not appear to add duplicates so it's safe to call it
      * multiple times */
     if (!SetDllDirectoryA(path))
-    {
-        char* error = last_error_create();
-        log_err("Failed to add DLL search path: %s: %s", path, error);
-        last_error_free(error);
         return -1;
-    }
     return 0;
 }
 
 void*
 dynlib_open(const char* file_name)
 {
-    HMODULE hModule = LoadLibraryA(file_name);
-    if (hModule == NULL)
-    {
-        char* error = last_error_create();
-        log_err("Failed to load shared library '%s': %s\n", file_name, error);
-        last_error_free(error);
-    }
-    return (void*)hModule;
+    return (void*)LoadLibraryA(file_name);
 }
 
 void
 dynlib_close(void* handle)
 {
-    HMODULE hModule = (HMODULE)handle;
-    FreeLibrary(hModule);
+    FreeLibrary((HMODULE)handle);
 }
 
 void*
 dynlib_symbol_addr(void* handle, const char* name)
 {
-    HMODULE hModule = (HMODULE)handle;
-    return (void*)GetProcAddress(hModule, name);
+    return (void*)GetProcAddress((HMODULE)handle, name);
 }
 
 static PIMAGE_EXPORT_DIRECTORY
@@ -109,6 +74,28 @@ dynlib_symbol_at(void* handle, int idx)
     char** names = (char**)((BYTE*)hModule + exports->AddressOfNames);
     char** func = (char**)((BYTE*)hModule + exports->AddressOfFunctions);
     return (const char*)names[idx];
+}
+
+static char* last_error;
+const char*
+dynlib_last_error(void)
+{
+    FormatMessageA(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
+        NULL,
+        GetLastError(),
+        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        (LPSTR)&last_error,
+        0,
+        NULL);
+    return last_error;
+}
+void
+dynlib_last_error_free(void)
+{
+    if (last_error)
+        LocalFree(last_error);
+    last_error = NULL;
 }
 
 int

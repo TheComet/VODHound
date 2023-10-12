@@ -80,8 +80,8 @@ typedef struct Context3D
     ID3D11Texture2D* textures[8];
     ID3D11ShaderResourceView* texture_views[8];
 
-    int canvas_width, canvas_height, texture_width, texture_height;
-    char texture_format[8];
+    int canvas_width, canvas_height;
+    int texture_width, texture_height;
 } Context3D;
 
 static int CreateDX11Context(Ihandle* ih, Context3D* ctx)
@@ -263,9 +263,9 @@ static int CreateDX11Context(Ihandle* ih, Context3D* ctx)
     sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
     sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
     sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
-    sampler_desc.BorderColor[0] = 1.0f;
-    sampler_desc.BorderColor[1] = 1.0f;
-    sampler_desc.BorderColor[2] = 1.0f;
+    sampler_desc.BorderColor[0] = 0.1f;
+    sampler_desc.BorderColor[1] = 0.1f;
+    sampler_desc.BorderColor[2] = 0.1f;
     sampler_desc.BorderColor[3] = 1.0f;
     sampler_desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
 
@@ -359,7 +359,7 @@ static int CanvasDefaultRedraw_CB(Ihandle* ih, float x, float y)
         }
         else if (canvas_ar < texture_ar)
         {
-            constants->offset[1] = ((FLOAT)ctx->canvas_width / texture_ar - (FLOAT)ctx->canvas_height) / 2.0;
+            constants->offset[1] = ((FLOAT)ctx->canvas_width / texture_ar - ctx->canvas_height) / 2.0;
             constants->aspect[1] = texture_ar / canvas_ar;
         }
 
@@ -530,17 +530,4 @@ void iupdrvGfxCanvasSetTexRGBA(Ihandle* ih, int id, const char* value)
             ID3D11DeviceContext_Unmap(ctx->devcon, (ID3D11Resource*)ctx->textures[id], 0);
         }
     }
-}
-
-/* -------------- Public API ----------------------------------------------- */
-
-int IupGfxIsCurrent(Ihandle* ih)
-{
-    (void)ih;
-    return 1;
-}
-
-void IupGfxMakeCurrent(Ihandle* ih)
-{
-    (void)ih;
 }
