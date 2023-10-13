@@ -23,10 +23,13 @@ static int import_hash40(struct db_interface* dbi, struct db* db, const char* fi
     struct mfile mf;
     struct mstream ms;
 
-    log_info("Importing hash40 strings from '%s'\n", file_name);
-
     if (mfile_map(&mf, file_name) != 0)
+    {
+        log_err("Failed to open file '%s'\n", file_name);
         goto open_file_failed;
+    }
+
+    log_info("Importing hash40 strings from '%s'\n", file_name);
 
     if (dbi->transaction_begin(db) != 0)
         goto transaction_begin_failed;
@@ -610,14 +613,13 @@ struct plugin_state
 };
 
 static int
-on_plugin_view_popup_plugin_selected(Ihandle* ih)
+plugin_view_open_plugin(Ihandle* plugin_view, struct str_view plugin_name)
 {
     int insert_pos;
-    Ihandle* plugin_view = IupGetAttributeHandle(ih, "plugin_view");
     struct vec* plugin_state_vec = (struct vec*)IupGetAttribute(plugin_view, "_IUP_plugin_state_vec");
     struct plugin_state* state = vec_emplace(plugin_state_vec);
 
-    if (plugin_load(&state->plugin, cstr_view(IupGetAttribute(ih, "TITLE"))) != 0)
+    if (plugin_load(&state->plugin, plugin_name) != 0)
         goto load_plugin_failed;
     
     state->ctx = state->plugin.i->create();
@@ -630,20 +632,32 @@ on_plugin_view_popup_plugin_selected(Ihandle* ih)
 
     insert_pos = IupGetChildCount(plugin_view) - 1;
     IupSetAttribute(state->ui, "TABTITLE", state->plugin.i->name);
-    IupSetInt(plugin_view, "VALUEPOS", insert_pos);
     if (IupInsert(plugin_view, IupGetChild(plugin_view, insert_pos), state->ui) == NULL)
         goto add_to_ui_failed;
+    IupSetInt(plugin_view, "VALUEPOS", insert_pos);
 
     IupMap(state->ui);
     IupRefresh(state->ui);
 
-    return IUP_DEFAULT;
+    state->plugin.i->video->open_file(state->ctx, "C:\\Users\\Startklar\\Downloads\\Prefers_Land_Behind.mp4", 1);
+    //state->plugin.i->video->open_file(state->ctx, "C:\\Users\\AlexanderMurray\\Downloads\\pika-dj-mixups.mp4", 1);
+    //state->plugin.i->video->open_file(state->ctx, "/home/thecomet/videos/ssbu/2023-09-05 - Stino/2023-09-05_19-49-31.mkv", 1);
+
+    return 0;
 
     add_to_ui_failed      : state->plugin.i->ui->destroy(state->ctx, state->ui);
     create_ui_failed      : state->plugin.i->destroy(state->ctx);
     create_context_failed : plugin_unload(&state->plugin);
     load_plugin_failed    : vec_pop(plugin_state_vec);
 
+    return -1;
+}
+
+static int
+on_plugin_view_popup_plugin_selected(Ihandle* ih)
+{
+    Ihandle* plugin_view = IupGetAttributeHandle(ih, "plugin_view");
+    plugin_view_open_plugin(plugin_view, cstr_view(IupGetAttribute(ih, "TITLE")));
     return IUP_DEFAULT;
 }
 
@@ -762,7 +776,7 @@ create_plugin_view(void)
 {
     Ihandle* empty_tab = IupSetAttributes(IupCanvas(NULL), "TABTITLE=home");
     Ihandle* plus_tab = IupSetAttributes(IupCanvas(NULL), "TABTITLE=+");
-    Ihandle* tabs = IupSetAttributes(IupTabs(empty_tab, plus_tab, NULL), "SHOWCLOSE=YES");
+    Ihandle* tabs = IupSetAttributes(IupTabs(empty_tab, plus_tab, NULL), "SHOWCLOSE=NO");
     IupSetCallback(tabs, "MAP_CB", (Icallback)on_plugin_view_map);
     IupSetCallback(tabs, "UNMAP_CB", (Icallback)on_plugin_view_unmap);
     IupSetCallback(tabs, "TABCHANGEPOS_CB", (Icallback)on_plugin_view_tab_change);
@@ -836,56 +850,19 @@ create_main_dialog(void)
 
 int main(int argc, char **argv)
 {
-    IupOpen(&argc, &argv);
-    IupSetGlobal("UTF8MODE", "Yes");
-    IupGfxOpen();
-    Ihandle* dlg = create_main_dialog();
 
-    /*
-     * If we don't clear SIZE after showing the dialog, then when resizing the
-     * window smaller than the size, RESIZE_CB is no longer called on some
-     * widgets. Not sure if this is a bug or not, but SIZE seems to be the only
-     * way to set the initial size of the window.
-     */
-    //IupSetAttribute(dlg, "SIZE", "400x400");
-    IupShowXY(dlg, 0, 0);
-    //IupSetAttribute(dlg, "SIZE", NULL);
-
-    Ihandle* replays = IupGetHandle("replay_browser");
-    Ihandle* plugin_view = IupGetHandle("plugin_view");
-    IupSetAttribute(replays, "TITLE", "Replays");
-    IupSetAttribute(replays, "ADDBRANCH", "2023-08-20");
-    IupSetAttribute(replays, "ADDLEAF1", "19:45 Game 1");
-    IupSetAttribute(replays, "ADDLEAF2", "19:52 Game 2");
-    IupSetAttribute(replays, "INSERTBRANCH1", "2023-08-22");
-    IupSetAttribute(replays, "ADDLEAF4", "12:25 Game 1");
-    IupSetAttribute(replays, "ADDLEAF5", "12:28 Game 2");
-    IupSetAttribute(replays, "ADDLEAF6", "12:32 Game 3");
-
-        //video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\Startklar\\Downloads\\Prefers_Land_Behind.mp4", 1) == 0;
-        //video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\AlexanderMurray\\Downloads\\pika-dj-mixups.mp4", 1) == 0;
-        //video_open = plugin.i->video->open_file(plugin_ctx, "/home/thecomet/videos/ssbu/2023-09-05 - Stino/2023-09-05_19-49-31.mkv", 1) == 0;
-
-    IupMainLoop();
-
-    on_plugin_view_close(plugin_view);
-
-    IupDestroy(dlg);
-    IupGfxClose();
-    IupClose();
-
-    return EXIT_SUCCESS;
-    /*
     struct db_interface* dbi = db("sqlite");
-    struct db* db = dbi->open_and_prepare("rf.db");
+    struct db* db = dbi->open_and_prepare("vodhound.db");
     if (db == NULL)
         goto open_db_failed;
 
+#if 1
     import_mapping_info(dbi, db, "migrations/mappingInfo.json");
     import_hash40(dbi, db, "ParamLabels.csv");
-    import_all_rfr(dbi, db);*/
+    import_all_rfr(dbi, db);
+#endif
 
-    /*
+#if 1
     import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-09-51 - Singles Bracket - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 1 (0-0) - Hollow Bastion.rfr");
     import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-13-39 - Singles Bracket - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 2 (1-0) - Town and City.rfr");
     import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-19-12 - Singles Bracket - Bo3 (Pools 2) - TheComet (Pikachu) vs Keppler (Roy) - Game 1 (0-0) - Small Battlefield.rfr");
@@ -895,10 +872,44 @@ int main(int argc, char **argv)
     import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-52-03 - Singles Bracket - Bo3 (Pools 3) - TaDavidID (Villager) vs TheComet (Pikachu) - Game 3 (1-1) - Hollow Bastion.rfr");
     import_rfr_into_db(dbi, db, "reframed/2023-09-20_20-06-46 - Singles Bracket - Bo3 (Pools 4) - TheComet (Pikachu) vs karsten187 (Wolf) - Game 1 (0-0) - Small Battlefield.rfr");
     import_rfr_into_db(dbi, db, "reframed/2023-09-20_20-11-47 - Singles Bracket - Bo3 (Pools 4) - TheComet (Pikachu) vs karsten187 (Wolf) - Game 2 (0-1) - Small Battlefield.rfr");
-*/
+#endif
 
-    //dbi->close(db);
+    if (IupOpen(&argc, &argv) != IUP_NOERROR)
+        goto open_iup_failed;
+
+    IupSetGlobal("UTF8MODE", "Yes");
+    IupGfxOpen();
+
+    Ihandle* dlg = create_main_dialog();
+
+    IupSetAttribute(dlg, "PLACEMENT", "MAXIMIZED");
+    IupShow(dlg);
+
+    Ihandle* replays = IupGetHandle("replay_browser");
+    IupSetAttribute(replays, "TITLE", "Replays");
+    IupSetAttribute(replays, "ADDBRANCH", "2023-08-20");
+    IupSetAttribute(replays, "ADDLEAF1", "19:45 Game 1");
+    IupSetAttribute(replays, "ADDLEAF2", "19:52 Game 2");
+    IupSetAttribute(replays, "INSERTBRANCH1", "2023-08-22");
+    IupSetAttribute(replays, "ADDLEAF4", "12:25 Game 1");
+    IupSetAttribute(replays, "ADDLEAF5", "12:28 Game 2");
+    IupSetAttribute(replays, "ADDLEAF6", "12:32 Game 3");
+
+    Ihandle* plugin_view = IupGetHandle("plugin_view");
+    plugin_view_open_plugin(plugin_view, cstr_view("VOD Review"));
+
+    IupMainLoop();
+
+    on_plugin_view_close(plugin_view);
+
+    IupDestroy(dlg);
+    IupGfxClose();
+    IupClose();
+
+
+    dbi->close(db);
     return EXIT_SUCCESS;
 
-    open_db_failed : return -1;
+    open_iup_failed : dbi->close(db);
+    open_db_failed  : return -1;
 }

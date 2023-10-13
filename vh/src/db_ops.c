@@ -138,9 +138,9 @@ retry_step:
     mfile_unmap(&mf);
     return 0;
 
-exec_failed        : sqlite3_finalize(stmt);
-prepare_failed     : mfile_unmap(&mf);
-open_script_failed : return -1;
+    exec_failed        : sqlite3_finalize(stmt);
+    prepare_failed     : mfile_unmap(&mf);
+    open_script_failed : return -1;
 }
 
 static int
@@ -167,7 +167,7 @@ check_version_and_migrate(sqlite3* db)
 
     version = sqlite3_column_int(stmt, 0);
     sqlite3_finalize(stmt);
-    log_info("db version: %d\n", version);
+    log_dbg("db version: %d\n", version);
 
     if (exec_sql_wrapper(db, "BEGIN TRANSACTION") != 0)
         return -1;
@@ -197,11 +197,11 @@ check_version_and_migrate(sqlite3* db)
     if (exec_sql_wrapper(db, "COMMIT TRANSACTION") != 0)
         goto migrate_failed;
 
-    log_info("Successfully migrated to db version 1\n");
+    log_info("Successfully migrated from version %d to version 1\n", version);
 
     return 0;
 
-migrate_failed : exec_sql_wrapper(db, "ROLLBACK TRANSACTION");
+    migrate_failed : exec_sql_wrapper(db, "ROLLBACK TRANSACTION");
     return -1;
 }
 
@@ -226,9 +226,9 @@ open_and_prepare(const char* uri)
 
     return ctx;
 
-migrate_db_failed             :
-open_db_failed                : mem_free(ctx);
-oom                           : return NULL;
+    migrate_db_failed             :
+    open_db_failed                : mem_free(ctx);
+    oom                           : return NULL;
 }
 
 static void

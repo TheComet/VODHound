@@ -54,6 +54,8 @@ struct db_interface
     int (*score_add)(struct db* db, int game_id, int team_id, int score);
 
     int (*frame_add)(struct db* db, int game_id, int slot, uint64_t time_stamp, int frame_number, int frames_left, float posx, float posy, float damage, float hitstun, float shield, int status_id, int hit_status_id, uint64_t hash40, int stocks, int attack_connected, int facing_left, int opponent_in_hitlag);
+
+    int (*query_games)(struct db* db);
 };
 
 VH_PUBLIC_API struct db_interface*
