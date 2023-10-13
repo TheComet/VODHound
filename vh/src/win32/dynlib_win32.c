@@ -53,6 +53,44 @@ get_exports_directory(HMODULE hModule)
     return exports;
 }
 
+static int match_always(struct str_view str, const void* data)
+{
+    (void)str;
+    (void)data;
+    return 1;
+}
+
+int
+dynlib_symbol_table(void* handle, struct strlist* sl)
+{
+    return dynlib_symbol_table_filtered(handle, sl, match_always, NULL);
+}
+
+int
+dynlib_symbol_table_filtered(
+    void* handle,
+    struct strlist* sl,
+    int (*match)(struct str_view str, const void* data),
+    const void* data)
+{
+    HMODULE hModule = (HMODULE)handle;
+    PIMAGE_EXPORT_DIRECTORY exports = get_exports_directory(hModule);
+    if (exports == NULL)
+        return 0;
+
+    DWORD* name_table = (DWORD*)((size_t)hModule + exports->AddressOfNames);
+    for (int i = 0; i != (int)exports->NumberOfNames; ++i)
+    {
+        const char* cname = (const char*)((size_t)hModule + name_table[i]);
+        struct str_view name = cstr_view(cname);
+        if (match(name, data))
+            if (strlist_add(sl, name) != 0)
+                return -1;
+    }
+
+    return 0;
+}
+
 int
 dynlib_symbol_count(void* handle)
 {
@@ -71,9 +109,8 @@ dynlib_symbol_at(void* handle, int idx)
     if (exports == NULL)
         return 0;
 
-    char** names = (char**)((BYTE*)hModule + exports->AddressOfNames);
-    char** func = (char**)((BYTE*)hModule + exports->AddressOfFunctions);
-    return (const char*)names[idx];
+    DWORD* name_table = (DWORD*)((size_t)hModule + exports->AddressOfNames);
+    return (const char*)((size_t)hModule + name_table[idx]);
 }
 
 static char* last_error;

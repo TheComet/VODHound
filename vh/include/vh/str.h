@@ -164,8 +164,48 @@ cstr_equal(struct str_view str, const char* cstr)
     return memcmp(str.data, cstr, (size_t)str.len) == 0;
 }
 
+static inline struct str_view
+str_left_of(struct str_view s, char delim)
+{
+    int i = s.len;
+    for (s.len = 0; s.len != i; ++s.len)
+        if (s.data[s.len] == delim)
+            return s;
+}
+
+static inline struct str_view
+str_right_of(struct str_view s, char delim)
+{
+    int len = str_left_of(s, delim).len;
+    s.data += len + 1;
+    s.len -= len + 1;
+    if (s.len < 0)
+        s.len = 0;
+    return s;
+}
+
+static inline void
+str_split2(struct str_view in, char delim, struct str_view* left, struct str_view* right)
+{
+    int i;
+    left->data = in.data;
+    for (i = 0; i != in.len; ++i)
+        if (in.data[i] == delim)
+        {
+            left->len = i;
+            right->data = in.data + i + 1;
+            right->len = in.len - i - 1;
+            return;
+        }
+    left->len = in.len;
+    right->len = 0;
+}
+
 VH_PUBLIC_API int
 str_hex_to_u64(struct str_view str, uint64_t* out);
+
+VH_PUBLIC_API int
+str_dec_to_int(struct str_view str, int* out);
 
 struct strlist_str
 {

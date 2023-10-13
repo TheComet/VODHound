@@ -149,7 +149,8 @@ dynlib_symbol_table_filtered(
 
         struct str_view name = cstr_view(&strtab[sym->st_name]);
         if (match(name, data))
-            strlist_add(sl, name);
+            if (strlist_add(sl, name) != 0)
+                return -1;
     }
 
     return 0;

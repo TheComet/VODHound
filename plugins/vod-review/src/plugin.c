@@ -18,6 +18,20 @@ struct plugin_ctx
     Ihandle* controls;
 };
 
+static void
+overlay_set_gfxcanvas(Ihandle* gfxcanvas, int idx, const void* data)
+{
+    char attr[9];
+    snprintf(attr, 9, "TEXRGBA%d", idx);
+    IupSetAttribute(gfxcanvas, attr, data);
+}
+
+static void
+overlay_get_size_gfxcanvas(Ihandle* gfxcanvas, int* w, int* h)
+{
+    IupGetAttribute(gfxcanvas, "TEXSIZE");
+}
+
 static struct plugin_ctx*
 create(void)
 {
@@ -53,6 +67,12 @@ Ihandle* ui_create(struct plugin_ctx* ctx)
 {
     if (ctx->video_ctx && ctx->video_plugin.i->ui)
         ctx->video_ui = ctx->video_plugin.i->ui->create(ctx->video_ctx);
+    if (ctx->video_ui)
+    {
+        struct str_view class_name = cstr_view(IupGetClassName(ctx->video_ui));
+        if (cstr_equal(class_name, "gfxcanvas"))
+
+    }
 
     Ihandle* slider = IupVal("HORIZONTAL");
     IupSetAttribute(slider, "EXPAND", "HORIZONTAL");
@@ -118,7 +138,7 @@ int video_open_file(struct plugin_ctx* ctx, const char* file_name, int pause)
 void video_close(struct plugin_ctx* ctx)
 {
     if (ctx->video_ctx)
-        return ctx->video_plugin.i->video->close(ctx->video_ctx);
+        ctx->video_plugin.i->video->close(ctx->video_ctx);
 }
 int video_is_open(struct plugin_ctx* ctx)
 {
@@ -129,17 +149,17 @@ int video_is_open(struct plugin_ctx* ctx)
 void video_play(struct plugin_ctx* ctx)
 {
     if (ctx->video_ctx)
-        return ctx->video_plugin.i->video->play(ctx->video_ctx);
+        ctx->video_plugin.i->video->play(ctx->video_ctx);
 }
 void video_pause(struct plugin_ctx* ctx)
 {
     if (ctx->video_ctx)
-        return ctx->video_plugin.i->video->pause(ctx->video_ctx);
+        ctx->video_plugin.i->video->pause(ctx->video_ctx);
 }
 void video_step(struct plugin_ctx* ctx, int frames)
 {
     if (ctx->video_ctx)
-        return ctx->video_plugin.i->video->step(ctx->video_ctx, frames);
+        ctx->video_plugin.i->video->step(ctx->video_ctx, frames);
 }
 int video_seek(struct plugin_ctx* ctx, uint64_t offset, int num, int den)
 {
@@ -168,7 +188,7 @@ int video_is_playing(struct plugin_ctx* ctx)
 void video_set_volume(struct plugin_ctx* ctx, int percent)
 {
     if (ctx->video_ctx)
-        return ctx->video_plugin.i->video->set_volume(ctx->video_ctx, percent);
+        ctx->video_plugin.i->video->set_volume(ctx->video_ctx, percent);
 }
 int video_volume(struct plugin_ctx* ctx)
 {

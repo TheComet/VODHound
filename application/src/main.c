@@ -753,9 +753,9 @@ int main(int argc, char **argv)
             IupMap(plugin_ui);
             IupRefresh(plugin_ui);
             IupSetInt(plugin_view, "VALUEPOS", insert_pos);
-            //video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\Startklar\\Downloads\\Prefers_Land_Behind.mp4", 1) == 0;
+            video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\Startklar\\Downloads\\Prefers_Land_Behind.mp4", 1) == 0;
             //video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\AlexanderMurray\\Downloads\\pika-dj-mixups.mp4", 1) == 0;
-            video_open = plugin.i->video->open_file(plugin_ctx, "/home/thecomet/videos/ssbu/2023-09-05 - Stino/2023-09-05_19-49-31.mkv", 1) == 0;
+            //video_open = plugin.i->video->open_file(plugin_ctx, "/home/thecomet/videos/ssbu/2023-09-05 - Stino/2023-09-05_19-49-31.mkv", 1) == 0;
             if (!video_open)
                 goto open_video_failed;
 
