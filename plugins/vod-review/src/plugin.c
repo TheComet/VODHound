@@ -21,31 +21,20 @@ struct plugin_ctx
 static struct plugin_ctx*
 create(void)
 {
-    struct strlist sl;
     struct plugin_ctx* ctx = mem_alloc(sizeof(struct plugin_ctx));
 
-    strlist_init(&sl);
-    plugin_scan(&sl);
-    ctx->video_ctx = NULL;
-    for (int i = 0; i != (int)strlist_count(&sl); ++i)
-    {
-        struct str_view name = strlist_get(&sl, i);
-        if (cstr_equal(name, "FFmpeg Video Player"))
-        {
-            if (plugin_load(&ctx->video_plugin, strlist_get(&sl, i)) != 0)
-                goto plugin_load_failed;
-            if ((ctx->video_ctx = ctx->video_plugin.i->create()) == NULL)
-                goto create_plugin_ctx_failed;
-
-            break;
-
-            create_plugin_ctx_failed : plugin_unload(&ctx->video_plugin);
-            plugin_load_failed       : break;
-        }
-    }
-    strlist_deinit(&sl);
+    if (plugin_load_category(
+                &ctx->video_plugin,
+                cstr_view("video driver"),
+                cstr_view("FFmpeg Video Player")) != 0)
+        goto plugin_load_failed;
+    if ((ctx->video_ctx = ctx->video_plugin.i->create()) == NULL)
+        goto create_plugin_ctx_failed;
 
     return ctx;
+
+    create_plugin_ctx_failed : plugin_unload(&ctx->video_plugin);
+    plugin_load_failed       : return ctx;
 }
 
 static void
@@ -58,11 +47,6 @@ destroy(struct plugin_ctx* ctx)
     }
 
     mem_free(ctx);
-}
-
-static Ihandle* create_slider(void)
-{
-
 }
 
 Ihandle* ui_create(struct plugin_ctx* ctx)

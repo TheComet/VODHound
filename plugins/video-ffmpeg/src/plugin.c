@@ -113,7 +113,7 @@ PLUGIN_API struct plugin_interface vh_plugin = {
     0,
     create, destroy, &ui, &controls,
     "FFmpeg Video Player",
-    "video",
+    "video driver",
     "TheComet",
     "@TheComet93",
     "Decodes videos using FFmpeg libraries."
