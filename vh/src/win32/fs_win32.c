@@ -3,8 +3,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
-static int match_all(const char* str, const void* param) { (void)str; (void)param;  return 1; }
-
 void
 path_set_take(struct path* path, struct str str)
 {
@@ -82,37 +80,4 @@ fs_list(struct str_view path, int (*on_entry)(const char* name, void* user), voi
     out               : FindClose(hFind);
     first_file_failed : path_deinit(&correct_path);
     str_set_failed    : return ret;
-}
-
-int
-fs_list_strlist(struct strlist* out, struct str_view path)
-{
-    return fs_list_strlist_matching(out, path, match_all, NULL);
-}
-
-struct on_list_strlist_ctx
-{
-    struct strlist* out;
-    int (*match)(const char* name, void* user);
-    void* user;
-
-};
-static int on_list_strlist(const char* name, void* user)
-{
-    struct on_list_strlist_ctx* ctx = user;
-    if (ctx->match(name, ctx->user))
-        if (strlist_add(ctx->out, cstr_view(name)) != 0)
-            return -1;
-    return 0;
-}
-
-int
-fs_list_strlist_matching(
-    struct strlist* out,
-    struct str_view path,
-    int (*match)(const char* str, void* user),
-    void* user)
-{
-    struct on_list_strlist_ctx ctx = { out, match, user };
-    return fs_list(path, on_list_strlist, &ctx);
 }

@@ -1,7 +1,29 @@
-#include "vh/dynlib.h"
-
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+
+#include "vh/dynlib.h"
+
+static char* last_error;
+const char*
+dynlib_last_error(void)
+{
+    FormatMessageA(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
+        NULL,
+        GetLastError(),
+        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        (LPSTR)&last_error,
+        0,
+        NULL);
+    return last_error;
+}
+void
+dynlib_last_error_free(void)
+{
+    if (last_error)
+        LocalFree(last_error);
+    last_error = NULL;
+}
 
 int
 dynlib_add_path(const char* path)
@@ -60,7 +82,7 @@ static int match_always(struct str_view str, const void* data)
     return 1;
 }
 
-VH_PUBLIC_API int
+int
 dynlib_symbol_table(void* handle, int (*on_symbol)(const char* sym, void* user), void* user)
 {
     int ret = 0;
@@ -78,81 +100,6 @@ dynlib_symbol_table(void* handle, int (*on_symbol)(const char* sym, void* user),
     }
 
     return ret;
-}
-
-int
-dynlib_symbol_table_strlist(void* handle, struct strlist* sl)
-{
-    return dynlib_symbol_table_strlist_filtered(handle, sl, match_always, NULL);
-}
-
-int
-dynlib_symbol_table_strlist_filtered(
-    void* handle,
-    struct strlist* sl,
-    int (*match)(struct str_view str, const void* data),
-    const void* data)
-{
-    HMODULE hModule = (HMODULE)handle;
-    PIMAGE_EXPORT_DIRECTORY exports = get_exports_directory(hModule);
-    if (exports == NULL)
-        return 0;
-
-    DWORD* name_table = (DWORD*)((size_t)hModule + exports->AddressOfNames);
-    for (int i = 0; i != (int)exports->NumberOfNames; ++i)
-    {
-        const char* cname = (const char*)((size_t)hModule + name_table[i]);
-        struct str_view name = cstr_view(cname);
-        if (match(name, data))
-            if (strlist_add(sl, name) != 0)
-                return -1;
-    }
-
-    return 0;
-}
-
-int
-dynlib_symbol_count(void* handle)
-{
-    HMODULE hModule = (HMODULE)handle;
-    PIMAGE_EXPORT_DIRECTORY exports = get_exports_directory(hModule);
-    if (exports == NULL)
-        return 0;
-    return exports->NumberOfNames;
-}
-
-const char*
-dynlib_symbol_at(void* handle, int idx)
-{
-    HMODULE hModule = (HMODULE)handle;
-    PIMAGE_EXPORT_DIRECTORY exports = get_exports_directory(hModule);
-    if (exports == NULL)
-        return 0;
-
-    DWORD* name_table = (DWORD*)((size_t)hModule + exports->AddressOfNames);
-    return (const char*)((size_t)hModule + name_table[idx]);
-}
-
-static char* last_error;
-const char*
-dynlib_last_error(void)
-{
-    FormatMessageA(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
-        NULL,
-        GetLastError(),
-        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        (LPSTR)&last_error,
-        0,
-        NULL);
-    return last_error;
-}
-void
-dynlib_last_error_free(void)
-{
-    if (last_error)
-        LocalFree(last_error);
-    last_error = NULL;
 }
 
 int

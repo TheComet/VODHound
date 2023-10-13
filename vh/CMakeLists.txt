@@ -89,6 +89,7 @@ add_library (vh ${VH_LIB_TYPE}
 
     "src/btree.c"
     "src/db_ops.c"
+    "src/fs_common.c"
     "src/hash.c"
     "src/hm.c"
     "src/init.c"

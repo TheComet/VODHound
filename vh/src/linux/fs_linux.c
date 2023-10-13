@@ -37,10 +37,47 @@ path_join(struct path* path, struct str_view trailing)
     return 0;
 }
 
-int
-fs_list(struct strlist* out, struct str_view path)
+void
+path_dirname(struct path* path)
 {
-    return fs_list_matching(out, path, match_all, NULL);
+    /* Trailling slashes */
+    path->str.len--;
+    while (path->str.data[path->str.len] == '/')
+        path->str.len--;
+
+    while (path->str.len && path->str.data[path->str.len] != '/')
+        path->str.len--;
+}
+
+int
+fs_list(struct str_view path, int (*on_entry)(const char* name, void* user), void* user)
+{
+    DIR* dp;
+    struct dirent* ep;
+    struct path correct_path;
+    int ret = 0;
+
+    path_init(&correct_path);
+    if (path_set(&correct_path, path) != 0)
+        goto str_set_failed;
+    path_terminate(&correct_path);
+
+    dp = opendir(correct_path.str.data);
+    if (!dp)
+        goto first_file_failed;
+
+    while ((ep = readdir(dp)) != NULL)
+    {
+        struct str_view fname = cstr_view(ep->d_name);
+        if (cstr_equal(fname, ".") || cstr_equal(fname, ".."))
+            continue;
+        ret = on_entry(ep->d_name, user);
+        if (ret != 0) goto out;
+    }
+
+    out               : closedir(dp);
+    first_file_failed : path_deinit(&correct_path);
+    str_set_failed    : return ret;
 }
 
 int

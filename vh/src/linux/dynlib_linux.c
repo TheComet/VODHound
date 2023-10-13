@@ -4,23 +4,27 @@
 #include <link.h>
 
 #include "vh/dynlib.h"
-#include "vh/log.h"
 
 #include <stddef.h>
 
+const char*
+dynlib_last_error(void)
+{
+    return dlerror();
+}
+
+void
+dynlib_last_error_free(void)
+{}
+
 int
 dynlib_add_path(const char* path)
-{
-    return 0;
-}
+{ return 0; }
 
 void*
 dynlib_open(const char* file_name)
 {
-    void* handle = dlopen(file_name, RTLD_LAZY);
-    if (!handle)
-        log_err("Failed to load shared library '%s': %s\n", file_name, dlerror());
-    return handle;
+    return dlopen(file_name, RTLD_LAZY);
 }
 
 void
@@ -78,17 +82,7 @@ static int match_always(struct str_view str, const void* data)
 }
 
 int
-dynlib_symbol_table(void* handle, struct strlist* sl)
-{
-    return dynlib_symbol_table_filtered(handle, sl, match_always, NULL);
-}
-
-int
-dynlib_symbol_table_filtered(
-        void* handle,
-        struct strlist* sl,
-        int (*match)(struct str_view str, const void* data),
-        const void* data)
+dynlib_symbol_table(void* handle, int (*on_symbol)(const char* sym, void* user), void* user)
 {
     struct link_map* lm;
     ElfW(Addr) symidx;
@@ -98,6 +92,7 @@ dynlib_symbol_table_filtered(
     const uint32_t* hashtab = NULL;
     const uint32_t* gnuhashtab = NULL;
     const char* strtab = NULL;
+    int ret = 0;
 
     if (dlinfo(handle, RTLD_DI_LINKMAP, &lm) != 0)
         return -1;
@@ -147,85 +142,9 @@ dynlib_symbol_table_filtered(
         const char* addr = (const char*)symtab + offset;
         const ElfW(Sym)* sym = (const ElfW(Sym)*)addr;
 
-        struct str_view name = cstr_view(&strtab[sym->st_name]);
-        if (match(name, data))
-            if (strlist_add(sl, name) != 0)
-                return -1;
+        ret = on_symbol(&strtab[sym->st_name], user);
+        if (ret) break;
     }
 
-    return 0;
+    return ret;
 }
-
-int
-dynlib_symbol_count(void* handle)
-{
-    struct link_map* lm;
-    if (dlinfo(handle, RTLD_DI_LINKMAP, &lm) != 0)
-        return -1;
-
-    /* Find dynamic symbol table and symbol hash table */
-    for (const ElfW(Dyn)* dyn = lm->l_ld; dyn->d_tag != DT_NULL; ++dyn)
-        switch (dyn->d_tag)
-        {
-            case DT_HASH     : return (int)get_symbol_count_in_hash_table(
-                                        (const uint32_t*)dyn->d_un.d_ptr);
-            case DT_GNU_HASH : return (int)get_symbol_count_in_GNU_hash_table(
-                                        (const uint32_t*)dyn->d_un.d_ptr);
-        }
-    return -1;
-}
-
-const char*
-dynlib_symbol_at(void* handle, int idx)
-{
-    struct link_map* lm;
-    const ElfW(Sym)* symtab = NULL;
-    const uint32_t* hashtab = NULL;
-    const uint32_t* gnuhashtab = NULL;
-    const char* strtab = NULL;
-    size_t symsize = 0;
-
-    if (dlinfo(handle, RTLD_DI_LINKMAP, &lm) != 0)
-        return NULL;
-
-    /* Find dynamic symbol table and symbol hash table */
-    for (const ElfW(Dyn)* dyn = lm->l_ld; dyn->d_tag != DT_NULL; ++dyn)
-    {
-        switch (dyn->d_tag)
-        {
-        case DT_SYMTAB:
-            symtab = (const ElfW(Sym)*)dyn->d_un.d_ptr;
-            break;
-        case DT_HASH:
-            hashtab = (const uint32_t*)dyn->d_un.d_ptr;
-            break;
-        case DT_GNU_HASH:
-            gnuhashtab = (const uint32_t*)dyn->d_un.d_ptr;
-            break;
-        case DT_SYMENT:
-            symsize = dyn->d_un.d_val;
-            break;
-        case DT_STRTAB:
-            strtab = (const char*)dyn->d_un.d_ptr;
-            break;
-        }
-    }
-    if (!symtab || !(hashtab || gnuhashtab) || !symsize || !strtab)
-        return NULL;
-
-    size_t offset = symsize * (size_t)(idx + 1);
-    const char* addr = (const char*)symtab + offset;
-    const ElfW(Sym)* sym = (const ElfW(Sym)*)addr;
-
-    return strtab + sym->st_name;
-}
-
-const char*
-dynlib_last_error(void)
-{
-    return dlerror();
-}
-
-void
-dynlib_last_error_free(void)
-{}

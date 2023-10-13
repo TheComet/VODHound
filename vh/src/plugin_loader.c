@@ -33,8 +33,11 @@ static int on_symbol(const char* sym, void* user)
     plugin.i = dynlib_symbol_addr(ctx->lib, sym);
     if (plugin.i)
     {
-        log_info("  * %s by %s: %s\n", plugin.i->name, plugin.i->author, plugin.i->description);
-        return ctx->on_plugin(plugin, ctx->on_plugin_user);
+        log_dbg("  * %s by %s: %s\n", plugin.i->name, plugin.i->author, plugin.i->description);
+        int ret = ctx->on_plugin(plugin, ctx->on_plugin_user);
+        if (ret > 0)
+            log_info("Loading plugin %s by %s: %s\n", plugin.i->name, plugin.i->author, plugin.i->description);
+        return ret;
     }
 
     log_err("  ! Failed to load symbol '%s': %s\n", sym, dynlib_last_error());
@@ -75,12 +78,12 @@ static int on_filename(const char* name, void* user)
         return 0;  /* Try to continue*/
     }
 
-    log_info("+ Found plugin %s\n", ctx->file_path.str.data);
+    log_dbg("+ Found plugin %s\n", ctx->file_path.str.data);
     path_dirname(&ctx->file_path);
 
     int ret = dynlib_symbol_table(ctx->lib, on_symbol, ctx);
 
-    /* 
+    /*
      * If the callback returns positive it means they want to use the plugin.
      * Ownership of the library handle is transferred to them. Stop iterating.
      */
@@ -113,7 +116,7 @@ static int on_subdir(const char* subdir, void* user)
     path_terminate(&ctx->file_path);
     if (dynlib_add_path(ctx->file_path.str.data) != 0)
         return 0;  /* Try to continue */
-    
+
     return fs_list(str_view(ctx->file_path.str), on_filename, ctx);
 }
 
@@ -128,7 +131,7 @@ plugins_scan(int (*on_plugin)(struct plugin plugin, void* user), void* user)
     ctx.on_plugin_user = user;
 
     /* Scan for all folders/files in plugin directory */
-    log_info("Scanning for plugins in %s\n", PLUGIN_DIR.data);
+    log_dbg("Scanning for plugins in %s\n", PLUGIN_DIR.data);
     ret = fs_list(PLUGIN_DIR, on_subdir, &ctx);
 
     path_deinit(&ctx.file_path);

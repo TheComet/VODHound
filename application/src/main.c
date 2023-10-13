@@ -621,7 +621,7 @@ plugin_view_open_plugin(Ihandle* plugin_view, struct str_view plugin_name)
 
     if (plugin_load(&state->plugin, plugin_name) != 0)
         goto load_plugin_failed;
-    
+
     state->ctx = state->plugin.i->create();
     if (state->ctx == NULL)
         goto create_context_failed;
@@ -639,9 +639,9 @@ plugin_view_open_plugin(Ihandle* plugin_view, struct str_view plugin_name)
     IupMap(state->ui);
     IupRefresh(state->ui);
 
-    state->plugin.i->video->open_file(state->ctx, "C:\\Users\\Startklar\\Downloads\\Prefers_Land_Behind.mp4", 1);
+    //state->plugin.i->video->open_file(state->ctx, "C:\\Users\\Startklar\\Downloads\\Prefers_Land_Behind.mp4", 1);
     //state->plugin.i->video->open_file(state->ctx, "C:\\Users\\AlexanderMurray\\Downloads\\pika-dj-mixups.mp4", 1);
-    //state->plugin.i->video->open_file(state->ctx, "/home/thecomet/videos/ssbu/2023-09-05 - Stino/2023-09-05_19-49-31.mkv", 1);
+    state->plugin.i->video->open_file(state->ctx, "/home/thecomet/videos/ssbu/2023-09-05 - Stino/2023-09-05_19-49-31.mkv", 1);
 
     return 0;
 
@@ -675,7 +675,7 @@ on_plugin_view_popup_scan_plugins(struct plugin plugin, void* user)
 static int
 on_plugin_view_tab_change(Ihandle* ih, int new_pos, int old_pos)
 {
-    /* 
+    /*
      * If the very last tab is selected (should be the "+" tab), prevent the
      * tab from actually being selected, but instead open a popup menu listing
      * available plugins to load.
