@@ -3,7 +3,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
-static int match_all(struct str_view str, const void* param) { (void)str; (void)param;  return 1; }
+static int match_all(const char* str, const void* param) { (void)str; (void)param;  return 1; }
 
 void
 path_set_take(struct path* path, struct str str)
@@ -34,23 +34,26 @@ path_join(struct path* path, struct str_view trailing)
     return 0;
 }
 
-int
-fs_list(struct strlist* out, struct str_view path)
+void
+path_dirname(struct path* path)
 {
-    return fs_list_matching(out, path, match_all, NULL);
+    /* Trailling slashes */
+    path->str.len--;
+    while (path->str.data[path->str.len] == '\\')
+        path->str.len--;
+
+    while (path->str.len && path->str.data[path->str.len] != '\\')
+        path->str.len--;
 }
 
 int
-fs_list_matching(
-    struct strlist* out,
-    struct str_view path,
-    int (*match)(struct str_view str, const void* param),
-    const void* param)
+fs_list(struct str_view path, int (*on_entry)(const char* name, void* user), void* user)
 {
-    HANDLE hFind = INVALID_HANDLE_VALUE;
-    WIN32_FIND_DATA ffd;
-    DWORD dwError;
     struct path correct_path;
+    DWORD dwError;
+    WIN32_FIND_DATA ffd;
+    int ret = 0;
+    HANDLE hFind = INVALID_HANDLE_VALUE;
 
     path_init(&correct_path);
     if (path_set(&correct_path, path) != 0)
@@ -68,21 +71,48 @@ fs_list_matching(
         struct str_view fname = cstr_view(ffd.cFileName);
         if (cstr_equal(fname, ".") || cstr_equal(fname, ".."))
             continue;
-        if (match(fname, param))
-            if (strlist_add(out, fname) != 0)
-                goto error;
+        ret = on_entry(ffd.cFileName, user);
+        if (ret != 0) goto out;
     } while (FindNextFile(hFind, &ffd) != 0);
 
     dwError = GetLastError();
     if (dwError != ERROR_NO_MORE_FILES)
-        goto error;
+        ret = -1;
 
-    FindClose(hFind);
-    path_deinit(&correct_path);
-
-    return 0;
-
-    error             : FindClose(hFind);
+    out               : FindClose(hFind);
     first_file_failed : path_deinit(&correct_path);
-    str_set_failed    : return -1;
+    str_set_failed    : return ret;
+}
+
+int
+fs_list_strlist(struct strlist* out, struct str_view path)
+{
+    return fs_list_strlist_matching(out, path, match_all, NULL);
+}
+
+struct on_list_strlist_ctx
+{
+    struct strlist* out;
+    int (*match)(const char* name, void* user);
+    void* user;
+
+};
+static int on_list_strlist(const char* name, void* user)
+{
+    struct on_list_strlist_ctx* ctx = user;
+    if (ctx->match(name, ctx->user))
+        if (strlist_add(ctx->out, cstr_view(name)) != 0)
+            return -1;
+    return 0;
+}
+
+int
+fs_list_strlist_matching(
+    struct strlist* out,
+    struct str_view path,
+    int (*match)(const char* str, void* user),
+    void* user)
+{
+    struct on_list_strlist_ctx ctx = { out, match, user };
+    return fs_list(path, on_list_strlist, &ctx);
 }

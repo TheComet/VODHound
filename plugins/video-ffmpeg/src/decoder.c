@@ -216,6 +216,14 @@ decoder_close(struct decoder* decoder)
     avcodec_free_context(&decoder->vcodec_ctx);
     avformat_close_input(&decoder->input_ctx);
     avformat_free_context(decoder->input_ctx);
+
+    decoder->current_frame_rgba = NULL;
+}
+
+int
+decoder_is_open(const struct decoder* decoder)
+{
+    return decoder->current_frame_rgba != NULL;
 }
 
 // ----------------------------------------------------------------------------

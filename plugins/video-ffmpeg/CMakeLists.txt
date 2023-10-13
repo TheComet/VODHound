@@ -10,7 +10,7 @@ include (VODHoundPlugin)
 vodhound_add_plugin (${PROJECT_NAME}
     SOURCES
         "src/decoder.c"
-        "src/plugin.c"
+        "src/plugin_video_ffmpeg.c"
     HEADERS
         "include/${PROJECT_NAME}/decoder.h"
         "include/${PROJECT_NAME}/gfx.h"

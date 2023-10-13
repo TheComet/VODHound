@@ -36,7 +36,7 @@ struct video_player_interface
      * \brief Return true if a video is currently open. If the video is closed,
      * then this should return false.
      */
-    int (*is_open)(struct plugin_ctx* plugin);
+    int (*is_open)(const struct plugin_ctx* plugin);
 
     /*!
      * \brief Begin normal playback of the video stream.
@@ -83,17 +83,17 @@ struct video_player_interface
     /*!
      * \brief Get the current video offset in units of num/den.
      */
-    uint64_t (*offset)(struct plugin_ctx* plugin, int num, int den);
+    uint64_t (*offset)(const struct plugin_ctx* plugin, int num, int den);
 
     /*!
      * \brief Get the total video duration in units of num/den.
      */
-    uint64_t (*duration)(struct plugin_ctx* plugin, int num, int den);
+    uint64_t (*duration)(const struct plugin_ctx* plugin, int num, int den);
 
     /*!
      * \brief Return true if the video is currently playing, otherwise false.
      */
-    int (*is_playing)(struct plugin_ctx* plugin);
+    int (*is_playing)(const struct plugin_ctx* plugin);
 
     /*!
      * \brief Set the volume in percent.
@@ -103,7 +103,7 @@ struct video_player_interface
     /*!
      * \brief Get the current volume in percent.
      */
-    int (*volume)(struct plugin_ctx* plugin);
+    int (*volume)(const struct plugin_ctx* plugin);
 };
 
 struct plugin_interface

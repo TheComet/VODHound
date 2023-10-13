@@ -43,14 +43,20 @@ path_take_str(struct str* str);
 VH_PUBLIC_API int
 path_join(struct path* path, struct str_view str);
 
-VH_PUBLIC_API int
-fs_list(struct strlist* out, struct str_view path);
+VH_PUBLIC_API void
+path_dirname(struct path* path);
 
 VH_PUBLIC_API int
-fs_list_matching(
+fs_list(struct str_view path, int (*on_entry)(const char* name, void* user), void* user);
+
+VH_PUBLIC_API int
+fs_list_strlist(struct strlist* out, struct str_view path);
+
+VH_PUBLIC_API int
+fs_list_strlist_matching(
     struct strlist* out,
     struct str_view path,
-    int (*match)(struct str_view str, const void* param),
-    const void* param);
+    int (*match)(const char* str, void* user),
+    void* user);
 
 C_END

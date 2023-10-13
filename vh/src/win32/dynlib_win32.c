@@ -60,14 +60,34 @@ static int match_always(struct str_view str, const void* data)
     return 1;
 }
 
-int
-dynlib_symbol_table(void* handle, struct strlist* sl)
+VH_PUBLIC_API int
+dynlib_symbol_table(void* handle, int (*on_symbol)(const char* sym, void* user), void* user)
 {
-    return dynlib_symbol_table_filtered(handle, sl, match_always, NULL);
+    int ret = 0;
+    HMODULE hModule = (HMODULE)handle;
+    PIMAGE_EXPORT_DIRECTORY exports = get_exports_directory(hModule);
+    if (exports == NULL)
+        return -1;
+
+    DWORD* name_table = (DWORD*)((size_t)hModule + exports->AddressOfNames);
+    for (int i = 0; i != (int)exports->NumberOfNames; ++i)
+    {
+        const char* sym = (const char*)((size_t)hModule + name_table[i]);
+        ret = on_symbol(sym, user);
+        if (ret) break;
+    }
+
+    return ret;
 }
 
 int
-dynlib_symbol_table_filtered(
+dynlib_symbol_table_strlist(void* handle, struct strlist* sl)
+{
+    return dynlib_symbol_table_strlist_filtered(handle, sl, match_always, NULL);
+}
+
+int
+dynlib_symbol_table_strlist_filtered(
     void* handle,
     struct strlist* sl,
     int (*match)(struct str_view str, const void* data),

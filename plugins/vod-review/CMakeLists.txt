@@ -7,7 +7,7 @@ project ("vod-review"
 include (VODHoundPlugin)
 vodhound_add_plugin (${PROJECT_NAME}
     SOURCES
-        "src/plugin.c"
+        "src/plugin_vod_review.c"
     HEADERS
     INCLUDES
         "include"

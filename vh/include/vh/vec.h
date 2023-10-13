@@ -38,7 +38,7 @@ struct vec
  * @return Returns the newly created vector object.
  */
 VH_PUBLIC_API struct vec*
-vec_create(const vec_size element_size);
+vec_alloc(const vec_size element_size);
 
 /*!
  * @brief Initializes an existing vector object.
@@ -275,7 +275,7 @@ vec_reverse(struct vec* vector);
  * @param[in] var The name of a temporary variable you'd lrfe to use within the
  * for-loop to reference the current element.
  */
-#define VH_VEC_FOR_EACH(vector, var_type, var) {                             \
+#define VEC_FOR_EACH(vector, var_type, var) {                                \
     var_type* var;                                                           \
     uint8_t* internal_##var##_end_of_vector = (vector)->data + (vector)->count * (vector)->element_size; \
     for(var = (var_type*)(vector)->data;                                     \
@@ -283,7 +283,7 @@ vec_reverse(struct vec* vector);
         var = (var_type*)(((uint8_t*)var) + (vector)->element_size)) {
 
 
-#define VH_VEC_FOR_EACH_R(vector, var_type, var) {                           \
+#define VEC_FOR_EACH_R(vector, var_type, var) {                              \
     var_type* var;                                                           \
     uint8_t* internal_##var##_start_of_vector = (vector)->data - (vector)->element_size; \
     for(var = (var_type*)((vector)->data + (vector)->count * (vector)->element_size - (vector)->element_size); \
@@ -302,7 +302,7 @@ vec_reverse(struct vec* vector);
  * start with (inclusive).
  * @param[in] end_index The index of the last element to iterate (exclusive).
  */
-#define VH_VEC_FOR_EACH_RANGE(vector, var_type, var, begin_index, end_index) { \
+#define VEC_FOR_EACH_RANGE(vector, var_type, var, begin_index, end_index) {    \
     var_type* var; \
     uint8_t* internal_##var##_end_of_vector = (vector)->data + (end_index) * (vector)->element_size; \
     for(var = (var_type*)((vector)->data + (begin_index) * (vector)->element_size); \
@@ -320,7 +320,7 @@ vec_reverse(struct vec* vector);
  * @param[in] begin_index The "lower" index (starting at 0) of the last element (inclusive).
  * @param[in] end_index The "upper" index of the first element (exclusive).
  */
-#define VH_VEC_FOR_EACH_RANGE_R(vector, var_type, var, begin_index, end_index) { \
+#define VEC_FOR_EACH_RANGE_R(vector, var_type, var, begin_index, end_index) {    \
     var_type* var;                                                               \
     uint8_t* internal_##var##_start_of_vector = (vector)->data + (begin_index) * (vector)->element_size - (vector)->element_size; \
     for(var = (var_type*)((vector)->data + (end_index) * (vector)->element_size - (vector)->element_size); \
@@ -328,8 +328,8 @@ vec_reverse(struct vec* vector);
         var = (var_type*)(((uint8_t*)var) - (vector)->element_size)) {
 
 
-#define VH_VEC_ERASE_IN_FOR_LOOP(vector, var_type, var) do { \
-        vec_erase_element(vector, var); \
+#define VEC_ERASE_IN_FOR_LOOP(vector, var_type, var) do {            \
+        vec_erase_element(vector, var);                              \
         var = (var_type*)(((uint8_t*)var) - (vector)->element_size); \
         internal_##var##_end_of_vector = (vector)->data + (vector)->count * (vector)->element_size; \
     } while (0)
@@ -337,6 +337,6 @@ vec_reverse(struct vec* vector);
 /*!
  * @brief Closes a for each scope previously opened by VH_VEC_FOR_EACH.
  */
-#define VH_VEC_END_EACH }}
+#define VEC_END_EACH }}
 
 C_END

@@ -25,6 +25,9 @@ void
 decoder_close(struct decoder* decoder);
 
 int
+decoder_is_open(const struct decoder* decoder);
+
+int
 decoder_seek_near_keyframe(struct decoder* decoder, int64_t target_ts);
 
 int

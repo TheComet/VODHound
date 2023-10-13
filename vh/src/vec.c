@@ -32,7 +32,7 @@ vec_realloc(struct vec *vec,
  * Exported functions
  * ------------------------------------------------------------------------- */
 struct vec*
-vec_create(const vec_size element_size)
+vec_alloc(const vec_size element_size)
 {
     struct vec* vec;
     if ((vec = mem_alloc(sizeof *vec)) == NULL)

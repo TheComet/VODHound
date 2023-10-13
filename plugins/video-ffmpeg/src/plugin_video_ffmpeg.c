@@ -82,16 +82,16 @@ int video_open_file(struct plugin_ctx* ctx, const char* file_name, int pause)
     return ret;
 }
 void video_close(struct plugin_ctx* ctx) { decoder_close(&ctx->decoder); }
-int video_is_open(struct plugin_ctx* ctx) { return 0; }
+int video_is_open(const struct plugin_ctx* ctx) { return decoder_is_open(&ctx->decoder); }
 void video_play(struct plugin_ctx* ctx) {}
 void video_pause(struct plugin_ctx* ctx) {}
 void video_step(struct plugin_ctx* ctx, int frames) { decode_next_frame(&ctx->decoder); }
 int video_seek(struct plugin_ctx* ctx, uint64_t offset, int num, int den) { return decoder_seek_near_keyframe(&ctx->decoder, offset); }
-uint64_t video_offset(struct plugin_ctx* ctx, int num, int den) { return 0; }
-uint64_t video_duration(struct plugin_ctx* ctx, int num, int den) { return 0; }
-int video_is_playing(struct plugin_ctx* ctx) { return 0; }
+uint64_t video_offset(const struct plugin_ctx* ctx, int num, int den) { return 0; }
+uint64_t video_duration(const struct plugin_ctx* ctx, int num, int den) { return 0; }
+int video_is_playing(const struct plugin_ctx* ctx) { return 0; }
 void video_set_volume(struct plugin_ctx* ctx, int percent) {}
-int video_volume(struct plugin_ctx* ctx) { return 0; }
+int video_volume(const struct plugin_ctx* ctx) { return 0; }
 
 struct video_player_interface controls = {
     video_open_file,

@@ -13,438 +13,152 @@ static struct str_view PLUGIN_DIR = {
     sizeof(PLUGIN_DIR_) - 1
 };
 
-static int match_expected_filename(struct str_view str, const void* param)
+struct fs_list_ctx
 {
-    const struct str_view* expected = param;
-    return str_equal(str_remove_file_ext(str), *expected);
+    struct path file_path;
+    struct str_view subdir;
+    void* lib;
+    int (*on_plugin)(struct plugin plugin, void* user);
+    void* on_plugin_user;
+};
+
+static int on_symbol(const char* sym, void* user)
+{
+    struct plugin plugin;
+    struct fs_list_ctx* ctx = user;
+    if (!cstr_starts_with(cstr_view(sym), "vh_plugin"))
+        return 0;
+
+    plugin.handle = ctx->lib;
+    plugin.i = dynlib_symbol_addr(ctx->lib, sym);
+    if (plugin.i)
+    {
+        log_info("  * %s by %s: %s\n", plugin.i->name, plugin.i->author, plugin.i->description);
+        return ctx->on_plugin(plugin, ctx->on_plugin_user);
+    }
+
+    log_err("  ! Failed to load symbol '%s': %s\n", sym, dynlib_last_error());
+    dynlib_last_error_free();
+
+    return 0;
 }
 
-static int match_plugin_symbols(struct str_view str, const void* param)
+static int on_filename(const char* name, void* user)
 {
-    return cstr_starts_with(str, "vh_plugin");
+    struct fs_list_ctx* ctx = user;
+    struct str_view fname = cstr_view(name);
+
+    /* Only consider files that have the same name as their parent directy */
+    if (!str_equal(str_remove_file_ext(fname), ctx->subdir))
+        return 0;
+
+    /* PDB files on Windows */
+#if defined(_DEBUG)
+    if (cstr_ends_with(fname, ".pdb"))
+        return 0;
+#endif
+
+    /*
+     * Join path to shared lib and try to load it.
+     * share/VODHound/plugins/subdir/subdir.so
+     */
+    if (path_join(&ctx->file_path, fname) != 0)
+        return -1;
+    path_terminate(&ctx->file_path);
+
+    ctx->lib = dynlib_open(ctx->file_path.str.data);
+    if (ctx->lib == NULL)
+    {
+        log_err("! Failed to load plugin %s: %s\n", ctx->file_path.str.data, dynlib_last_error());
+        dynlib_last_error_free();
+        path_dirname(&ctx->file_path);
+        return 0;  /* Try to continue*/
+    }
+
+    log_info("+ Found plugin %s\n", ctx->file_path.str.data);
+    path_dirname(&ctx->file_path);
+
+    int ret = dynlib_symbol_table(ctx->lib, on_symbol, ctx);
+
+    /* 
+     * If the callback returns positive it means they want to use the plugin.
+     * Ownership of the library handle is transferred to them. Stop iterating.
+     */
+    if (ret <= 0)
+        dynlib_close(ctx->lib);
+
+    return ret;
+}
+
+static int on_subdir(const char* subdir, void* user)
+{
+    struct fs_list_ctx* ctx = user;
+    ctx->subdir = cstr_view(subdir);
+
+    /*
+     * Search in each subdirectory for a shared library matching the
+     * directory's name. For example, if there is a directory "myplugin/",
+     * then inside it there should be a "myplugin/myplugin.so/dll" file.
+     */
+    if (path_set(&ctx->file_path, PLUGIN_DIR) != 0)    /* share/VODHound/plugins */
+        return -1;
+    if (path_join(&ctx->file_path, ctx->subdir) != 0)  /* share/VODHound/plugins/subdir */
+        return -1;
+
+    /*
+     * It is necessary to add the plugin directory to the DLL/library search
+     * path. Otherwise the plugin won't be able to load its dependencies, if
+     * it has any.
+     */
+    path_terminate(&ctx->file_path);
+    if (dynlib_add_path(ctx->file_path.str.data) != 0)
+        return 0;  /* Try to continue */
+    
+    return fs_list(str_view(ctx->file_path.str), on_filename, ctx);
 }
 
 int
-plugin_scan(struct strlist* plugin_names)
+plugins_scan(int (*on_plugin)(struct plugin plugin, void* user), void* user)
 {
-    struct strlist subdirs;
-    struct strlist names;
-    struct path file_path;
+    int ret;
+    struct fs_list_ctx ctx;
 
-    strlist_init(&subdirs);
-    strlist_init(&names);
-    path_init(&file_path);
+    path_init(&ctx.file_path);
+    ctx.on_plugin = on_plugin;
+    ctx.on_plugin_user = user;
 
     /* Scan for all folders/files in plugin directory */
     log_info("Scanning for plugins in %s\n", PLUGIN_DIR.data);
-    if (fs_list(&subdirs, PLUGIN_DIR) != 0)
-        goto list_dir_failed;
+    ret = fs_list(PLUGIN_DIR, on_subdir, &ctx);
 
-    for (int i = 0; i != (int)strlist_count(&subdirs); ++i)
+    path_deinit(&ctx.file_path);
+    return ret;
+}
+
+struct plugin_load_ctx
+{
+    struct plugin* plugin;
+    struct str_view name;
+};
+
+static int plugin_load_on_plugin(struct plugin plugin, void* user)
+{
+    struct plugin_load_ctx* ctx = user;
+    if (cstr_equal(ctx->name, plugin.i->name))
     {
-        /*
-         * Search in each subdirectory for a shared library matching the
-         * directory's name. For example, if there is a directory "myplugin/",
-         * then inside it there should be a "myplugin/myplugin.so/dll" file.
-         */
-        struct str_view subdir = strlist_get(&subdirs, i);
-        if (path_set(&file_path, PLUGIN_DIR) != 0)
-            goto error;
-        if (path_join(&file_path, subdir) != 0)
-            goto error;
-        strlist_clear(&names);
-        if (fs_list_matching(&names, str_view(file_path.str), match_expected_filename, &subdir) != 0)
-            goto error;
-        if (strlist_count(&names) == 0)
-            continue;
-
-        /*
-         * On Windows, it is necessary to add the plugin directory to the DLL
-         * search path. Otherwise the plugin won't be able to load its dependencies,
-         * if it has any.
-         */
-        path_terminate(&file_path);
-        if (dynlib_add_path(file_path.str.data) != 0)
-            continue;
-
-        /*
-         * Join path to shared lib, so it becomes e.g. "myplugin/myplugin.so",
-         * and try to load it.
-         */
-        if (path_join(&file_path, strlist_get(&names, 0)) != 0)
-            goto error;
-        path_terminate(&file_path);
-        void* lib = dynlib_open(file_path.str.data);
-        if (lib == NULL)
-            continue;
-
-        /*
-         * Collect all exported symbols that start with "plugin".
-         * NOTE: We are re-using the variable "files" here to save on malloc()
-         * calls
-         */
-        strlist_clear(&names);
-        if (dynlib_symbol_table_filtered(lib, &names, match_plugin_symbols, NULL) != 0)
-        {
-            dynlib_close(lib);
-            goto error;
-        }
-        if (strlist_count(&names) == 0)
-        {
-            dynlib_close(lib);
-            continue;
-        }
-
-        log_info("+ Found plugin %s\n", file_path.str.data);
-
-        /* Re-use buffer of file_path to null-terminate the symbol name */
-        struct str symbol_name = str_take(&file_path.str);
-        for (int s = 0; s != (int)strlist_count(&names); ++s)
-        {
-            if (str_set(&symbol_name, strlist_get(&names, s)) != 0)
-            {
-                file_path.str = str_take(&symbol_name);
-                dynlib_close(lib);
-                goto error;
-            }
-            str_terminate(&symbol_name);
-
-            struct plugin_interface* pi = dynlib_symbol_addr(lib, symbol_name.data);
-            if (pi)
-                log_info("  * %s by %s: %s\n", pi->name, pi->author, pi->description);
-            else
-            {
-                log_warn("  ! Failed to load symbol '%s': %s\n", symbol_name.data, dynlib_last_error());
-                continue;
-            }
-
-            if (strlist_add(plugin_names, cstr_view(pi->name)) != 0)
-            {
-                file_path.str = str_take(&symbol_name);
-                dynlib_close(lib);
-                goto error;
-            }
-        }
-
-        file_path.str = str_take(&symbol_name);
-        dynlib_close(lib);
+        *ctx->plugin = plugin;
+        return 1;
     }
-
     return 0;
-
-error:
-list_dir_failed:
-    path_deinit(&file_path);
-    strlist_deinit(&names);
-    strlist_deinit(&subdirs);
-    return -1;
 }
 
 int
 plugin_load(struct plugin* plugin, struct str_view name)
 {
-    struct strlist subdirs;
-    struct strlist names;
-    struct path file_path;
-
-    strlist_init(&subdirs);
-    strlist_init(&names);
-    path_init(&file_path);
-
-    /* Scan for all folders/files in plugin directory */
-    if (fs_list(&subdirs, PLUGIN_DIR) != 0)
-        goto list_dir_failed;
-
-    for (int i = 0; i != (int)strlist_count(&subdirs); ++i)
-    {
-        /*
-         * Search in each subdirectory for a shared library matching the
-         * directory's name. For example, if there is a directory "myplugin/",
-         * then inside it there should be a "myplugin/myplugin.so/dll" file.
-         */
-        struct str_view subdir = strlist_get(&subdirs, i);
-        if (path_set(&file_path, PLUGIN_DIR) != 0)
-            goto error;
-        if (path_join(&file_path, subdir) != 0)
-            goto error;
-        strlist_clear(&names);
-        if (fs_list_matching(&names, str_view(file_path.str), match_expected_filename, &subdir) != 0)
-            goto error;
-        if (strlist_count(&names) == 0)
-            continue;
-
-        /*
-         * On Windows, it is necessary to add the plugin directory to the DLL
-         * search path. Otherwise the plugin won't be able to load its dependencies,
-         * if it has any.
-         */
-        path_terminate(&file_path);
-        if (dynlib_add_path(file_path.str.data) != 0)
-            continue;
-
-        /*
-         * Join path to shared lib, so it becomes e.g. "myplugin/myplugin.so",
-         * and try to load it.
-         */
-        if (path_join(&file_path, strlist_get(&names, 0)) != 0)
-            goto error;
-        path_terminate(&file_path);
-        void* lib = dynlib_open(file_path.str.data);
-        if (lib == NULL)
-            continue;
-
-        /*
-         * Collect all exported symbols that start with "plugin".
-         * NOTE: We are re-using the variable "files" here to save on malloc()
-         * calls
-         */
-        strlist_clear(&names);
-        if (dynlib_symbol_table_filtered(lib, &names, match_plugin_symbols, NULL) != 0)
-        {
-            dynlib_close(lib);
-            goto error;
-        }
-
-        /* Re-use buffer of file_path to null-terminate the symbol name */
-        struct str symbol_name = str_take(&file_path.str);
-        for (int s = 0; s != (int)strlist_count(&names); ++s)
-        {
-            if (str_set(&symbol_name, strlist_get(&names, s)) != 0)
-            {
-                file_path.str = str_take(&symbol_name);
-                dynlib_close(lib);
-                goto error;
-            }
-            str_terminate(&symbol_name);
-
-            struct plugin_interface* pi = dynlib_symbol_addr(lib, symbol_name.data);
-            if (pi == NULL)
-            {
-                file_path.str = str_take(&symbol_name);
-                dynlib_close(lib);
-                continue;
-            }
-
-            if (cstr_equal(name, pi->name))
-            {
-                log_info("Loading plugin %s by %s: %s\n", pi->name, pi->author, pi->description);
-                plugin->handle = lib;
-                plugin->i = pi;
-                goto success;
-            }
-        }
-
-        file_path.str = str_take(&symbol_name);
-        dynlib_close(lib);
-    }
-
-success:
-    path_deinit(&file_path);
-    strlist_deinit(&names);
-    strlist_deinit(&subdirs);
+    struct plugin_load_ctx ctx = { plugin, name };
+    if (plugins_scan(plugin_load_on_plugin, &ctx) < 0)
+        return -1;
     return 0;
-
-error:
-list_dir_failed :
-    path_deinit(&file_path);
-    strlist_deinit(&names);
-    strlist_deinit(&subdirs);
-    return -1;
-}
-
-int
-plugin_load_category(struct plugin* plugin, struct str_view category, struct str_view preferred_name)
-{
-    struct strlist subdirs;
-    struct strlist names;
-    struct path file_path;
-
-    strlist_init(&subdirs);
-    strlist_init(&names);
-    path_init(&file_path);
-
-    /* Scan for all folders/files in plugin directory */
-    if (fs_list(&subdirs, PLUGIN_DIR) != 0)
-        goto list_dir_failed;
-
-    for (int i = 0; i != (int)strlist_count(&subdirs); ++i)
-    {
-        /*
-         * Search in each subdirectory for a shared library matching the
-         * directory's name. For example, if there is a directory "myplugin/",
-         * then inside it there should be a "myplugin/myplugin.so/dll" file.
-         */
-        struct str_view subdir = strlist_get(&subdirs, i);
-        if (path_set(&file_path, PLUGIN_DIR) != 0)
-            goto error;
-        if (path_join(&file_path, subdir) != 0)
-            goto error;
-        strlist_clear(&names);
-        if (fs_list_matching(&names, str_view(file_path.str), match_expected_filename, &subdir) != 0)
-            goto error;
-        if (strlist_count(&names) == 0)
-            continue;
-
-        /*
-         * On Windows, it is necessary to add the plugin directory to the DLL
-         * search path. Otherwise the plugin won't be able to load its dependencies,
-         * if it has any.
-         */
-        path_terminate(&file_path);
-        if (dynlib_add_path(file_path.str.data) != 0)
-            continue;
-
-        /*
-         * Join path to shared lib, so it becomes e.g. "myplugin/myplugin.so",
-         * and try to load it.
-         */
-        if (path_join(&file_path, strlist_get(&names, 0)) != 0)
-            goto error;
-        path_terminate(&file_path);
-        void* lib = dynlib_open(file_path.str.data);
-        if (lib == NULL)
-            continue;
-
-        /*
-         * Collect all exported symbols that start with "plugin".
-         * NOTE: We are re-using the variable "files" here to save on malloc()
-         * calls
-         */
-        strlist_clear(&names);
-        if (dynlib_symbol_table_filtered(lib, &names, match_plugin_symbols, NULL) != 0)
-        {
-            dynlib_close(lib);
-            goto error;
-        }
-
-        /* Re-use buffer of file_path to null-terminate the symbol name */
-        struct str symbol_name = str_take(&file_path.str);
-        for (int s = 0; s != (int)strlist_count(&names); ++s)
-        {
-            if (str_set(&symbol_name, strlist_get(&names, s)) != 0)
-            {
-                file_path.str = str_take(&symbol_name);
-                dynlib_close(lib);
-                goto error;
-            }
-            str_terminate(&symbol_name);
-
-            struct plugin_interface* pi = dynlib_symbol_addr(lib, symbol_name.data);
-            if (pi == NULL)
-            {
-                file_path.str = str_take(&symbol_name);
-                dynlib_close(lib);
-                continue;
-            }
-
-            if (cstr_equal(preferred_name, pi->name))
-            {
-                log_info("Loading plugin %s by %s: %s\n", pi->name, pi->author, pi->description);
-                plugin->handle = lib;
-                plugin->i = pi;
-                goto success;
-            }
-        }
-
-        file_path.str = str_take(&symbol_name);
-        dynlib_close(lib);
-    }
-
-    for (int i = 0; i != (int)strlist_count(&subdirs); ++i)
-    {
-        /*
-         * Search in each subdirectory for a shared library matching the
-         * directory's name. For example, if there is a directory "myplugin/",
-         * then inside it there should be a "myplugin/myplugin.so/dll" file.
-         */
-        struct str_view subdir = strlist_get(&subdirs, i);
-        if (path_set(&file_path, PLUGIN_DIR) != 0)
-            goto error;
-        if (path_join(&file_path, subdir) != 0)
-            goto error;
-        strlist_clear(&names);
-        if (fs_list_matching(&names, str_view(file_path.str), match_expected_filename, &subdir) != 0)
-            goto error;
-        if (strlist_count(&names) == 0)
-            continue;
-
-        /*
-         * On Windows, it is necessary to add the plugin directory to the DLL
-         * search path. Otherwise the plugin won't be able to load its dependencies,
-         * if it has any.
-         */
-        path_terminate(&file_path);
-        if (dynlib_add_path(file_path.str.data) != 0)
-            continue;
-
-        /*
-         * Join path to shared lib, so it becomes e.g. "myplugin/myplugin.so",
-         * and try to load it.
-         */
-        if (path_join(&file_path, strlist_get(&names, 0)) != 0)
-            goto error;
-        path_terminate(&file_path);
-        void* lib = dynlib_open(file_path.str.data);
-        if (lib == NULL)
-            continue;
-
-        /*
-         * Collect all exported symbols that start with "plugin".
-         * NOTE: We are re-using the variable "files" here to save on malloc()
-         * calls
-         */
-        strlist_clear(&names);
-        if (dynlib_symbol_table_filtered(lib, &names, match_plugin_symbols, NULL) != 0)
-        {
-            dynlib_close(lib);
-            goto error;
-        }
-
-        /* Re-use buffer of file_path to null-terminate the symbol name */
-        struct str symbol_name = str_take(&file_path.str);
-        for (int s = 0; s != (int)strlist_count(&names); ++s)
-        {
-            if (str_set(&symbol_name, strlist_get(&names, s)) != 0)
-            {
-                file_path.str = str_take(&symbol_name);
-                dynlib_close(lib);
-                goto error;
-            }
-            str_terminate(&symbol_name);
-
-            struct plugin_interface* pi = dynlib_symbol_addr(lib, symbol_name.data);
-            if (pi == NULL)
-            {
-                file_path.str = str_take(&symbol_name);
-                dynlib_close(lib);
-                continue;
-            }
-
-            if (cstr_equal(category, pi->category))
-            {
-                log_info("Loading plugin %s by %s: %s\n", pi->name, pi->author, pi->description);
-                plugin->handle = lib;
-                plugin->i = pi;
-                goto success;
-            }
-        }
-
-        file_path.str = str_take(&symbol_name);
-        dynlib_close(lib);
-    }
-
-success:
-    path_deinit(&file_path);
-    strlist_deinit(&names);
-    strlist_deinit(&subdirs);
-    return 0;
-
-error:
-list_dir_failed :
-    path_deinit(&file_path);
-    strlist_deinit(&names);
-    strlist_deinit(&subdirs);
-    return -1;
 }
 
 void

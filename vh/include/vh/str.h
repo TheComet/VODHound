@@ -170,7 +170,8 @@ str_left_of(struct str_view s, char delim)
     int i = s.len;
     for (s.len = 0; s.len != i; ++s.len)
         if (s.data[s.len] == delim)
-            return s;
+            break;
+    return s;
 }
 
 static inline struct str_view

@@ -3,9 +3,10 @@
 #include "vh/mem.h"
 #include "vh/mfile.h"
 #include "vh/mstream.h"
-#include "vh/str.h"
 #include "vh/plugin.h"
 #include "vh/plugin_loader.h"
+#include "vh/str.h"
+#include "vh/vec.h"
 
 #include "iup.h"
 #include "iupgfx.h"
@@ -595,23 +596,104 @@ import_all_rfr(struct db_interface* dbi, struct db*  db)
     } while (0);
 }
 
+struct plugin_view_popup_ctx
+{
+    Ihandle* tabs;
+    Ihandle* menu;
+};
+
+struct plugin_state
+{
+    struct plugin plugin;
+    struct plugin_ctx* ctx;
+    Ihandle* ui;
+};
+
+static int
+on_plugin_view_popup_plugin_selected(Ihandle* ih)
+{
+    int insert_pos;
+    Ihandle* plugin_view = IupGetAttributeHandle(ih, "plugin_view");
+    struct vec* plugin_state_vec = (struct vec*)IupGetAttribute(plugin_view, "_IUP_plugin_state_vec");
+    struct plugin_state* state = vec_emplace(plugin_state_vec);
+
+    if (plugin_load(&state->plugin, cstr_view(IupGetAttribute(ih, "TITLE"))) != 0)
+        goto load_plugin_failed;
+    
+    state->ctx = state->plugin.i->create();
+    if (state->ctx == NULL)
+        goto create_context_failed;
+
+    state->ui = state->plugin.i->ui->create(state->ctx);
+    if (state->ui == NULL)
+        goto create_ui_failed;
+
+    insert_pos = IupGetChildCount(plugin_view) - 1;
+    IupSetAttribute(state->ui, "TABTITLE", state->plugin.i->name);
+    IupSetInt(plugin_view, "VALUEPOS", insert_pos);
+    if (IupInsert(plugin_view, IupGetChild(plugin_view, insert_pos), state->ui) == NULL)
+        goto add_to_ui_failed;
+
+    IupMap(state->ui);
+    IupRefresh(state->ui);
+
+    return IUP_DEFAULT;
+
+    add_to_ui_failed      : state->plugin.i->ui->destroy(state->ctx, state->ui);
+    create_ui_failed      : state->plugin.i->destroy(state->ctx);
+    create_context_failed : plugin_unload(&state->plugin);
+    load_plugin_failed    : vec_pop(plugin_state_vec);
+
+    return IUP_DEFAULT;
+}
+
+static int
+on_plugin_view_popup_scan_plugins(struct plugin plugin, void* user)
+{
+    struct plugin_view_popup_ctx* ctx = user;
+    Ihandle* item = IupItem(plugin.i->name, NULL);
+    IupSetAttributeHandle(item, "plugin_view", ctx->tabs);
+    IupSetCallback(item, "ACTION", (Icallback)on_plugin_view_popup_plugin_selected);
+    IupAppend(ctx->menu, item);
+    return 0;
+}
+
+static int
+on_plugin_view_tab_change(Ihandle* ih, int new_pos, int old_pos)
+{
+    /* 
+     * If the very last tab is selected (should be the "+" tab), prevent the
+     * tab from actually being selected, but instead open a popup menu listing
+     * available plugins to load.
+     */
+    int tab_count = IupGetChildCount(ih);
+    if (new_pos == tab_count - 1)
+    {
+        struct plugin_view_popup_ctx ctx = {
+            ih,
+            IupMenu(NULL)
+        };
+
+        IupSetInt(ih, "VALUEPOS", old_pos);  /* Prevent tab selection */
+        plugins_scan(on_plugin_view_popup_scan_plugins, &ctx);
+        IupPopup(ctx.menu, IUP_MOUSEPOS, IUP_MOUSEPOS);
+        IupDestroy(ctx.menu);
+    }
+
+    return IUP_DEFAULT;
+}
+
 static Ihandle*
 create_replay_browser(void)
 {
     Ihandle *groups, *filter_label, *filters, *replays;
     Ihandle *vbox, *hbox, *sbox;
 
-    groups = IupList(NULL);
-    IupSetAttributes(groups, "EXPAND=YES, 1=All, VALUE=1");
+    groups = IupSetAttributes(IupList(NULL), "EXPAND=YES, 1=All, VALUE=1");
+    sbox = IupSetAttributes(IupSbox(groups), "DIRECTION=SOUTH, COLOR=255 255 255");
 
-    sbox = IupSbox(groups);
-    IupSetAttribute(sbox, "DIRECTION", "SOUTH");
-    IupSetAttribute(sbox, "COLOR", "225 225 225");
-
-    filter_label = IupLabel("Filters:");
-    IupSetAttribute(filter_label, "PADDING", "10x5");
-    filters = IupText(NULL);
-    IupSetAttribute(filters, "EXPAND", "HORIZONTAL");
+    filter_label = IupSetAttributes(IupLabel("Filters:"), "PADDING=10x5");
+    filters = IupSetAttributes(IupText(NULL), "EXPAND=HORIZONTAL");
     hbox = IupHbox(filter_label, filters, NULL);
 
     replays = IupTree();
@@ -620,12 +702,71 @@ create_replay_browser(void)
     return IupVbox(sbox, hbox, replays, NULL);
 }
 
+static int
+on_plugin_view_map(Ihandle* ih)
+{
+    struct vec* plugin_state_vec = vec_alloc(sizeof(struct plugin_state));
+    IupSetAttribute(ih, "_IUP_plugin_state_vec", (char*)plugin_state_vec);
+    return IUP_DEFAULT;
+}
+static int
+on_plugin_view_unmap(Ihandle* ih)
+{
+    struct vec* plugin_state_vec = (struct vec*)IupGetAttribute(ih, "_IUP_plugin_state_vec");
+    vec_free(plugin_state_vec);
+    return IUP_DEFAULT;
+}
+static int
+on_plugin_view_close(Ihandle* ih)
+{
+    struct vec* plugin_state_vec = (struct vec*)IupGetAttribute(ih, "_IUP_plugin_state_vec");
+    VEC_FOR_EACH(plugin_state_vec, struct plugin_state, state)
+        if (state->plugin.i->video && state->plugin.i->video->is_open(state->ctx))
+            state->plugin.i->video->close(state->ctx);
+
+        IupDetach(state->ui);
+        state->plugin.i->ui->destroy(state->ctx, state->ui);
+        state->plugin.i->destroy(state->ctx);
+        plugin_unload(&state->plugin);
+    VEC_END_EACH
+    vec_clear(plugin_state_vec);
+
+    return IUP_DEFAULT;
+}
+static int
+on_plugin_view_close_tab(Ihandle* ih, int pos)
+{
+    struct vec* plugin_state_vec = (struct vec*)IupGetAttribute(ih, "_IUP_plugin_state_vec");
+    Ihandle* ui = IupGetChild(ih, pos);
+    VEC_FOR_EACH(plugin_state_vec, struct plugin_state, state)
+        if (state->ui == ui)
+        {
+            if (state->plugin.i->video && state->plugin.i->video->is_open(state->ctx))
+                state->plugin.i->video->close(state->ctx);
+
+            IupDetach(state->ui);
+            state->plugin.i->ui->destroy(state->ctx, state->ui);
+            state->plugin.i->destroy(state->ctx);
+            plugin_unload(&state->plugin);
+            vec_erase_element(plugin_state_vec, state);
+
+            return IUP_IGNORE;  /* We already destroyed the tab */
+        }
+    VEC_END_EACH
+
+    return IUP_DEFAULT;
+}
+
 static Ihandle*
 create_plugin_view(void)
 {
-    Ihandle* empty_tab = IupCanvas(NULL);
-    IupSetAttribute(empty_tab, "TABTITLE", "+");
-    Ihandle* tabs = IupTabs(empty_tab, NULL);
+    Ihandle* empty_tab = IupSetAttributes(IupCanvas(NULL), "TABTITLE=home");
+    Ihandle* plus_tab = IupSetAttributes(IupCanvas(NULL), "TABTITLE=+");
+    Ihandle* tabs = IupSetAttributes(IupTabs(empty_tab, plus_tab, NULL), "SHOWCLOSE=YES");
+    IupSetCallback(tabs, "MAP_CB", (Icallback)on_plugin_view_map);
+    IupSetCallback(tabs, "UNMAP_CB", (Icallback)on_plugin_view_unmap);
+    IupSetCallback(tabs, "TABCHANGEPOS_CB", (Icallback)on_plugin_view_tab_change);
+    IupSetCallback(tabs, "TABCLOSE_CB", (Icallback)on_plugin_view_close_tab);
     IupSetHandle("plugin_view", tabs);
     return tabs;
 }
@@ -638,9 +779,7 @@ create_center_view(void)
 
     replays = create_replay_browser();
     plugins = create_plugin_view();
-    sbox = IupSbox(replays);
-    IupSetAttribute(sbox, "COLOR", "225 225 225");
-    IupSetAttribute(sbox, "DIRECTION", "EAST");
+    sbox = IupSetAttributes(IupSbox(replays), "DIRECTION=EAST, COLOR=225 225 225");
     return IupHbox(sbox, plugins, NULL);
 }
 
@@ -676,12 +815,8 @@ create_menus(void)
 static Ihandle*
 create_statusbar(void)
 {
-    Ihandle* connection_status = IupLabel("Disconnected");
-    IupSetAttribute(connection_status, "NAME", "STATUSBAR");
-    IupSetAttribute(connection_status, "EXPAND", "HORIZONTAL");
-    IupSetAttribute(connection_status, "PADDING", "10x5");
-    IupSetAttribute(connection_status, "ALIGNMENT", "ARIGHT");
-    return connection_status;
+    return IupSetAttributes(IupLabel("Disconnected"),
+        "NAME=STATUSBAR, EXPAND=HORIZONTAL, PADDING=10x5, ALIGNMENT=ARIGHT");
 }
 
 static Ihandle*
@@ -717,6 +852,7 @@ int main(int argc, char **argv)
     //IupSetAttribute(dlg, "SIZE", NULL);
 
     Ihandle* replays = IupGetHandle("replay_browser");
+    Ihandle* plugin_view = IupGetHandle("plugin_view");
     IupSetAttribute(replays, "TITLE", "Replays");
     IupSetAttribute(replays, "ADDBRANCH", "2023-08-20");
     IupSetAttribute(replays, "ADDLEAF1", "19:45 Game 1");
@@ -726,61 +862,13 @@ int main(int argc, char **argv)
     IupSetAttribute(replays, "ADDLEAF5", "12:28 Game 2");
     IupSetAttribute(replays, "ADDLEAF6", "12:32 Game 3");
 
-    Ihandle* plugin_view = IupGetHandle("plugin_view");
-    struct strlist sl;
-    struct plugin plugin;
-    struct plugin_ctx* plugin_ctx;
-    Ihandle* plugin_ui;
-    int video_open = 0;
-
-    strlist_init(&sl);
-    plugin_scan(&sl);
-    for (int i = 0; i != (int)strlist_count(&sl); ++i)
-    {
-        struct str_view name = strlist_get(&sl, i);
-        if (cstr_equal(name, "VOD Review"))
-        {
-            if (plugin_load(&plugin, strlist_get(&sl, i)) != 0)
-                goto plugin_load_failed;
-            if ((plugin_ctx = plugin.i->create()) == NULL)
-                goto create_plugin_ctx_failed;
-            if ((plugin_ui = plugin.i->ui->create(plugin_ctx)) == NULL)
-                goto create_plugin_ui_failed;
-            IupSetAttribute(plugin_ui, "TABTITLE", plugin.i->name);
-            int insert_pos = IupGetChildCount(plugin_view) - 1;
-            if (IupInsert(plugin_view, IupGetChild(plugin_view, insert_pos), plugin_ui) == NULL)
-                goto add_to_ui_failed;
-            IupMap(plugin_ui);
-            IupRefresh(plugin_ui);
-            IupSetInt(plugin_view, "VALUEPOS", insert_pos);
-            video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\Startklar\\Downloads\\Prefers_Land_Behind.mp4", 1) == 0;
-            //video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\AlexanderMurray\\Downloads\\pika-dj-mixups.mp4", 1) == 0;
-            //video_open = plugin.i->video->open_file(plugin_ctx, "/home/thecomet/videos/ssbu/2023-09-05 - Stino/2023-09-05_19-49-31.mkv", 1) == 0;
-            if (!video_open)
-                goto open_video_failed;
-
-            break;
-
-            open_video_failed        : IupUnmap(plugin_ui);
-            add_to_ui_failed         : plugin.i->ui->destroy(plugin_ctx, plugin_ui);
-            create_plugin_ui_failed  : plugin.i->destroy(plugin_ctx);
-            create_plugin_ctx_failed : plugin_unload(&plugin);
-            plugin_load_failed       : break;
-        }
-    }
-    strlist_deinit(&sl);
+        //video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\Startklar\\Downloads\\Prefers_Land_Behind.mp4", 1) == 0;
+        //video_open = plugin.i->video->open_file(plugin_ctx, "C:\\Users\\AlexanderMurray\\Downloads\\pika-dj-mixups.mp4", 1) == 0;
+        //video_open = plugin.i->video->open_file(plugin_ctx, "/home/thecomet/videos/ssbu/2023-09-05 - Stino/2023-09-05_19-49-31.mkv", 1) == 0;
 
     IupMainLoop();
 
-    if (video_open)
-    {
-        plugin.i->video->close(plugin_ctx);
-        IupDetach(plugin_ui);
-        IupRefresh(plugin_view);
-        plugin.i->ui->destroy(plugin_ctx, plugin_ui);
-        plugin.i->destroy(plugin_ctx);
-        plugin_unload(&plugin);
-    }
+    on_plugin_view_close(plugin_view);
 
     IupDestroy(dlg);
     IupGfxClose();

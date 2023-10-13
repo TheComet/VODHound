@@ -8,6 +8,35 @@
 #include <string.h>
 #include <stdio.h>
 
+static void
+overlay_dummy_set_layer(Ihandle* canvas, int idx, const void* data) { (void)canvas; (void)idx; (void)data; }
+static void
+overlay_dummy_get_size(Ihandle* canvas, int* w, int* h) { (void)canvas; *w = 0; *h = 0; }
+
+static void
+overlay_gfxcanvas_set_layer(Ihandle* gfxcanvas, int idx, const void* data)
+{
+    char attr[9];
+    snprintf(attr, 9, "TEXRGBA%d", idx);
+    IupSetAttribute(gfxcanvas, attr, data);
+}
+
+static void
+overlay_gfxcanvas_get_size(Ihandle* gfxcanvas, int* w, int* h)
+{
+    struct str_view size = cstr_view(IupGetAttribute(gfxcanvas, "TEXSIZE"));
+    if (str_dec_to_int(str_left_of(size, 'x'), w) != 0)
+        *w = 0;
+    if (str_dec_to_int(str_right_of(size, 'x'), h) != 0)
+        *h = 0;
+}
+
+struct overlay_interface
+{
+    void (*set_layer)(Ihandle* gfxcanvas, int idx, const void* data);
+    void (*get_canvas_size)(Ihandle* gfxcanvas, int* w, int* h);
+};
+
 struct plugin_ctx
 {
     struct plugin video_plugin;
@@ -16,46 +45,94 @@ struct plugin_ctx
     Ihandle* ui;
 
     Ihandle* controls;
+    struct overlay_interface overlay;
 };
 
-static void
-overlay_set_gfxcanvas(Ihandle* gfxcanvas, int idx, const void* data)
+static int try_load_video_driver_plugin(struct plugin_ctx* ctx)
 {
-    char attr[9];
-    snprintf(attr, 9, "TEXRGBA%d", idx);
-    IupSetAttribute(gfxcanvas, attr, data);
+    ctx->video_ctx = ctx->video_plugin.i->create();
+    if (ctx->video_ctx == NULL)
+        goto create_video_ctx_failed;
+
+    if (ctx->video_plugin.i->ui == NULL)
+        goto plugin_has_no_ui_interface;
+
+    ctx->video_ui = ctx->video_plugin.i->ui->create(ctx->video_ctx);
+    if (ctx->video_ui == NULL)
+        goto create_video_ui_failed;
+
+    struct str_view class_name = cstr_view(IupGetClassName(ctx->video_ui));
+    if (cstr_equal(class_name, "gfxcanvas"))
+    {
+        ctx->overlay.get_canvas_size = overlay_gfxcanvas_get_size;
+        ctx->overlay.set_layer = overlay_gfxcanvas_set_layer;
+    }
+    else
+    {
+        log_err("Video plugin '%s' uses unsupported IUP class '%s'. Overlays won't work.\n", ctx->video_plugin.i->name, class_name.data);
+        goto unsupported_video_ui;
+    }
+
+    return 0;
+
+    unsupported_video_ui       :
+    create_video_ui_failed     : ctx->video_plugin.i->ui->destroy(ctx->video_ctx, ctx->video_ui);
+    plugin_has_no_ui_interface : ctx->video_plugin.i->destroy(ctx->video_ctx);
+    create_video_ctx_failed    : return -1;
 }
 
-static void
-overlay_get_size_gfxcanvas(Ihandle* gfxcanvas, int* w, int* h)
+static int on_scan_plugin_prefer_ffmpeg(struct plugin plugin, void* user)
 {
-    IupGetAttribute(gfxcanvas, "TEXSIZE");
+    struct plugin_ctx* ctx = user;
+
+    if (cstr_equal(cstr_view("FFmpeg Video Player"), plugin.i->name))
+    {
+        ctx->video_plugin = plugin;
+        if (try_load_video_driver_plugin(ctx) == 0)
+            return 1;
+        return -1;
+    }
+
+    return 0;
+}
+
+static int on_scan_plugin_any_video_driver(struct plugin plugin, void* user)
+{
+    struct plugin_ctx* ctx = user;
+
+    if (cstr_equal(cstr_view("video driver"), plugin.i->category))
+    {
+        ctx->video_plugin = plugin;
+        if (try_load_video_driver_plugin(ctx) == 0)
+            return 1;
+    }
+
+    return 0;
 }
 
 static struct plugin_ctx*
 create(void)
 {
+    struct strlist plugins;
     struct plugin_ctx* ctx = mem_alloc(sizeof(struct plugin_ctx));
 
-    if (plugin_load_category(
-                &ctx->video_plugin,
-                cstr_view("video driver"),
-                cstr_view("FFmpeg Video Player")) != 0)
-        goto plugin_load_failed;
-    if ((ctx->video_ctx = ctx->video_plugin.i->create()) == NULL)
-        goto create_plugin_ctx_failed;
+    ctx->video_ctx = NULL;
+    ctx->video_ui = NULL;
+    ctx->overlay.get_canvas_size = overlay_dummy_get_size;
+    ctx->overlay.set_layer = overlay_dummy_set_layer;
+
+    if (plugins_scan(on_scan_plugin_prefer_ffmpeg, ctx) <= 0)
+        plugins_scan(on_scan_plugin_any_video_driver, ctx);
 
     return ctx;
-
-    create_plugin_ctx_failed : plugin_unload(&ctx->video_plugin);
-    plugin_load_failed       : return ctx;
 }
 
 static void
 destroy(struct plugin_ctx* ctx)
 {
-    if (ctx->video_ctx)
+    if (ctx->video_ui)
     {
+        ctx->video_plugin.i->ui->destroy(ctx->video_ctx, ctx->video_ui);
         ctx->video_plugin.i->destroy(ctx->video_ctx);
         plugin_unload(&ctx->video_plugin);
     }
@@ -65,15 +142,6 @@ destroy(struct plugin_ctx* ctx)
 
 Ihandle* ui_create(struct plugin_ctx* ctx)
 {
-    if (ctx->video_ctx && ctx->video_plugin.i->ui)
-        ctx->video_ui = ctx->video_plugin.i->ui->create(ctx->video_ctx);
-    if (ctx->video_ui)
-    {
-        struct str_view class_name = cstr_view(IupGetClassName(ctx->video_ui));
-        if (cstr_equal(class_name, "gfxcanvas"))
-
-    }
-
     Ihandle* slider = IupVal("HORIZONTAL");
     IupSetAttribute(slider, "EXPAND", "HORIZONTAL");
 
@@ -105,10 +173,7 @@ Ihandle* ui_create(struct plugin_ctx* ctx)
 void ui_destroy(struct plugin_ctx* ctx, Ihandle* ui)
 {
     if (ctx->video_ui)
-    {
         IupDetach(ctx->video_ui);
-        ctx->video_plugin.i->ui->destroy(ctx->video_ctx, ctx->video_ui);
-    }
 
     IupDestroy(ui);
 }
@@ -140,7 +205,7 @@ void video_close(struct plugin_ctx* ctx)
     if (ctx->video_ctx)
         ctx->video_plugin.i->video->close(ctx->video_ctx);
 }
-int video_is_open(struct plugin_ctx* ctx)
+int video_is_open(const struct plugin_ctx* ctx)
 {
     if (ctx->video_ctx)
         return ctx->video_plugin.i->video->is_open(ctx->video_ctx);
@@ -167,19 +232,19 @@ int video_seek(struct plugin_ctx* ctx, uint64_t offset, int num, int den)
         return ctx->video_plugin.i->video->seek(ctx->video_ctx, offset, num, den);
     return 0;
 }
-uint64_t video_offset(struct plugin_ctx* ctx, int num, int den)
+uint64_t video_offset(const struct plugin_ctx* ctx, int num, int den)
 {
     if (ctx->video_ctx)
         return ctx->video_plugin.i->video->offset(ctx->video_ctx, num, den);
     return 0;
 }
-uint64_t video_duration(struct plugin_ctx* ctx, int num, int den)
+uint64_t video_duration(const struct plugin_ctx* ctx, int num, int den)
 {
     if (ctx->video_ctx)
         return ctx->video_plugin.i->video->duration(ctx->video_ctx, num, den);
     return 0;
 }
-int video_is_playing(struct plugin_ctx* ctx)
+int video_is_playing(const struct plugin_ctx* ctx)
 {
     if (ctx->video_ctx)
         return ctx->video_plugin.i->video->is_playing(ctx->video_ctx);
@@ -190,7 +255,7 @@ void video_set_volume(struct plugin_ctx* ctx, int percent)
     if (ctx->video_ctx)
         ctx->video_plugin.i->video->set_volume(ctx->video_ctx, percent);
 }
-int video_volume(struct plugin_ctx* ctx)
+int video_volume(const struct plugin_ctx* ctx)
 {
     if (ctx->video_ctx)
         return ctx->video_plugin.i->video->volume(ctx->video_ctx);

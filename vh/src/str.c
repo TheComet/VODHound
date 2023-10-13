@@ -66,6 +66,24 @@ str_hex_to_u64(struct str_view str, uint64_t* out)
     return 0;
 }
 
+int
+str_dec_to_int(struct str_view str, int* out)
+{
+    int i;
+    int value = 0;
+    for (i = 0; i != str.len; ++i)
+    {
+        char b = str.data[i];
+        if (b >= '0' && b <= '9')
+            value = value * 10 + (b - '0');
+        else
+            return -1;
+    }
+
+    *out = value;
+    return 0;
+}
+
 void
 strlist_deinit(struct strlist* sl)
 {

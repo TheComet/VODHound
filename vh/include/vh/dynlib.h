@@ -44,6 +44,9 @@ dynlib_close(void* handle);
 VH_PUBLIC_API void*
 dynlib_symbol_addr(void* handle, const char* name);
 
+VH_PUBLIC_API int
+dynlib_symbol_table(void* handle, int (*on_symbol)(const char* sym, void* user), void* user);
+
 /*!
  * \brief Returns the library's symbol table. These are symbols that have been
  * exported (on Windows) or otherwise made visible, and can be loaded using
@@ -58,7 +61,7 @@ dynlib_symbol_addr(void* handle, const char* name);
  * \return Returns 0 on success and negative on error.
  */
 VH_PUBLIC_API int
-dynlib_symbol_table(void* handle, struct strlist* sl);
+dynlib_symbol_table_strlist(void* handle, struct strlist* sl);
 
 /*!
  * \brief Returns the symbols from the library matching a custom predicate.
@@ -78,7 +81,7 @@ dynlib_symbol_table(void* handle, struct strlist* sl);
  * \return Returns 0 on success and negative on error.
  */
 VH_PUBLIC_API int
-dynlib_symbol_table_filtered(
+dynlib_symbol_table_strlist_filtered(
         void* handle,
         struct strlist* sl,
         int (*match)(struct str_view str, const void* data),
