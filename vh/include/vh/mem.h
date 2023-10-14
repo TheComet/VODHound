@@ -3,7 +3,7 @@
 #include "vh/config.h"
 #include <stdint.h>
 
-#if !defined(VH_MEMORY_DEBUGGING)
+#if !defined(VH_MEM_DEBUGGING)
 #   include <stdlib.h>
 #   define mem_alloc     malloc
 #   define mem_free      free
@@ -44,7 +44,7 @@ mem_threadlocal_init(void);
 VH_PRIVATE_API size_t
 mem_threadlocal_deinit(void);
 
-#if defined(VH_MEMORY_DEBUGGING)
+#if defined(VH_MEM_DEBUGGING)
 
 /*!
  * @brief Does the same thing as a normal call to malloc(), but does some
@@ -64,7 +64,7 @@ mem_realloc(void* ptr, size_t new_size);
  * @brief Does the same thing as a normal call to fee(), but does some
  * additional work to monitor and track down memory leaks.
  */
-VH_PRIVATE_API void
+VH_PUBLIC_API void
 mem_free(void*);
 
 #endif

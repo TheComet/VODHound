@@ -159,7 +159,7 @@ int
 plugin_load(struct plugin* plugin, struct str_view name)
 {
     struct plugin_load_ctx ctx = { plugin, name };
-    if (plugins_scan(plugin_load_on_plugin, &ctx) < 0)
+    if (plugins_scan(plugin_load_on_plugin, &ctx) != 1)
         return -1;
     return 0;
 }

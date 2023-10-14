@@ -55,7 +55,36 @@ struct db_interface
 
     int (*frame_add)(struct db* db, int game_id, int slot, uint64_t time_stamp, int frame_number, int frames_left, float posx, float posy, float damage, float hitstun, float shield, int status_id, int hit_status_id, uint64_t hash40, int stocks, int attack_connected, int facing_left, int opponent_in_hitlag);
 
-    int (*query_games)(struct db* db);
+    int (*query_games)(struct db* db,
+        int (*on_game)(
+            int game_id,
+            const char* tournament,
+            const char* event,
+            uint64_t time_started,
+            int duration,
+            const char* round_type,
+            int round_number,
+            const char* format,
+            const char* stage,
+            void* user),
+        void* user);
+    int (*query_game_teams)(struct db* db, int game_id,
+        int (*on_game_team)(
+            int game_id,
+            int team_id,
+            const char* team,
+            int score,
+            void* user),
+        void* user);
+    int (*query_game_players)(struct db* db, int game_id, int team_id,
+        int (*on_game_player)(
+            int slot,
+            const char* sponsor,
+            const char* name,
+            const char* fighter,
+            int costume,
+            void* user),
+        void* user);
 };
 
 VH_PUBLIC_API struct db_interface*

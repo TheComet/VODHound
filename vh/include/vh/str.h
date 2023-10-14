@@ -84,6 +84,31 @@ cstr_append(struct str* str, const char* other)
     return str_append(str, cstr_view(other));
 }
 
+static inline int
+str_join(struct str* str, struct str_view delim, struct str_view other)
+{
+    if (str->len)
+        if (str_append(str, delim) != 0)
+            return -1;
+    if (str_append(str, other) != 0)
+        return -1;
+    return 0;
+}
+static inline int
+cstr_join(struct str* str, const char* delim, const char* other)
+{
+    return str_join(str, cstr_view(delim), cstr_view(other));
+}
+
+static inline void
+str_clear(struct str* str)
+{
+    str->len = 0;
+}
+
+VH_PUBLIC_API int
+str_fmt(struct str* str, const char* fmt, ...);
+
 VH_PUBLIC_API void
 str_terminate(struct str* str);
 

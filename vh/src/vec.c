@@ -57,7 +57,7 @@ vec_deinit(struct vec* vec)
     assert(vec);
 
     if (vec->data != NULL)
-        vec->data = NULL;
+        mem_free(vec->data);
 }
 
 /* ------------------------------------------------------------------------- */

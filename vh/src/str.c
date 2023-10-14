@@ -2,6 +2,7 @@
 #include "vh/str.h"
 
 #include <string.h>
+#include <stdarg.h>
 
 int
 str_set(struct str* str, struct str_view view)
@@ -33,6 +34,31 @@ str_append(struct str* str, struct str_view other)
     str->data = new_data;
     memcpy(str->data + str->len, other.data, other.len);
     str->len += other.len;
+    return 0;
+}
+
+int
+str_fmt(struct str* str, const char* fmt, ...)
+{
+    int len;
+    va_list ap;
+
+    va_start(ap, fmt);
+    len = vsnprintf(NULL, 0, fmt, ap);
+    va_end(ap);
+
+    if (str->len < len + 1)
+    {
+        void* new_data = mem_realloc(str->data, len + 1);
+        if (new_data == NULL)
+            return -1;
+        str->data = new_data;
+    }
+
+    va_start(ap, fmt);
+    str->len = vsprintf(str->data, fmt, ap);
+    va_end(ap);
+
     return 0;
 }
 

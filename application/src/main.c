@@ -1,4 +1,5 @@
 #include "vh/db_ops.h"
+#include "vh/init.h"
 #include "vh/log.h"
 #include "vh/mem.h"
 #include "vh/mfile.h"
@@ -848,21 +849,97 @@ create_main_dialog(void)
     return dlg;
 }
 
+struct query_game_ctx
+{
+    struct db_interface* dbi;
+    struct db* db;
+    Ihandle* replays;
+    struct str players;
+    struct str fighters;
+    struct str vs;
+};
+
+static int on_query_game_player(
+        int slot,
+        const char* sponsor,
+        const char* name,
+        const char* fighter,
+        int costume,
+        void* user)
+{
+    struct query_game_ctx* ctx = user;
+    cstr_join(&ctx->players, ", ", name);
+    cstr_join(&ctx->fighters, ", ", fighter);
+    return 0;
+}
+
+static int on_query_game_team(
+        int game_id,
+        int team_id,
+        const char* team,
+        int score,
+        void* user)
+{
+    struct query_game_ctx* ctx = user;
+    ctx->dbi->query_game_players(ctx->db, game_id, team_id, on_query_game_player, ctx);
+
+    cstr_append(&ctx->players, " (");
+    str_append(&ctx->players, str_view(ctx->fighters));
+    cstr_append(&ctx->players, ")");
+    str_join(&ctx->vs, cstr_view(" vs "), str_view(ctx->players));
+
+    str_clear(&ctx->players);
+    str_clear(&ctx->fighters);
+
+    return 0;
+}
+
+static int on_query_game(
+        int game_id,
+        const char* tournament,
+        const char* event,
+        uint64_t time_started,
+        int duration,
+        const char* round_type,
+        int round_number,
+        const char* format,
+        const char* stage,
+        void* user)
+{
+    struct query_game_ctx* ctx = user;
+
+    ctx->dbi->query_game_teams(ctx->db, game_id, on_query_game_team, user);
+
+    str_fmt(&ctx->players, " %s%d (%s) Game %d  %s", round_type, round_number, format, 1, stage);
+    str_append(&ctx->vs, str_view(ctx->players));
+    str_terminate(&ctx->vs);
+    IupSetAttribute(ctx->replays, "ADDLEAF", ctx->vs.data);
+
+    str_clear(&ctx->vs);
+    str_clear(&ctx->players);
+
+    return 0;
+}
+
+static int ignore_plugins(struct plugin plugin, void* user) { return 0; }
+
 int main(int argc, char **argv)
 {
+    if (vh_init() != 0)
+        goto vh_init_failed;
 
     struct db_interface* dbi = db("sqlite");
     struct db* db = dbi->open_and_prepare("vodhound.db");
     if (db == NULL)
         goto open_db_failed;
 
-#if 1
+#if 0
     import_mapping_info(dbi, db, "migrations/mappingInfo.json");
     import_hash40(dbi, db, "ParamLabels.csv");
     import_all_rfr(dbi, db);
 #endif
 
-#if 1
+#if 0
     import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-09-51 - Singles Bracket - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 1 (0-0) - Hollow Bastion.rfr");
     import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-13-39 - Singles Bracket - Bo3 (Pools 1) - TheComet (Pikachu) vs Aff (Donkey Kong) - Game 2 (1-0) - Town and City.rfr");
     import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-19-12 - Singles Bracket - Bo3 (Pools 2) - TheComet (Pikachu) vs Keppler (Roy) - Game 1 (0-0) - Small Battlefield.rfr");
@@ -887,13 +964,30 @@ int main(int argc, char **argv)
 
     Ihandle* replays = IupGetHandle("replay_browser");
     IupSetAttribute(replays, "TITLE", "Replays");
+    /*
     IupSetAttribute(replays, "ADDBRANCH", "2023-08-20");
     IupSetAttribute(replays, "ADDLEAF1", "19:45 Game 1");
     IupSetAttribute(replays, "ADDLEAF2", "19:52 Game 2");
     IupSetAttribute(replays, "INSERTBRANCH1", "2023-08-22");
     IupSetAttribute(replays, "ADDLEAF4", "12:25 Game 1");
     IupSetAttribute(replays, "ADDLEAF5", "12:28 Game 2");
-    IupSetAttribute(replays, "ADDLEAF6", "12:32 Game 3");
+    IupSetAttribute(replays, "ADDLEAF6", "12:32 Game 3");*/
+
+    {
+        struct query_game_ctx ctx;
+        ctx.dbi = dbi;
+        ctx.db = db;
+        ctx.replays = replays;
+        str_init(&ctx.fighters);
+        str_init(&ctx.players);
+        str_init(&ctx.vs);
+
+        dbi->query_games(db, on_query_game, &ctx);
+
+        str_deinit(&ctx.vs);
+        str_deinit(&ctx.players);
+        str_deinit(&ctx.fighters);
+    }
 
     Ihandle* plugin_view = IupGetHandle("plugin_view");
     plugin_view_open_plugin(plugin_view, cstr_view("VOD Review"));
@@ -906,10 +1000,12 @@ int main(int argc, char **argv)
     IupGfxClose();
     IupClose();
 
-
     dbi->close(db);
+    vh_deinit();
+
     return EXIT_SUCCESS;
 
     open_iup_failed : dbi->close(db);
-    open_db_failed  : return -1;
+    open_db_failed  : vh_deinit();
+    vh_init_failed  : return -1;
 }

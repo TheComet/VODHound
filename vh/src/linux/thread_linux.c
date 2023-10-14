@@ -79,7 +79,7 @@ void
 mutex_deinit(struct mutex m)
 {
     pthread_mutex_destroy(m.handle);
-    free(m.handle);
+    mem_free(m.handle);
 }
 
 void

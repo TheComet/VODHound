@@ -5,15 +5,15 @@
 C_BEGIN
 
 VH_PUBLIC_API int
-init(void);
+vh_init(void);
 
 VH_PUBLIC_API void
-deinit(void);
+vh_deinit(void);
 
 VH_PUBLIC_API int
-threadlocal_init(void);
+vh_threadlocal_init(void);
 
 VH_PUBLIC_API void
-threadlocal_deinit(void);
+vh_threadlocal_deinit(void);
 
 C_END

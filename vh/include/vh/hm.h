@@ -133,14 +133,14 @@ hm_exists(const struct hm* hm, const void* key);
 
 #define hm_count(hm) ((hm)->slots_used)
 
-#define VH_HASHMAP_FOR_EACH(hm, key_t, value_t, key, value) { \
+#define HM_FOR_EACH(hm, key_t, value_t, key, value) { \
     key_t* key; \
     value_t* value; \
-    hm_idx pos_##value; \
+    hash32 pos_##value; \
     for (pos_##value = 0; \
         pos_##value != (hm)->table_count && \
-            ((key = (key_t*)((hm)->storage + sizeof(hash32) * (hm)->table_count + (hm)->key_size * pos_##value) || 1) && \
-            ((value = (value_t*)((hm)->storage + sizeof(hash32) * (hm)->table_count + (hm)->key_size * pos_##value + (hm)->value_size * pos_##value)) || 1); \
+            ((key = (key_t*)((uint8_t*)(hm)->storage + (sizeof(hash32) + (hm)->key_size) * pos_##value + sizeof(hash32))) || 1) && \
+            ((value = (value_t*)((uint8_t*)(hm)->storage + (sizeof(hash32) + (hm)->key_size) * (hm)->table_count + (hm)->value_size * pos_##value)) || 1); \
         ++pos_##value) \
     { \
         hash32 slot_##value = *(hash32*)((uint8_t*)(hm)->storage + (sizeof(hash32) + (hm)->key_size) * pos_##value); \
@@ -148,7 +148,6 @@ hm_exists(const struct hm* hm, const void* key);
             continue; \
         { \
 
-
-#define VH_HASHMAP_END_EACH }}}
+#define HM_END_EACH }}}
 
 C_END

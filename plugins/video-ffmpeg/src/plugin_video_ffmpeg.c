@@ -34,9 +34,6 @@ destroy(struct plugin_ctx* ctx)
 
 Ihandle* ui_create(struct plugin_ctx* ctx)
 {
-    if (ctx->canvas)
-        return NULL;
-
     ctx->canvas = IupGfxCanvas(NULL);
     if (ctx->canvas == NULL)
         return NULL;
@@ -52,11 +49,8 @@ Ihandle* ui_create(struct plugin_ctx* ctx)
 }
 void ui_destroy(struct plugin_ctx* ctx, Ihandle* ui)
 {
-    if (ctx->canvas != ui)
-        return;
-
     gfx_destroy(ctx->gfx, ctx->canvas);
-    IupDestroy(ctx->canvas);
+    IupDestroy(ui);
 }
 
 struct ui_interface ui = {
