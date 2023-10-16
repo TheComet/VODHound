@@ -147,6 +147,79 @@ import_mapping_info(struct db_interface* dbi, struct db* db, const char* file_na
     unsupported_version      : return -1;
 }
 
+int import_rf_config(struct db_interface* dbi, struct db* db)
+{
+    struct path file_path;
+    path_init(&file_path);
+    path_set(&file_path, fs_appdata_dir());
+    path_join(&file_path, cstr_view("ReFramed"));
+    path_join(&file_path, cstr_view("config.json"));
+    path_terminate(&file_path);
+
+    struct json_object* root = json_object_from_file(file_path.str.data);
+    if (root == NULL)
+    {
+        log_err("Failed to open file '%s'\n", file_path.str.data);
+        return -1;
+    }
+
+    struct json_object* videopaths = json_object_object_get(json_object_object_get(root, "replaymanager"), "videopaths");
+    if (json_object_get_type(videopaths) != json_type_array)
+        goto fail;
+
+    for (int i = 0; i != json_object_array_length(videopaths); ++i)
+    {
+        const char* path = json_object_get_string(json_object_array_get_idx(videopaths, i));
+        if (!path || !*path)
+            continue;
+        if (dbi->video_path_add(db, cstr_view(path)) != 0)
+            goto fail;
+    }
+
+    json_object_put(root);
+    return 0;
+
+fail:
+    json_object_put(root);
+    return -1;
+}
+
+int import_rf_player_details(struct db_interface* dbi, struct db* db)
+{
+    struct path file_path;
+    path_init(&file_path);
+    path_set(&file_path, fs_appdata_dir());
+    path_join(&file_path, cstr_view("ReFramed"));
+    path_join(&file_path, cstr_view("playerDetails.json"));
+    path_terminate(&file_path);
+
+    struct json_object* root = json_object_from_file(file_path.str.data);
+    if (root == NULL)
+    {
+        log_err("Failed to open file '%s'\n", file_path.str.data);
+        return -1;
+    }
+
+    struct json_object* players = json_object_object_get(root, "players");
+    if (json_object_get_type(players) != json_type_object)
+        goto fail;
+
+    json_object_object_foreach(players, tag, data)
+    {
+        const char* name = json_object_get_string(json_object_object_get(data, "name"));
+        const char* name = json_object_get_string(json_object_object_get(data, "name"));
+        const char* name = json_object_get_string(json_object_object_get(data, "name"));
+        const char* name = json_object_get_string(json_object_object_get(data, "name"));
+    }
+
+    json_object_put(root);
+    return 0;
+
+fail:
+    json_object_put(root);
+    return -1;
+}
+
 int import_rfr_metadata_1_5_into_db(struct db_interface* dbi, struct db* db, struct json_object* root)
 {
     char* err_msg;

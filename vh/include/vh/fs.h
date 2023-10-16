@@ -62,4 +62,7 @@ fs_list_strlist_matching(
 VH_PUBLIC_API int
 fs_file_exists(const char* file_path);
 
+VH_PUBLIC_API struct str_view
+fs_appdata_dir(void);
+
 C_END
