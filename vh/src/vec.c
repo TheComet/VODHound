@@ -257,7 +257,7 @@ vec_insert_emplace(struct vec* vec, vec_idx index)
     {
         /* shift all elements up by one to make space for insertion */
         vec_size total_size = vec->count * vec->element_size;
-        offset = vec->element_size * index;
+        offset = (vec_idx)vec->element_size * index;
         memmove(vec->data + offset + vec->element_size,
                 vec->data + offset,
                 total_size - (vec_size)offset);
@@ -267,7 +267,7 @@ vec_insert_emplace(struct vec* vec, vec_idx index)
     ++vec->count;
 
     /* return pointer to memory of new element */
-    return (void*)(vec->data + index * vec->element_size);
+    return (void*)(vec->data + index * (vec_idx)vec->element_size);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -300,10 +300,10 @@ vec_erase_index(struct vec* vec, vec_idx index)
     else
     {
         /* shift memory right after the specified element down by one element */
-        vec_idx offset = vec->element_size * index;                  /* offset to the element being erased in bytes */
-        vec_size total_size = vec->element_size * vec->count;     /* total current size in bytes */
-        memmove(vec->data + offset,                                    /* target is to overwrite the element specified by index */
-                vec->data + offset + vec->element_size,             /* copy beginning from one element ahead of element to be erased */
+        vec_idx offset = (vec_idx)vec->element_size * index;         /* offset to the element being erased in bytes */
+        vec_size total_size = vec->element_size * vec->count;        /* total current size in bytes */
+        memmove(vec->data + offset,                                  /* target is to overwrite the element specified by index */
+                vec->data + offset + vec->element_size,              /* copy beginning from one element ahead of element to be erased */
                 total_size - (vec_size)offset - vec->element_size);  /* copying number of elements after element to be erased */
         --vec->count;
     }
@@ -342,7 +342,7 @@ vec_find(const struct vec* vec, const void* element)
             return i;
     }
 
-    return vec_count(vec);
+    return (vec_idx)vec_count(vec);
 }
 
 #define vec_get_scratch_element(vec) \
@@ -403,9 +403,9 @@ vec_realloc(struct vec *vec,
     /* if no insertion index is required, copy all data to new memory */
     if (insertion_index != VEC_INVALID_INDEX)
     {
-        void* old_upper_elements = vec->data + (insertion_index + 0) * vec->element_size;
-        void* new_upper_elements = vec->data + (insertion_index + 1) * vec->element_size;
-        vec_size upper_element_count = (vec_size)(vec->capacity - insertion_index);
+        void* old_upper_elements = vec->data + (insertion_index + 0) * (vec_idx)vec->element_size;
+        void* new_upper_elements = vec->data + (insertion_index + 1) * (vec_idx)vec->element_size;
+        vec_size upper_element_count = vec->capacity - (vec_size)insertion_index;
         memmove(new_upper_elements, old_upper_elements, upper_element_count * vec->element_size);
     }
 

@@ -250,7 +250,7 @@ vec_get(const struct vec* vector, vec_idx index)
 {
     assert(vector);
     assert(index < (vec_idx)vector->count);
-    return vector->data + index * vector->element_size;
+    return vector->data + index * (vec_idx)vector->element_size;
 }
 
 VH_PUBLIC_API vec_idx

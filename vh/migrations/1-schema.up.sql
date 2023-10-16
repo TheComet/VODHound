@@ -48,10 +48,11 @@ CREATE TABLE IF NOT EXISTS motion_layers (
 CREATE TABLE IF NOT EXISTS videos (
     id INTEGER PRIMARY KEY NOT NULL,
     file_name TEXT NOT NULL,
-    frame_offset INTEGER NOT NULL
+    UNIQUE (file_name)
 );
 CREATE TABLE IF NOT EXISTS video_paths (
-    path TEXT PRIMARY KEY NOT NULL
+    path TEXT NOT NULL,
+    UNIQUE (path)
 );
 CREATE TABLE IF NOT EXISTS sponsors (
     id INTEGER PRIMARY KEY NOT NULL,
@@ -75,7 +76,8 @@ CREATE TABLE IF NOT EXISTS tournaments (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
     website TEXT NOT NULL,
-    UNIQUE (name, website)
+    UNIQUE (name, website),
+    CHECK (name <> '')
 );
 CREATE TABLE IF NOT EXISTS tournament_organizers (
     tournament_id INTEGER NOT NULL CHECK (tournament_id > 0),
@@ -124,13 +126,6 @@ CREATE TABLE IF NOT EXISTS round_types (
     UNIQUE (short_name),
     UNIQUE (long_name)
 );
-CREATE TABLE IF NOT EXISTS rounds (
-    id INTEGER PRIMARY KEY NOT NULL,
-    round_type_id INTEGER,
-    number INTEGER NOT NULL CHECK (number > 0),
-    UNIQUE (round_type_id, number),
-    FOREIGN KEY (round_type_id) REFERENCES rount_types(id)
-);
 CREATE TABLE IF NOT EXISTS teams (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
@@ -146,22 +141,41 @@ CREATE TABLE IF NOT EXISTS team_members (
 );
 CREATE TABLE IF NOT EXISTS games (
     id INTEGER PRIMARY KEY NOT NULL,
-    video_id INTEGER,
-    tournament_id INTEGER,
-    event_id INTEGER NOT NULL,
-    round_id INTEGER NOT NULL,
+    -- Round type only exists for brackets.
+    -- For Money match, Practice, Amateurs etc. this will be NULL.
+    round_type_id INTEGER,
+    -- Round number is NULL when the round type is semi-finals, finals, or any
+    -- other type that doesn't need a number.
+    round_number INTEGER,
     set_format_id INTEGER NOT NULL,
     winner_team_id INTEGER NOT NULL,
     stage_id INTEGER NOT NULL,
     time_started TIMESTAMP NOT NULL,
     time_ended TIMESTAMP NOT NULL,
-    FOREIGN KEY (video_id) REFERENCES videos(id),
-    FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
-    FOREIGN KEY (event_id) REFERENCES events(id),
-    FOREIGN KEY (round_id) REFERENCES rounds(id),
+    FOREIGN KEY (round_type_id) REFERENCES round_types(id),
     FOREIGN KEY (set_format_id) REFERENCES set_formats(id),
     FOREIGN KEY (winner_team_id) REFERENCES teams(id),
-    FOREIGN KEY (stage_id) REFERENCES stages(id)
+    FOREIGN KEY (stage_id) REFERENCES stages(id),
+    UNIQUE (time_started),
+    CHECK (round_type_id > 0),
+    CHECK (round_number > 0),
+    CHECK (set_format_id > 0),
+    CHECK (winner_team_id > 0),
+    CHECK (stage_id > -1)  -- Stage 0 is valid
+);
+CREATE TABLE IF NOT EXISTS tournament_games (
+    game_id INTEGER NOT NULL,
+    tournament_id INTEGER NOT NULL,
+    FOREIGN KEY (game_id) REFERENCES games(id),
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+    UNIQUE (game_id)
+);
+CREATE TABLE IF NOT EXISTS event_games (
+    game_id INTEGER NOT NULL,
+    event_id INTEGER NOT NULL,
+    FOREIGN KEY (game_id) REFERENCES games(id),
+    FOREIGN KEY (event_id) REFERENCES events(id),
+    UNIQUE (game_id)
 );
 CREATE TABLE IF NOT EXISTS game_players (
     person_id INTEGER NOT NULL,
@@ -171,11 +185,19 @@ CREATE TABLE IF NOT EXISTS game_players (
     fighter_id INTEGER NOT NULL,
     costume INTEGER NOT NULL,
     is_loser_side BOOLEAN NOT NULL CHECK (is_loser_side IN (0, 1)),
-    UNIQUE (person_id, game_id, slot, team_id, fighter_id, costume, is_loser_side),
+    UNIQUE (person_id, game_id),
     FOREIGN KEY (person_id) REFERENCES people(id),
     FOREIGN KEY (game_id) REFERENCES games(id),
     FOREIGN KEY (team_id) REFERENCES teams(id),
     FOREIGN KEY (fighter_id) REFERENCES fighters(id)
+);
+CREATE TABLE IF NOT EXISTS game_videos (
+    game_id INTEGER NOT NULL,
+    video_id INTEGER NOT NULL,
+    frame_offset INTEGER NOT NULL,
+    FOREIGN KEY (game_id) REFERENCES games(id),
+    FOREIGN KEY (video_id) REFERENCES videos(id),
+    UNIQUE (game_id, video_id)
 );
 CREATE TABLE IF NOT EXISTS scores (
     game_id INTEGER NOT NULL,

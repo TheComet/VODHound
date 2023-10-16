@@ -126,7 +126,7 @@ str_starts_with(struct str_view str, struct str_view cmp)
 {
     if (str.len < cmp.len)
         return 0;
-    return memcmp(str.data, cmp.data, cmp.len) == 0;
+    return memcmp(str.data, cmp.data, (size_t)cmp.len) == 0;
 }
 static inline int
 cstr_starts_with(struct str_view str, const char* cmp)
@@ -140,7 +140,7 @@ str_ends_with(struct str_view str, struct str_view cmp)
     if (str.len < cmp.len)
         return 0;
     const char* off = str.data + str.len - cmp.len;
-    return memcmp(off, cmp.data, cmp.len) == 0;
+    return memcmp(off, cmp.data, (size_t)cmp.len) == 0;
 }
 static inline int
 cstr_ends_with(struct str_view str, const char* cmp)
@@ -154,7 +154,7 @@ str_remove_end(struct str_view str, struct str_view cmp)
     if (str.len < cmp.len)
         return str;
     const char* off = str.data + str.len - cmp.len;
-    if (memcmp(off, cmp.data, cmp.len))
+    if (memcmp(off, cmp.data, (size_t)cmp.len))
         return str;
     str.len -= cmp.len;
     return str;
@@ -181,7 +181,7 @@ str_remove_file_ext(struct str_view str)
 static inline int
 str_equal(struct str_view s1, struct str_view s2)
 {
-    return s1.len == s2.len && memcmp(s1.data, s2.data, s1.len) == 0;
+    return s1.len == s2.len && memcmp(s1.data, s2.data, (size_t)s1.len) == 0;
 }
 static inline int
 cstr_equal(struct str_view str, const char* cstr)

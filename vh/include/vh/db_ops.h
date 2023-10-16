@@ -1,7 +1,7 @@
 #pragma once
 
 #include "vh/config.h"
-#include "vh/str.h"
+#include "vh/fs.h"
 
 C_BEGIN
 
@@ -9,7 +9,7 @@ struct db;
 
 struct db_interface
 {
-    struct db* (*open_and_prepare)(const char* uri);
+    struct db* (*open_and_prepare)(const char* uri, int reinit_db);
     void (*close)(struct db* db);
 
     int (*transaction_begin)(struct db* db);
@@ -36,20 +36,26 @@ struct db_interface
     int (*event_add_or_get)(struct db* db, int event_type_id, struct str_view url);
 
     int (*round_type_add_or_get)(struct db* db, struct str_view short_name, struct str_view long_name);
-    int (*round_add_or_get)(struct db* db, int round_type_id, int number);
 
     int (*set_format_add_or_get)(struct db* db, struct str_view short_name, struct str_view long_name);
 
-    int (*team_add_or_get)(struct db* db, struct str_view name, struct str_view url);
     int (*team_member_add)(struct db* db, int team_id, int person_id);
+    int (*team_add_or_get)(struct db* db, struct str_view name, struct str_view url);
 
     int (*sponsor_add_or_get)(struct db* db, struct str_view short_name, struct str_view full_name, struct str_view website);
     int (*person_add_or_get)(struct db* db, int sponsor_id, struct str_view name, struct str_view tag, struct str_view social, struct str_view pronouns);
     int (*person_get_id)(struct db* db, struct str_view name);
     int (*person_get_team_id)(struct db* db, struct str_view name);
 
-    int (*game_add_or_get)(struct db* db, int video_id, int tournament_id, int event_id, int round_id, int set_format_id, int winner_team_id, int stage_id, uint64_t time_started, uint64_t time_ended);
+    int (*game_add_or_get)(struct db* db, int round_type_id, int round_number, int set_format_id, int winner_team_id, int stage_id, uint64_t time_started, uint64_t time_ended);
+    int (*game_associate_tournament)(struct db* db, int game_id, int tournament_id);
+    int (*game_associate_event)(struct db* db, int game_id, int event_id);
+    int (*game_associate_video)(struct db* db, int game_id, int video_id, int64_t frame_offset);
+    int (*game_unassociate_video)(struct db* db, int game_id, int video_id);
     int (*game_player_add)(struct db* db, int person_id, int game_id, int slot, int team_id, int fighter_id, int costume, int is_loser_side);
+
+    int (*video_path_add)(struct db* db, struct path path);
+    int (*video_add_or_get)(struct db* db, struct str_view file_name);
 
     int (*score_add)(struct db* db, int game_id, int team_id, int score);
 
@@ -58,14 +64,20 @@ struct db_interface
     int (*query_games)(struct db* db,
         int (*on_game)(
             int game_id,
+            uint64_t time_started,
+            uint64_t time_ended,
             const char* tournament,
             const char* event,
-            uint64_t time_started,
-            int duration,
-            const char* round_type,
-            int round_number,
-            const char* format,
             const char* stage,
+            const char* round,
+            const char* format,
+            const char* teams,
+            const char* scores,
+            const char* slots,
+            const char* sponsors,
+            const char* players,
+            const char* fighters,
+            const char* costumes,
             void* user),
         void* user);
     int (*query_game_teams)(struct db* db, int game_id,

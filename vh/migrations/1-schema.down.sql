@@ -1,10 +1,12 @@
 DROP TABLE IF EXISTS frames;
 DROP TABLE IF EXISTS scores;
+DROP TABLE IF EXISTS game_videos;
 DROP TABLE IF EXISTS game_players;
+DROP TABLE IF EXISTS event_games;
+DROP TABLE IF EXISTS tournament_games;
 DROP TABLE IF EXISTS games;
 DROP TABLE IF EXISTS team_members;
 DROP TABLE IF EXISTS teams;
-DROP TABLE IF EXISTS rounds;
 DROP TABLE IF EXISTS round_types;
 DROP TABLE IF EXISTS events;
 DROP TABLE IF EXISTS event_types;
@@ -26,4 +28,3 @@ DROP TABLE IF EXISTS status_enums;
 DROP TABLE IF EXISTS hit_status_enums;
 DROP TABLE IF EXISTS fighters;
 DROP TABLE IF EXISTS stages;
-

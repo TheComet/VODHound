@@ -176,7 +176,7 @@ decoder_open_file(struct decoder* decoder, const char* file_name, int pause)
 
     decoder->reformat_ctx = NULL;
 
-    log_info("Video stream initialized\n");
+    log_dbg("Video stream initialized\n");
 
     return 0;
 
@@ -196,7 +196,7 @@ decoder_open_file(struct decoder* decoder, const char* file_name, int pause)
 void
 decoder_close(struct decoder* decoder)
 {
-    log_info("Closing video stream\n");
+    log_dbg("Closing video stream\n");
 
     if (decoder->reformat_ctx)
     {

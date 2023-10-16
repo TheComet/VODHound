@@ -12,7 +12,7 @@
 
 #if defined(_WIN32)
 #   include <malloc.h>
-#	define mem_size  _msize
+#   define mem_size  _msize
 #elif defined(__APPLE__)
 #   include <malloc/malloc.h>
 #   define mem_size  malloc_size

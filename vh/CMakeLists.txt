@@ -189,10 +189,23 @@ endif ()
 # Database migration scripts
 ###############################################################################
 
-add_custom_command (TARGET vh POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_SOURCE_DIR}/migrations ${VODHOUND_BUILD_BINDIR}/migrations
-    COMMENT "Copying DB migration scripts"
-    VERBATIM)
+set (MIGRATION_FILES
+    "1-schema.down.sql"
+    "1-schema.up.sql"
+    "mappingInfo.json")
+
+set (MIGRATION_FILES_OUT)
+foreach (file ${MIGRATION_FILES})
+    set (in "${PROJECT_SOURCE_DIR}/migrations/${file}")
+    set (out "${VODHOUND_BUILD_BINDIR}/migrations/${file}")
+    list (APPEND MIGRATION_FILES_OUT ${out})
+    add_custom_command (
+        OUTPUT ${out}
+        DEPENDS ${in}
+        COMMAND ${CMAKE_COMMAND} -E copy ${in} ${out}
+        COMMENT "Copying migration file ${file}")
+endforeach ()
+add_custom_target (vh_schema ALL DEPENDS ${MIGRATION_FILES_OUT})
 
 ###############################################################################
 # Install targets

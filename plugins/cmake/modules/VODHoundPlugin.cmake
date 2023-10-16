@@ -2,7 +2,7 @@ function (vodhound_add_plugin NAME)
     string (TOUPPER ${NAME} PLUGIN_NAME)
     string (REPLACE "-" "_" PLUGIN_NAME ${PLUGIN_NAME})
     string (REPLACE " " "_" PLUGIN_NAME ${PLUGIN_NAME})
-    
+
     string (TOLOWER ${NAME} TARGET_NAME)
     string (REPLACE "_" "-" TARGET_NAME ${TARGET_NAME})
     string (REPLACE " " "-" TARGET_NAME ${TARGET_NAME})
@@ -10,16 +10,16 @@ function (vodhound_add_plugin NAME)
     set (options "")
     set (oneValueArgs "")
     set (multiValueArgs
-        SOURCES 
+        SOURCES
         HEADERS
         DEFINES
         INCLUDES
         LIBS
         DATA)
     cmake_parse_arguments (${PLUGIN_NAME} "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
-    
+
     option (VODHOUND_${PLUGIN_NAME} "Enable the ${TARGET_NAME} plugin" ON)
-    
+
     if (${VODHOUND_${PLUGIN_NAME}})
         include (TestVisibilityMacros)
         check_c_source_compiles ("__declspec(dllexport) void foo(void); int main(void) { return 0; }" DLLEXPORT_VISIBILITY)
@@ -31,7 +31,7 @@ function (vodhound_add_plugin NAME)
         else ()
             message (FATAL_ERROR "Don't know how to define visibility macros for this compiler")
         endif ()
-        
+
         add_library (${TARGET_NAME} SHARED
             ${${PLUGIN_NAME}_SOURCES}
             ${${PLUGIN_NAME}_HEADERS})
@@ -61,13 +61,18 @@ function (vodhound_add_plugin NAME)
                 VS_DEBUGGER_WORKING_DIRECTORY "${VODHOUND_BUILD_BINDIR}"
                 VS_DEBUGGER_COMMAND "${VODHOUND_BUILD_BINDIR}/VODHound.exe")
         if (${PLUGIN_NAME}_DATA)
+            set (${PLUGIN_NAME}_DATA_OUT)
             foreach (DATAFILE ${${PLUGIN_NAME}_DATA})
-                add_custom_command (TARGET ${TARGET_NAME} POST_BUILD
-                    COMMAND ${CMAKE_COMMAND} -E make_directory "${VODHOUND_BUILD_DATADIR}/${TARGET_NAME}"
-                    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${PROJECT_SOURCE_DIR}/${DATAFILE}" "${VODHOUND_BUILD_DATADIR}/${TARGET_NAME}"
-                    COMMENT "Copying '${DATAFILE}' to '${VODHOUND_BUILD_DATADIR}/${TARGET_NAME}'"
+                set (in "${PROJECT_SOURCE_DIR}/${DATAFILE}")
+                set (out "${VODHOUND_BUILD_DATADIR}/${TARGET_NAME}")
+                list (APPEND ${PLUGIN_NAME}_DATA_OUT ${out})
+                add_custom_command (
+                    OUTPUT ${out}
+                    DEPENDS ${in}
+                    COMMAND ${CMAKE_COMMAND} -E copy ${in} ${out}
                     VERBATIM)
             endforeach ()
+            add_custom_target (${PLUGIN_TARGET}-data ALL DEPENDS ${${PLUGIN_NAME}_DATA_OUT})
             install (
                 FILES ${${TARGET_NAME}_DATA}
                 DESTINATION "${VODHOUND_INSTALL_DATADIR}/${TARGET_NAME}/")

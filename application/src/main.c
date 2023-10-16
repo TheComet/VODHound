@@ -14,6 +14,7 @@
 
 #include <stdio.h>
 #include <ctype.h>
+#include <time.h>
 
 #include "json-c/json.h"
 #include "zlib.h"
@@ -158,7 +159,9 @@ int import_rfr_metadata_1_7_into_db(struct db_interface* dbi, struct db* db, str
     {
         const char* name = json_object_get_string(tournament_name);
         const char* website = json_object_get_string(tournament_website);
-        if (name && website && *name)
+        if (website == NULL)
+            website = "";
+        if (name && *name)
         {
             tournament_id = dbi->tournament_add_or_get(db, cstr_view(name), cstr_view(website));
             if (tournament_id < 0)
@@ -174,7 +177,9 @@ int import_rfr_metadata_1_7_into_db(struct db_interface* dbi, struct db* db, str
             struct json_object* sponsor = json_object_array_get_idx(tournament_sponsors, i);
             const char* name = json_object_get_string(json_object_object_get(sponsor, "name"));
             const char* website = json_object_get_string(json_object_object_get(sponsor, "website"));
-            if (name && website && *name)
+            if (website == NULL)
+                website = "";
+            if (name && *name)
             {
                 sponsor_id = dbi->sponsor_add_or_get(db, cstr_view(""), cstr_view(name), cstr_view(website));
                 if (sponsor_id < 0)
@@ -240,7 +245,7 @@ int import_rfr_metadata_1_7_into_db(struct db_interface* dbi, struct db* db, str
 
     struct json_object* event = json_object_object_get(root, "event");
     const char* event_type = json_object_get_string(json_object_object_get(event, "type"));
-    if (event_type == NULL || !event_type)
+    if (event_type == NULL || !*event_type)
         event_type = "Friendlies";  /* fallback to friendlies */
     /* Only create an entry in the bracket type table if it is NOT friendlies */
     int event_id = -1;
@@ -263,7 +268,7 @@ int import_rfr_metadata_1_7_into_db(struct db_interface* dbi, struct db* db, str
      * "WR" and the number 2, or "Pools" and the number 3, respectively. */
     struct str_view round_type = cstr_view(json_object_get_string(json_object_object_get(game_info, "round")));
     const char* round_number_cstr = round_type.data;
-    int round_number = 1;
+    int round_number = -1;
     while (*round_number_cstr && !isdigit(*round_number_cstr))
         round_number_cstr++;
     if (*round_number_cstr)
@@ -292,11 +297,10 @@ int import_rfr_metadata_1_7_into_db(struct db_interface* dbi, struct db* db, str
             return -1;
     }
 
-    int round_id;
+    int round_type_id = -1;
     if (strcmp(set_format, "Free") == 0)
     {
-        if ((round_id = dbi->round_add_or_get(db, -1, round_number)) < 0)
-            return -1;
+        round_number = -1;
     }
     else
     {
@@ -313,11 +317,8 @@ int import_rfr_metadata_1_7_into_db(struct db_interface* dbi, struct db* db, str
         else if (cstr_equal(round_type, "GFR"))   long_name = "Grand Finals Reset";
         else if (cstr_equal(round_type, "Pools")) long_name = "Pools";
 
-        int round_type_id = dbi->round_type_add_or_get(db, round_type, cstr_view(long_name));
+        round_type_id = dbi->round_type_add_or_get(db, round_type, cstr_view(long_name));
         if (round_type_id < 0)
-            return -1;
-
-        if ((round_id = dbi->round_add_or_get(db, round_type_id, round_number)) < 0)
             return -1;
     }
 
@@ -377,15 +378,23 @@ int import_rfr_metadata_1_7_into_db(struct db_interface* dbi, struct db* db, str
     }
 
     int game_id = dbi->game_add_or_get(db,
-         -1,
-         tournament_id,
-         event_id,
-         round_id,
-         set_format_id,
-         winner_team_id,
-         stage_id,
-         time_started,
-         time_ended);
+        round_type_id,
+        round_number,
+        set_format_id,
+        winner_team_id,
+        stage_id,
+        time_started,
+        time_ended);
+    if (game_id < 0)
+        return -1;
+
+    if (tournament_id != -1)
+        if (dbi->game_associate_tournament(db, game_id, tournament_id) < 0)
+            return -1;
+
+    if (event_id != -1)
+        if (dbi->game_associate_event(db, game_id, event_id) < 0)
+            return -1;
 
     for (int i = 0; i != json_object_array_length(player_info); ++i)
     {
@@ -434,18 +443,17 @@ int import_rfr_metadata_into_db(struct db_interface* dbi, struct db* db, struct 
     if (version_str == NULL)
         goto fail;
 
-    if (strcmp(version_str, "1.5") == 0)
-    {}
-    else if (strcmp(version_str, "1.6") == 0)
-    {}
-    else if (strcmp(version_str, "1.7") == 0)
+    if (strcmp(version_str, "1.7") == 0)
     {
         game_id = import_rfr_metadata_1_7_into_db(dbi, db, root);
         if (game_id < 0)
             goto fail;
     }
     else
+    {
+        log_err("Failed to import RFR: Unsupported metadata version %s\n", version_str);
         goto fail;
+    }
 
     json_object_put(root);
     return game_id;
@@ -525,15 +533,69 @@ int import_rfr_framedata_into_db(struct db_interface* dbi, struct db* db, struct
     return -1;
 }
 
-int import_rfr_video_metadata_into_db(struct db_interface* dbi, struct db* db, struct mstream* ms)
+static int
+import_rfr_video_metadata_1_0_into_db(struct db_interface* dbi, struct db* db, struct json_object* root, int game_id)
 {
+    int video_id;
+    const char* file_name = json_object_get_string(json_object_object_get(root, "filename"));
+    int64_t offset = json_object_get_int64(json_object_object_get(root, "offset"));
+    if (file_name == NULL || !*file_name)
+        return 0;
+
+    video_id = dbi->video_add_or_get(db, cstr_view(file_name));
+    if (video_id < 0)
+        return -1;
+    if (dbi->game_associate_video(db, game_id, video_id, offset) < 0)
+        return -1;
+
     return 0;
+}
+
+int import_rfr_video_metadata_into_db(struct db_interface* dbi, struct db* db, struct mstream* ms, int game_id)
+{
+    struct json_tokener* tok = json_tokener_new();
+    struct json_object* root = json_tokener_parse_ex(tok, ms->address, ms->size);
+    json_tokener_free(tok);
+
+    if (root == NULL)
+        goto parse_failed;
+
+    struct json_object* version = json_object_object_get(root, "version");
+    const char* version_str = json_object_get_string(version);
+    if (version_str == NULL)
+        goto fail;
+
+    if (strcmp(version_str, "1.0") == 0)
+    {
+        if (import_rfr_video_metadata_1_0_into_db(dbi, db, root, game_id) < 0)
+            goto fail;
+    }
+    else
+        goto fail;
+
+    json_object_put(root);
+    return 0;
+
+    fail         : json_object_put(root);
+    parse_failed : return -1;
 }
 
 int import_rfr_into_db(struct db_interface* dbi, struct db* db, const char* file_name)
 {
+    struct blob_entry
+    {
+        const void* type;
+        int offset;
+        int size;
+    } entries[3];
+
     struct mfile mf;
     struct mstream ms;
+
+    uint8_t num_entries;
+    int i;
+    int entry_idx;
+    int game_id;
 
     if (mfile_map(&mf, file_name) != 0)
     {
@@ -553,32 +615,60 @@ int import_rfr_into_db(struct db_interface* dbi, struct db* db, const char* file
     if (dbi->transaction_begin(db) != 0)
         goto transaction_begin_failed;
 
-    uint8_t num_entries = mstream_read_u8(&ms);
-    int game_id = -1;
-    for (int i = 0; i != num_entries; ++i)
+    /*
+     * Blobs can be in any order within the RFR file. We have to import them
+     * in a specific order for the db operations to work. This order is:
+     *   1) META (metadata)
+     *   2) VIDM (video metadata) depends on game_id from META
+     *   3) FDAT (frame data) depends on game_id from META
+     * The "MAPI" (mapping info) blob doesn't need to be loaded, because we
+     * create the mapping info structures from a JSON file now.
+     */
+    num_entries = mstream_read_u8(&ms);
+    for (i = 0, entry_idx = 0; i != num_entries; ++i)
     {
         const void* type = mstream_read(&ms, 4);
         int offset = mstream_read_lu32(&ms);
         int size = mstream_read_lu32(&ms);
-        struct mstream blob = mstream_from_mstream(&ms, offset, size);
-
-        if (memcmp(type, "META", 4) == 0)
+        if (entry_idx < 3 &&
+            (memcmp(type, "META", 4) == 0 || memcmp(type, "FDAT", 4) == 0 || memcmp(type, "VIDM", 4) == 0))
         {
+            entries[entry_idx].type = type;
+            entries[entry_idx].offset = offset;
+            entries[entry_idx].size = size;
+            entry_idx++;
+        }
+    }
+
+    num_entries = entry_idx;
+    game_id = -1;
+    for (i = 0; i != num_entries; ++i)
+        if (memcmp(entries[i].type, "META", 4) == 0)
+        {
+            struct mstream blob = mstream_from_mstream(&ms, entries[i].offset, entries[i].size);
             game_id = import_rfr_metadata_into_db(dbi, db, &blob);
             if (game_id < 0)
                 goto fail;
+            break;
         }
-        else if (memcmp(type, "FDAT", 4) == 0)
+    for (i = 0; i != num_entries; ++i)
+        if (memcmp(entries[i].type, "VIDM", 4) == 0)
         {
-            if (import_rfr_framedata_into_db(dbi, db, &blob, game_id) != 0)
+            struct mstream blob = mstream_from_mstream(&ms, entries[i].offset, entries[i].size);
+            if (import_rfr_video_metadata_into_db(dbi, db, &blob, game_id) < 0)
                 goto fail;
+            break;
         }
-        else if (memcmp(type, "VIDM", 4) == 0)
+#if 0
+    for (i = 0; i != num_entries; ++i)
+        if (memcmp(entries[i].type, "FDAT", 4) == 0)
         {
-            if (import_rfr_video_metadata_into_db(dbi, db, &blob) != 0)
+            struct mstream blob = mstream_from_mstream(&ms, entries[i].offset, entries[i].size);
+            if (import_rfr_framedata_into_db(dbi, db, &blob, game_id) < 0)
                 goto fail;
+            break;
         }
-    }
+#endif
 
     if (dbi->transaction_commit(db) != 0)
         goto fail;
@@ -593,10 +683,10 @@ int import_rfr_into_db(struct db_interface* dbi, struct db* db, const char* file
 }
 
 static void
-import_all_rfr(struct db_interface* dbi, struct db*  db)
+import_all_rfr(struct db_interface* dbi, struct db* db)
 {
     do {
-
+//#include "rfr_files_less.h"
     } while (0);
 }
 
@@ -854,69 +944,50 @@ struct query_game_ctx
     struct db_interface* dbi;
     struct db* db;
     Ihandle* replays;
-    struct str players;
-    struct str fighters;
-    struct str vs;
+    struct str name;
 };
-
-static int on_query_game_player(
-        int slot,
-        const char* sponsor,
-        const char* name,
-        const char* fighter,
-        int costume,
-        void* user)
-{
-    struct query_game_ctx* ctx = user;
-    cstr_join(&ctx->players, ", ", name);
-    cstr_join(&ctx->fighters, ", ", fighter);
-    return 0;
-}
-
-static int on_query_game_team(
-        int game_id,
-        int team_id,
-        const char* team,
-        int score,
-        void* user)
-{
-    struct query_game_ctx* ctx = user;
-    ctx->dbi->query_game_players(ctx->db, game_id, team_id, on_query_game_player, ctx);
-
-    cstr_append(&ctx->players, " (");
-    str_append(&ctx->players, str_view(ctx->fighters));
-    cstr_append(&ctx->players, ")");
-    str_join(&ctx->vs, cstr_view(" vs "), str_view(ctx->players));
-
-    str_clear(&ctx->players);
-    str_clear(&ctx->fighters);
-
-    return 0;
-}
 
 static int on_query_game(
         int game_id,
+        uint64_t time_started,
+        uint64_t time_ended,
         const char* tournament,
         const char* event,
-        uint64_t time_started,
-        int duration,
-        const char* round_type,
-        int round_number,
-        const char* format,
         const char* stage,
+        const char* round,
+        const char* format,
+        const char* teams,
+        const char* scores,
+        const char* slots,
+        const char* sponsors,
+        const char* players,
+        const char* fighters,
+        const char* costumes,
         void* user)
 {
     struct query_game_ctx* ctx = user;
+    struct str_view team1, team2, fighter1, fighter2, score1, score2;
+    int s1, s2, game_number;
 
-    ctx->dbi->query_game_teams(ctx->db, game_id, on_query_game_team, user);
+    char datetime[17];
+    time_started = time_started / 1000;
+    strftime(datetime, sizeof(datetime), "%y-%m-%d %H:%M", localtime((time_t*)&time_started));
 
-    str_fmt(&ctx->players, " %s%d (%s) Game %d  %s", round_type, round_number, format, 1, stage);
-    str_append(&ctx->vs, str_view(ctx->players));
-    str_terminate(&ctx->vs);
-    IupSetAttribute(ctx->replays, "ADDLEAF", ctx->vs.data);
+    str_split2(cstr_view(teams), ',', &team1, &team2);
+    str_split2(cstr_view(fighters), ',', &fighter1, &fighter2);
+    str_split2(cstr_view(scores), ',', &score1, &score2);
 
-    str_clear(&ctx->vs);
-    str_clear(&ctx->players);
+    str_dec_to_int(score1, &s1);
+    str_dec_to_int(score2, &s2);
+    game_number = s1 + s2 + 1;
+
+    str_fmt(&ctx->name, "%s - %s %s - %.*s (%.*s) vs %.*s (%.*s) Game %d",
+            datetime, round, format,
+            team1.len, team1.data, fighter1.len, fighter1.data,
+            team2.len, team2.data, fighter2.len, fighter2.data,
+            game_number);
+    str_terminate(&ctx->name);
+    IupSetAttribute(ctx->replays, "ADDLEAF", ctx->name.data);
 
     return 0;
 }
@@ -929,13 +1000,16 @@ int main(int argc, char **argv)
         goto vh_init_failed;
 
     struct db_interface* dbi = db("sqlite");
-    struct db* db = dbi->open_and_prepare("vodhound.db");
+    struct db* db = dbi->open_and_prepare("vodhound.db", 0);
     if (db == NULL)
         goto open_db_failed;
 
 #if 0
     import_mapping_info(dbi, db, "migrations/mappingInfo.json");
     import_hash40(dbi, db, "ParamLabels.csv");
+#endif
+
+#if 0
     import_all_rfr(dbi, db);
 #endif
 
@@ -978,15 +1052,11 @@ int main(int argc, char **argv)
         ctx.dbi = dbi;
         ctx.db = db;
         ctx.replays = replays;
-        str_init(&ctx.fighters);
-        str_init(&ctx.players);
-        str_init(&ctx.vs);
+        str_init(&ctx.name);
 
         dbi->query_games(db, on_query_game, &ctx);
 
-        str_deinit(&ctx.vs);
-        str_deinit(&ctx.players);
-        str_deinit(&ctx.fighters);
+        str_deinit(&ctx.name);
     }
 
     Ihandle* plugin_view = IupGetHandle("plugin_view");
