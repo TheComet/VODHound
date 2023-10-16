@@ -65,4 +65,10 @@ fs_file_exists(const char* file_path);
 VH_PUBLIC_API struct str_view
 fs_appdata_dir(void);
 
+VH_PUBLIC_API int
+fs_init(void);
+
+VH_PRIVATE_API void
+fs_deinit(void);
+
 C_END

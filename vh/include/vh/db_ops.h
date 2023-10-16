@@ -74,6 +74,9 @@ struct db_interface
     int (*game_get_video)(struct db* db, int game_id, const char** file_name, const char** path_hint, int64_t* frame_offset);
     int (*game_player_add)(struct db* db, int person_id, int game_id, int slot, int team_id, int fighter_id, int costume, int is_loser_side);
 
+    int (*group_add_or_get)(struct db* db, struct str_view name);
+    int (*group_add_game)(struct db* db, int group_id, int game_id);
+
     int (*video_path_add)(struct db* db, struct str_view path);
     int (*video_paths_query)(struct db* db, int (*on_video_path)(const char* path, void* user), void* user);
     int (*video_add_or_get)(struct db* db, struct str_view file_name, struct str_view path_hint);
@@ -82,6 +85,10 @@ struct db_interface
     int (*score_add)(struct db* db, int game_id, int team_id, int score);
 
     int (*frame_add)(struct db* db, int game_id, int slot, uint64_t time_stamp, int frame_number, int frames_left, float posx, float posy, float damage, float hitstun, float shield, int status_id, int hit_status_id, uint64_t hash40, int stocks, int attack_connected, int facing_left, int opponent_in_hitlag);
+
+    int (*switch_info_add)(struct db* db, struct str_view name, struct str_view ip, uint16_t port);
+
+    int (*stream_recording_sources_add)(struct db* db, struct str_view path, int frame_offset);
 };
 
 VH_PUBLIC_API struct db_interface*

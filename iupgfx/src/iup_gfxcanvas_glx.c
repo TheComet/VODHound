@@ -454,6 +454,17 @@ void iupdrvGfxCanvasSetTexRGBA(Ihandle* ih, int id, const char* value)
     if (!glXMakeCurrent(ctx->display, ctx->window, ctx->gl))
         return;
 
+    if (value == NULL)
+    {
+        if (ctx->texture[id])
+        {
+            glDeleteTextures(1, &ctx->texture[id]);
+            ctx->texture[id] = 0;
+            ctx->s_texture[id] = -1;
+        }
+        return;
+    }
+
     if (ctx->texture[id] == 0)
     {
         /* Create a new texture */

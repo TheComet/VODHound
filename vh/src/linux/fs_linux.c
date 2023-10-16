@@ -1,9 +1,10 @@
 #include "vh/fs.h"
 
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <dirent.h>
-
-static int match_all(struct str_view str, const void* param) { (void)str; (void)param;  return 1; }
+#include <pwd.h>
 
 struct path
 path_take_str(struct str* str)
@@ -81,41 +82,36 @@ fs_list(struct str_view path, int (*on_entry)(const char* name, void* user), voi
 }
 
 int
-fs_list_matching(
-        struct strlist* out,
-        struct str_view path,
-        int (*match)(struct str_view str, const void* param),
-        const void* param)
+fs_file_exists(const char* file_path)
 {
-    DIR* dp;
-    struct dirent* ep;
-    struct path correct_path;
+    struct stat st;
+    return (stat(file_path, &st) == 0);
+}
 
-    path_init(&correct_path);
-    if (path_set(&correct_path, path) != 0)
-        goto str_set_failed;
-    path_terminate(&correct_path);
+static struct path appdata_dir;
 
-    dp = opendir(correct_path.str.data);
-    if (!dp)
-        goto first_file_failed;
+struct str_view
+fs_appdata_dir(void)
+{
+    return path_view(appdata_dir);
+}
 
-    while ((ep = readdir(dp)) != NULL)
-    {
-        struct str_view fname = cstr_view(ep->d_name);
-        if (cstr_equal(fname, ".") || cstr_equal(fname, ".."))
-            continue;
-        if (match(fname, param))
-            if (strlist_add(out, fname) != 0)
-                goto error;
-    }
+int
+fs_init(void)
+{
+    struct passwd* pw = getpwuid(getuid());
 
-    closedir(dp);
-    path_deinit(&correct_path);
-
+    path_init(&appdata_dir);
+    if (path_set(&appdata_dir, cstr_view(pw->pw_dir)) < 0) goto fail;
+    if (path_join(&appdata_dir, cstr_view(".local/share")) < 0) goto fail;
     return 0;
+fail:
+    path_deinit(&appdata_dir);
+    return -1;
+}
 
-    error             : closedir(dp);
-    first_file_failed : path_deinit(&correct_path);
-    str_set_failed    : return -1;
+void
+fs_deinit(void)
+{
+    path_deinit(&appdata_dir);
 }

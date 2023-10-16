@@ -7,16 +7,6 @@
 
 #include <stddef.h>
 
-const char*
-dynlib_last_error(void)
-{
-    return dlerror();
-}
-
-void
-dynlib_last_error_free(void)
-{}
-
 int
 dynlib_add_path(const char* path)
 { return 0; }

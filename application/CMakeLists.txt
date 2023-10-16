@@ -3,6 +3,23 @@ project (application
     VERSION ${VODHOUND_VERSION})
 
 add_executable (application
+    "include/application/import.h"
+
+    "src/import/param_labels_csv.c"
+    "src/import/reframed.c"
+    "src/import/reframed_framedata.c"
+    "src/import/reframed_framedata_1_5.c"
+    "src/import/reframed_mapping_info.c"
+    "src/import/reframed_metadata.c"
+    "src/import/reframed_metadata_1_5.c"
+    "src/import/reframed_metadata_1_6.c"
+    "src/import/reframed_metadata_1_7.c"
+    "src/import/reframed_motion_labels.c"
+    "src/import/reframed_player_details.c"
+    "src/import/reframed_replay.c"
+    "src/import/reframed_videometadata.c"
+    "src/import/reframed_videometadata_1_0.c"
+
     "src/main.c")
 target_include_directories (application
     PRIVATE

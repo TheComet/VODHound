@@ -40,10 +40,7 @@ static int on_symbol(const char* sym, void* user)
         return ret;
     }
 
-    log_err("  ! Failed to load symbol '%s': %s\n", sym, dynlib_last_error());
-    dynlib_last_error_free();
-
-    return 0;
+    return 0;  /* Continue */
 }
 
 static int on_filename(const char* name, void* user)
@@ -72,8 +69,7 @@ static int on_filename(const char* name, void* user)
     ctx->lib = dynlib_open(ctx->file_path.str.data);
     if (ctx->lib == NULL)
     {
-        log_err("! Failed to load plugin %s: %s\n", ctx->file_path.str.data, dynlib_last_error());
-        dynlib_last_error_free();
+        log_err("! Failed to load plugin %s\n", ctx->file_path.str.data);
         path_dirname(&ctx->file_path);
         return 0;  /* Try to continue*/
     }

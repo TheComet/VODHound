@@ -13,51 +13,57 @@
 #   define min(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
-#define STMT_LIST                  \
-    X(motion_add)                  \
-    X(fighter_add)                 \
-    X(fighter_name)                \
-    X(stage_add)                   \
-    X(status_enum_add)             \
-    X(hit_status_enum_add)         \
-                                   \
-    X(tournament_add_or_get)       \
-    X(tournament_sponsor_add)      \
-    X(tournament_organizer_add)    \
-    X(tournament_commentator_add)  \
-                                   \
-    X(event_type_add_or_get)       \
-    X(event_add_or_get)            \
-                                   \
-    X(round_type_add_or_get)       \
-                                   \
-    X(set_format_add_or_get)       \
-                                   \
-    X(team_member_add)             \
-    X(team_add_or_get)             \
-                                   \
-    X(sponsor_add_or_get)          \
-    X(person_add_or_get)           \
-    X(person_get_id)               \
-    X(person_get_team_id)          \
-                                   \
-    X(game_add_or_get)             \
-    X(games_query)                 \
-    X(game_associate_tournament)   \
-    X(game_associate_event)        \
-    X(game_associate_video)        \
-    X(game_unassociate_video)      \
-    X(game_get_video)              \
-    X(game_player_add)             \
-                                   \
-    X(video_path_add)              \
-    X(video_paths_query)           \
-    X(video_add_or_get)            \
-    X(video_set_path_hint)         \
-                                   \
-    X(score_add)                   \
-                                   \
-    X(frame_add)
+#define STMT_LIST                       \
+    X(motion_add)                       \
+    X(fighter_add)                      \
+    X(fighter_name)                     \
+    X(stage_add)                        \
+    X(status_enum_add)                  \
+    X(hit_status_enum_add)              \
+                                        \
+    X(tournament_add_or_get)            \
+    X(tournament_sponsor_add)           \
+    X(tournament_organizer_add)         \
+    X(tournament_commentator_add)       \
+                                        \
+    X(event_type_add_or_get)            \
+    X(event_add_or_get)                 \
+                                        \
+    X(round_type_add_or_get)            \
+                                        \
+    X(set_format_add_or_get)            \
+                                        \
+    X(team_member_add)                  \
+    X(team_add_or_get)                  \
+                                        \
+    X(sponsor_add_or_get)               \
+    X(person_add_or_get)                \
+    X(person_get_id)                    \
+    X(person_get_team_id)               \
+                                        \
+    X(game_add_or_get)                  \
+    X(games_query)                      \
+    X(game_associate_tournament)        \
+    X(game_associate_event)             \
+    X(game_associate_video)             \
+    X(game_unassociate_video)           \
+    X(game_get_video)                   \
+    X(game_player_add)                  \
+                                        \
+    X(group_add_or_get)                 \
+    X(group_add_game)                   \
+                                        \
+    X(video_path_add)                   \
+    X(video_paths_query)                \
+    X(video_add_or_get)                 \
+    X(video_set_path_hint)              \
+                                        \
+    X(score_add)                        \
+                                        \
+    X(frame_add)                        \
+                                        \
+    X(switch_info_add)                  \
+    X(stream_recording_sources_add)
 
 #define STMT_PREPARE_OR_RESET(stmt, error_return, text)                       \
     if (ctx->stmt)                                                            \
@@ -124,11 +130,8 @@ run_migration_script(sqlite3* db, const char* file_name)
     int sql_len;
 
     if (mfile_map(&mf, file_name) != 0)
-    {
-        log_err("Failed to open file '%s': %s\n", file_name, mfile_last_error());
-        mfile_last_error_free();
         goto open_script_failed;
-    }
+
     sql = mf.address;
     sql_len = mf.size;
 
@@ -934,6 +937,117 @@ error:
 }
 
 static int
+games_query(struct db* ctx,
+    int (*on_game)(
+        int game_id,
+        uint64_t time_started,
+        uint64_t time_ended,
+        const char* tournament,
+        const char* event,
+        const char* stage,
+        const char* round,
+        const char* format,
+        const char* teams,
+        const char* scores,
+        const char* slots,
+        const char* sponsors,
+        const char* players,
+        const char* fighters,
+        const char* costumes,
+        void* user),
+    void* user)
+{
+    int ret;
+    STMT_PREPARE_OR_RESET(games_query, -1,
+        "WITH grouped_games AS ( "
+        "    SELECT "
+        "        games.id, "
+        "        time_started, "
+        "        time_ended, "
+        "        round_type_id, "
+        "        round_number, "
+        "        set_format_id, "
+        "        winner_team_id, "
+        "        stage_id, "
+        "        teams.name team_name, "
+        "        IFNULL(scores.score, '') scores, "
+        "        group_concat(game_players.slot, '+') slots, "
+        "        group_concat(REPLACE(IFNULL(sponsors.short_name, ''), '+', '\\+'), '+') sponsors, "
+        "        group_concat(REPLACE(people.name, '+', '\\+'), '+') players, "
+        "        group_concat(REPLACE(IFNULL(fighters.name, game_players.fighter_id), '+', '\\+'), '+') fighters, "
+        "        group_concat(game_players.costume, '+') costumes "
+        "    FROM game_players "
+        "    JOIN games ON games.id = game_players.game_id "
+        "    JOIN teams ON teams.id = game_players.team_id "
+        "    LEFT JOIN scores ON scores.team_id = game_players.team_id AND scores.game_id = game_players.game_id "
+        "    JOIN people ON people.id = game_players.person_id "
+        "    LEFT JOIN fighters ON fighters.id = game_players.fighter_id "
+        "    LEFT JOIN sponsors ON sponsors.id = people.sponsor_id "
+        "    GROUP BY games.id, game_players.team_id "
+        "    ORDER BY game_players.slot) "
+        "SELECT "
+        "    grouped_games.id, "
+        "    time_started, "
+        "    time_ended, "
+        "    IFNULL(tournaments.name, '') tourney, "
+        "    IFNULL(event_types.name, '') event, "
+        "    IFNULL(stages.name, grouped_games.stage_id) stage, "
+        "    IFNULL(round_types.short_name, '') || IFNULL(round_number, '') round, "
+        "    set_formats.short_name format, "
+        "    group_concat(REPLACE(grouped_games.team_name, ',', '\\,')) teams, "
+        "    group_concat(grouped_games.scores) score, "
+        "    group_concat(grouped_games.slots) slots, "
+        "    group_concat(REPLACE(IFNULL(grouped_games.sponsors, ''), ',', '\\,')) sponsors, "
+        "    group_concat(REPLACE(grouped_games.players, ',', '\\,')) players, "
+        "    group_concat(REPLACE(grouped_games.fighters, ',', '\\,')) fighters, "
+        "    group_concat(grouped_games.costumes) costumes "
+        "FROM grouped_games "
+        "LEFT JOIN tournament_games ON tournament_games.game_id = grouped_games.id "
+        "LEFT JOIN tournaments ON tournament_games.tournament_id = tournaments.id "
+        "LEFT JOIN event_games ON event_games.game_id = grouped_games.id "
+        "LEFT JOIN events ON event_games.event_id = events.id "
+        "LEFT JOIN event_types ON event_types.id = events.event_type_id "
+        "LEFT JOIN stages ON stages.id = grouped_games.stage_id "
+        "LEFT JOIN round_types ON grouped_games.round_type_id = round_types.id "
+        "JOIN set_formats ON grouped_games.set_format_id = set_formats.id "
+        "GROUP BY grouped_games.id "
+        "ORDER BY time_started DESC;");
+
+next_step:
+    ret = sqlite3_step(ctx->games_query);
+    switch (ret)
+    {
+        case SQLITE_BUSY: goto next_step;
+        case SQLITE_DONE: break;
+        case SQLITE_ROW:
+            ret = on_game(
+                sqlite3_column_int(ctx->games_query, 0),
+                (uint64_t)sqlite3_column_int64(ctx->games_query, 1),
+                (uint64_t)sqlite3_column_int64(ctx->games_query, 2),
+                (const char*)sqlite3_column_text(ctx->games_query, 3),
+                (const char*)sqlite3_column_text(ctx->games_query, 4),
+                (const char*)sqlite3_column_text(ctx->games_query, 5),
+                (const char*)sqlite3_column_text(ctx->games_query, 6),
+                (const char*)sqlite3_column_text(ctx->games_query, 7),
+                (const char*)sqlite3_column_text(ctx->games_query, 8),
+                (const char*)sqlite3_column_text(ctx->games_query, 9),
+                (const char*)sqlite3_column_text(ctx->games_query, 10),
+                (const char*)sqlite3_column_text(ctx->games_query, 11),
+                (const char*)sqlite3_column_text(ctx->games_query, 12),
+                (const char*)sqlite3_column_text(ctx->games_query, 13),
+                (const char*)sqlite3_column_text(ctx->games_query, 14),
+                user);
+            if (ret) return ret;
+            goto next_step;
+        default:
+            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+            break;
+    }
+
+    return 0;
+}
+
+static int
 game_associate_tournament(struct db* ctx, int game_id, int tournament_id)
 {
     int ret;
@@ -1057,75 +1171,46 @@ game_player_add(
 }
 
 static int
-score_add(struct db* ctx, int game_id, int team_id, int score)
+group_add_or_get(struct db* ctx, struct str_view name)
 {
     int ret;
-    STMT_PREPARE_OR_RESET(score_add, -1,
-        "INSERT OR IGNORE INTO scores (game_id, team_id, score) VALUES (?, ?, ?);");
+    STMT_PREPARE_OR_RESET(group_add_or_get, -1,
+        "INSERT INTO groups (name) VALUES (?) "
+        "ON CONFLICT DO UPDATE SET name=excluded.name RETURNING id;");
 
-    if ((ret = sqlite3_bind_int(ctx->score_add, 1, game_id)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->score_add, 2, team_id)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->score_add, 3, score)) != SQLITE_OK)
+    if ((ret = sqlite3_bind_text(ctx->group_add_or_get, 1, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK)
+        goto error;
+
+next_step:
+    ret = sqlite3_step(ctx->group_add_or_get);
+    switch (ret)
     {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return -1;
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE : return -1;
+        case SQLITE_ROW  : return sqlite3_column_int(ctx->group_add_or_get, 0);
+        default: break;
     }
 
-    return step_stmt_wrapper(ctx->db, ctx->score_add);
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    return -1;
 }
 
 static int
-frame_add(
-        struct db* ctx,
-        int game_id,
-        int slot,
-        uint64_t time_stamp,
-        int frame_number,
-        int frames_left,
-        float posx,
-        float posy,
-        float damage,
-        float hitstun,
-        float shield,
-        int status_id,
-        int hit_status_id,
-        uint64_t hash40,
-        int stocks,
-        int attack_connected,
-        int facing_left,
-        int opponent_in_hitlag)
+group_add_game(struct db* ctx, int group_id, int game_id)
 {
     int ret;
-    STMT_PREPARE_OR_RESET(frame_add, -1,
-        "INSERT OR IGNORE INTO frames ("
-        "    game_id, slot, time_stamp, frame_number, frames_left, "
-        "    posx, posy, damage, hitstun, shield, status_id, "
-        "    hit_status_id, hash40, stocks, attack_connected, facing_left, "
-        "    opponent_in_hitlag) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
+    STMT_PREPARE_OR_RESET(group_add_game, -1,
+        "INSERT OR IGNORE INTO game_groups (group_id, game_id) VALUES (?, ?);");
 
-    if ((ret = sqlite3_bind_int(ctx->frame_add, 1, game_id)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->frame_add, 2, slot)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int64(ctx->frame_add, 3, (int64_t)time_stamp)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->frame_add, 4, frame_number)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->frame_add, 5, frames_left)) != SQLITE_OK ||
-        (ret = sqlite3_bind_double(ctx->frame_add, 6, posx)) != SQLITE_OK ||
-        (ret = sqlite3_bind_double(ctx->frame_add, 7, posy)) != SQLITE_OK ||
-        (ret = sqlite3_bind_double(ctx->frame_add, 8, damage)) != SQLITE_OK ||
-        (ret = sqlite3_bind_double(ctx->frame_add, 9, hitstun)) != SQLITE_OK ||
-        (ret = sqlite3_bind_double(ctx->frame_add, 10, shield)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->frame_add, 11, status_id)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->frame_add, 12, hit_status_id)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int64(ctx->frame_add, 13, (int64_t)hash40)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->frame_add, 14, stocks)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->frame_add, 15, attack_connected)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->frame_add, 16, facing_left)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->frame_add, 17, opponent_in_hitlag)) != SQLITE_OK)
+    if ((ret = sqlite3_bind_int(ctx->group_add_game, 1, group_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->group_add_game, 2, game_id)) != SQLITE_OK)
     {
         log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
         return -1;
     }
 
-    return step_stmt_wrapper(ctx->db, ctx->frame_add);
+    return step_stmt_wrapper(ctx->db, ctx->group_add_game);
 }
 
 static int
@@ -1219,114 +1304,110 @@ video_set_path_hint(struct db* ctx, struct str_view file_name, struct str_view p
 }
 
 static int
-games_query(struct db* ctx,
-    int (*on_game)(
-        int game_id,
-        uint64_t time_started,
-        uint64_t time_ended,
-        const char* tournament,
-        const char* event,
-        const char* stage,
-        const char* round,
-        const char* format,
-        const char* teams,
-        const char* scores,
-        const char* slots,
-        const char* sponsors,
-        const char* players,
-        const char* fighters,
-        const char* costumes,
-        void* user),
-    void* user)
+score_add(struct db* ctx, int game_id, int team_id, int score)
 {
     int ret;
-    STMT_PREPARE_OR_RESET(games_query, -1,
-        "WITH grouped_games AS ( "
-        "    SELECT "
-        "        games.id, "
-        "        time_started, "
-        "        time_ended, "
-        "        round_type_id, "
-        "        round_number, "
-        "        set_format_id, "
-        "        winner_team_id, "
-        "        stage_id, "
-        "        teams.name team_name, "
-        "        IFNULL(scores.score, '') scores, "
-        "        group_concat(game_players.slot, '+') slots, "
-        "        group_concat(REPLACE(IFNULL(sponsors.short_name, ''), '+', '\\+'), '+') sponsors, "
-        "        group_concat(REPLACE(people.name, '+', '\\+'), '+') players, "
-        "        group_concat(REPLACE(IFNULL(fighters.name, game_players.fighter_id), '+', '\\+'), '+') fighters, "
-        "        group_concat(game_players.costume, '+') costumes "
-        "    FROM game_players "
-        "    JOIN games ON games.id = game_players.game_id "
-        "    JOIN teams ON teams.id = game_players.team_id "
-        "    LEFT JOIN scores ON scores.team_id = game_players.team_id AND scores.game_id = game_players.game_id "
-        "    JOIN people ON people.id = game_players.person_id "
-        "    JOIN fighters ON fighters.id = game_players.fighter_id "
-        "    LEFT JOIN sponsors ON sponsors.id = people.sponsor_id "
-        "    GROUP BY games.id, game_players.team_id "
-        "    ORDER BY game_players.slot) "
-        "SELECT "
-        "    grouped_games.id, "
-        "    time_started, "
-        "    time_ended, "
-        "    IFNULL(tournaments.name, '') tourney, "
-        "    IFNULL(event_types.name, '') event, "
-        "    IFNULL(stages.name, grouped_games.stage_id) stage, "
-        "    IFNULL(round_types.short_name, '') || IFNULL(round_number, '') round, "
-        "    set_formats.short_name format, "
-        "    group_concat(REPLACE(grouped_games.team_name, ',', '\\,')) teams, "
-        "    group_concat(grouped_games.scores) score, "
-        "    group_concat(grouped_games.slots) slots, "
-        "    group_concat(REPLACE(IFNULL(grouped_games.sponsors, ''), ',', '\\,')) sponsors, "
-        "    group_concat(REPLACE(grouped_games.players, ',', '\\,')) players, "
-        "    group_concat(REPLACE(grouped_games.fighters, ',', '\\,')) fighters, "
-        "    group_concat(grouped_games.costumes) costumes "
-        "FROM grouped_games "
-        "LEFT JOIN tournament_games ON tournament_games.game_id = grouped_games.id "
-        "LEFT JOIN tournaments ON tournament_games.tournament_id = tournaments.id "
-        "LEFT JOIN event_games ON event_games.game_id = grouped_games.id "
-        "LEFT JOIN events ON event_games.event_id = events.id "
-        "LEFT JOIN event_types ON event_types.id = events.event_type_id "
-        "LEFT JOIN stages ON stages.id = grouped_games.stage_id "
-        "LEFT JOIN round_types ON grouped_games.round_type_id = round_types.id "
-        "JOIN set_formats ON grouped_games.set_format_id = set_formats.id "
-        "GROUP BY grouped_games.id "
-        "ORDER BY time_started;");
+    STMT_PREPARE_OR_RESET(score_add, -1,
+        "INSERT OR IGNORE INTO scores (game_id, team_id, score) VALUES (?, ?, ?);");
 
-next_step:
-    ret = sqlite3_step(ctx->games_query);
-    switch (ret)
+    if ((ret = sqlite3_bind_int(ctx->score_add, 1, game_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->score_add, 2, team_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->score_add, 3, score)) != SQLITE_OK)
     {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_DONE: break;
-        case SQLITE_ROW:
-            ret = on_game(
-                sqlite3_column_int(ctx->games_query, 0),
-                (uint64_t)sqlite3_column_int64(ctx->games_query, 1),
-                (uint64_t)sqlite3_column_int64(ctx->games_query, 2),
-                (const char*)sqlite3_column_text(ctx->games_query, 3),
-                (const char*)sqlite3_column_text(ctx->games_query, 4),
-                (const char*)sqlite3_column_text(ctx->games_query, 5),
-                (const char*)sqlite3_column_text(ctx->games_query, 6),
-                (const char*)sqlite3_column_text(ctx->games_query, 7),
-                (const char*)sqlite3_column_text(ctx->games_query, 8),
-                (const char*)sqlite3_column_text(ctx->games_query, 9),
-                (const char*)sqlite3_column_text(ctx->games_query, 10),
-                (const char*)sqlite3_column_text(ctx->games_query, 11),
-                (const char*)sqlite3_column_text(ctx->games_query, 12),
-                (const char*)sqlite3_column_text(ctx->games_query, 13),
-                (const char*)sqlite3_column_text(ctx->games_query, 14),
-                user);
-            if (ret) return ret;
-            goto next_step;
-        default:
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            break;
+        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        return -1;
     }
 
-    return 0;
+    return step_stmt_wrapper(ctx->db, ctx->score_add);
+}
+
+static int
+frame_add(
+        struct db* ctx,
+        int game_id,
+        int slot,
+        uint64_t time_stamp,
+        int frame_number,
+        int frames_left,
+        float posx,
+        float posy,
+        float damage,
+        float hitstun,
+        float shield,
+        int status_id,
+        int hit_status_id,
+        uint64_t hash40,
+        int stocks,
+        int attack_connected,
+        int facing_left,
+        int opponent_in_hitlag)
+{
+    int ret;
+    STMT_PREPARE_OR_RESET(frame_add, -1,
+        "INSERT OR IGNORE INTO frames ("
+        "    game_id, slot, time_stamp, frame_number, frames_left, "
+        "    posx, posy, damage, hitstun, shield, status_id, "
+        "    hit_status_id, hash40, stocks, attack_connected, facing_left, "
+        "    opponent_in_hitlag) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
+
+    if ((ret = sqlite3_bind_int(ctx->frame_add, 1, game_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->frame_add, 2, slot)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int64(ctx->frame_add, 3, (int64_t)time_stamp)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->frame_add, 4, frame_number)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->frame_add, 5, frames_left)) != SQLITE_OK ||
+        (ret = sqlite3_bind_double(ctx->frame_add, 6, posx)) != SQLITE_OK ||
+        (ret = sqlite3_bind_double(ctx->frame_add, 7, posy)) != SQLITE_OK ||
+        (ret = sqlite3_bind_double(ctx->frame_add, 8, damage)) != SQLITE_OK ||
+        (ret = sqlite3_bind_double(ctx->frame_add, 9, hitstun)) != SQLITE_OK ||
+        (ret = sqlite3_bind_double(ctx->frame_add, 10, shield)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->frame_add, 11, status_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->frame_add, 12, hit_status_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int64(ctx->frame_add, 13, (int64_t)hash40)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->frame_add, 14, stocks)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->frame_add, 15, attack_connected)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->frame_add, 16, facing_left)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->frame_add, 17, opponent_in_hitlag)) != SQLITE_OK)
+    {
+        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        return -1;
+    }
+
+    return step_stmt_wrapper(ctx->db, ctx->frame_add);
+}
+
+static int
+switch_info_add(struct db* ctx, struct str_view name, struct str_view ip, uint16_t port)
+{
+    int ret;
+    STMT_PREPARE_OR_RESET(switch_info_add, -1,
+        "INSERT OR IGNORE INTO switch_info (name, ip, port) VALUES (?, ?, ?);");
+
+    if ((ret = sqlite3_bind_text(ctx->switch_info_add, 1, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK ||
+        (ret = sqlite3_bind_text(ctx->switch_info_add, 2, ip.data, ip.len, SQLITE_STATIC)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->switch_info_add, 3, (int)port)) != SQLITE_OK)
+    {
+        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        return -1;
+    }
+
+    return step_stmt_wrapper(ctx->db, ctx->switch_info_add);
+}
+
+static int
+stream_recording_sources_add(struct db* ctx, struct str_view path, int frame_offset)
+{
+    int ret;
+    STMT_PREPARE_OR_RESET(stream_recording_sources_add, -1,
+        "INSERT OR IGNORE INTO stream_recording_sources (path, frame_offset) VALUES (?, ?);");
+
+    if ((ret = sqlite3_bind_text(ctx->stream_recording_sources_add, 1, path.data, path.len, SQLITE_STATIC)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->stream_recording_sources_add, 2, frame_offset)) != SQLITE_OK)
+    {
+        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        return -1;
+    }
+
+    return step_stmt_wrapper(ctx->db, ctx->stream_recording_sources_add);
 }
 
 struct db_interface db_sqlite = {

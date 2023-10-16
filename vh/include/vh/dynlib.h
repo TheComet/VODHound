@@ -6,21 +6,6 @@
 C_BEGIN
 
 /*!
- * \brief Gets the last error as a string.
- * \warning On Windows, you must call dynlib_last_error_free() after using the
- * result, otherwise it will leak memory.
- * \return
- */
-VH_PUBLIC_API const char*
-dynlib_last_error(void);
-
-/*!
- * \brief On Windows, frees the last error created by dynlib_last_error().
- */
-VH_PUBLIC_API void
-dynlib_last_error_free(void);
-
-/*!
  * \brief Appends a path to search for shared libraries.
  *
  * This is required for plugins that ship with their own shared library

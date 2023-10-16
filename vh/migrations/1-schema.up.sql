@@ -200,6 +200,17 @@ CREATE TABLE IF NOT EXISTS game_videos (
     FOREIGN KEY (video_id) REFERENCES videos(id),
     UNIQUE (game_id, video_id)
 );
+CREATE TABLE IF NOT EXISTS groups (
+    id INTEGER NOT NULL,
+    name TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS game_groups (
+    game_id INTEGER NOT NULL,
+    group_id INTEGER NOT NULL,
+    FOREIGN KEY (game_id) REFERENCES games(id),
+    FOREIGN KEY (group_id) REFERENCES groups(id),
+    UNIQUE (game_id, group_id)
+);
 CREATE TABLE IF NOT EXISTS scores (
     game_id INTEGER NOT NULL,
     team_id INTEGER NOT NULL,
@@ -231,5 +242,16 @@ CREATE TABLE IF NOT EXISTS frames (
     FOREIGN KEY (status_id) REFERENCES status_enums(id),
     FOREIGN KEY (hash40) REFERENCES motions(hash40),
     FOREIGN KEY (hit_status_id) REFERENCES hit_status_enums(id)
+);
+CREATE TABLE IF NOT EXISTS switch_info (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    ip TEXT NOT NULL,
+    port INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS stream_recording_sources (
+    id INTEGER PRIMARY KEY NOT NULL,
+    path TEXT NOT NULL,
+    frame_offset INTEGER NOT NULL
 );
 

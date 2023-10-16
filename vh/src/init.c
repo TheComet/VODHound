@@ -1,4 +1,5 @@
 #include "vh/backtrace.h"
+#include "vh/fs.h"
 #include "vh/mem.h"
 #include "vh/init.h"
 
@@ -13,12 +14,12 @@ vh_init(void)
 {
     if (backtrace_init() < 0)
         goto backtrace_init_failed;
-    if (vh_threadlocal_init() < 0)
-        goto threadlocal_init_failed;
+    if (fs_init() < 0)
+        goto fs_init_failed;
 
     return 0;
 
-    threadlocal_init_failed : backtrace_deinit();
+    fs_init_failed          : backtrace_deinit();
     backtrace_init_failed   : return -1;
 }
 
@@ -26,7 +27,7 @@ vh_init(void)
 void
 vh_deinit(void)
 {
-    vh_threadlocal_deinit();
+    fs_deinit();
     backtrace_deinit();
 }
 
