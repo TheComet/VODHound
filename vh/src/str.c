@@ -3,6 +3,7 @@
 
 #include <string.h>
 #include <stdarg.h>
+#include <stdio.h>
 
 int
 str_set(struct str* str, struct str_view view)

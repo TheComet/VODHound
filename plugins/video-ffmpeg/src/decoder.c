@@ -10,8 +10,6 @@
 int
 decoder_open_file(struct decoder* decoder, const char* file_name, int pause)
 {
-    log_info("Opening file '%s'\n", file_name);
-
     int result;
     const AVCodec* vcodec;
     const AVCodec* acodec;
@@ -24,7 +22,7 @@ decoder_open_file(struct decoder* decoder, const char* file_name, int pause)
     decoder->input_ctx = avformat_alloc_context();
     if (decoder->input_ctx == NULL)
     {
-        log_err("Failed to allocate avformat context\n");
+        log_err("Failed to open file '%s': Failed to allocate avformat context\n", file_name);
         goto alloc_context_failed;
     }
 
@@ -41,7 +39,7 @@ decoder_open_file(struct decoder* decoder, const char* file_name, int pause)
     {
         char buf[AV_ERROR_MAX_STRING_SIZE];
         av_strerror(result, buf, AV_ERROR_MAX_STRING_SIZE);
-        log_err("%s\n", buf);
+        log_err("Failed to open file '%s': %s\n", file_name, buf);
         goto open_input_failed;
     }
 
@@ -57,7 +55,7 @@ decoder_open_file(struct decoder* decoder, const char* file_name, int pause)
      */
     if (avformat_find_stream_info(decoder->input_ctx, NULL) < 0)
     {
-        log_err("Failed to find stream info\n");
+        log_err("Failed to open file '%s': Failed to find stream info\n", file_name);
         goto find_stream_info_failed;
     }
 
@@ -70,7 +68,7 @@ decoder_open_file(struct decoder* decoder, const char* file_name, int pause)
         const AVCodec* codec = avcodec_find_decoder(params->codec_id);
         if (codec == NULL)
         {
-            log_err("Unsupported codec\n");
+            log_err("Failed to open file '%s': Unsupported codec\n", file_name);
             continue;
         }
 
@@ -91,17 +89,17 @@ decoder_open_file(struct decoder* decoder, const char* file_name, int pause)
     }
     if (decoder->vstream_idx == -1)
     {
-        log_err("Input does not contain a video stream\n");
+        log_err("Failed to open file '%s': Input does not contain a video stream\n", file_name);
         goto video_stream_not_found;
     }
     if (decoder->astream_idx == -1)
-        log_note("Input does not contain an audio stream\n");
+        log_note("Failed to open file '%s': Input does not contain an audio stream\n", file_name);
 
     /* https://ffmpeg.org/doxygen/trunk/structAVCodecContext.html */
     decoder->vcodec_ctx = avcodec_alloc_context3(vcodec);
     if (decoder->vcodec_ctx == NULL)
     {
-        log_err("Failed to allocate video codec context\n");
+        log_err("Failed to open file '%s': Failed to allocate video codec context\n", file_name);
         goto alloc_video_codec_context_failed;
     }
 
@@ -111,7 +109,7 @@ decoder_open_file(struct decoder* decoder, const char* file_name, int pause)
      */
     if (avcodec_parameters_to_context(decoder->vcodec_ctx, decoder->input_ctx->streams[decoder->vstream_idx]->codecpar) < 0)
     {
-        log_err("Failed to copy video codec params to video codec context\n");
+        log_err("Failed to open file '%s': Failed to copy video codec params to video codec context\n", file_name);
         goto copy_video_codec_params_failed;
     }
 
@@ -126,21 +124,21 @@ decoder_open_file(struct decoder* decoder, const char* file_name, int pause)
      */
     if (avcodec_open2(decoder->vcodec_ctx, vcodec, NULL) < 0)
     {
-        log_err("Failed to open video codec\n");
+        log_err("Failed to open file '%s': Failed to open video codec\n", file_name);
         goto open_video_codec_failed;
     }
 
     decoder->current_packet = av_packet_alloc();
     if (decoder->current_packet == NULL)
     {
-        log_err("Failed to allocated packet\n");
+        log_err("Failed to open file '%s': Failed to allocated packet\n", file_name);
         goto alloc_packet_failed;
     }
 
     decoder->current_frame = av_frame_alloc();
     if (decoder->current_frame == NULL)
     {
-        log_err("Failed to allocated frame\n");
+        log_err("Failed to open file '%s': Failed to allocated frame\n", file_name);
         goto alloc_frame_failed;
     }
 
@@ -155,7 +153,7 @@ decoder_open_file(struct decoder* decoder, const char* file_name, int pause)
     decoder->current_frame_rgba = av_frame_alloc();
     if (decoder->current_frame_rgba == NULL)
     {
-        log_err("Failed to allocate RGBA frame\n");
+        log_err("Failed to open file '%s': Failed to allocate RGBA frame\n", file_name);
         goto alloc_rgba_frame_failed;
     }
     if (av_image_alloc(
@@ -167,7 +165,7 @@ decoder_open_file(struct decoder* decoder, const char* file_name, int pause)
         1                                        /* Alignment */
     ) < 0)
     {
-        log_err("Failed to allocate RGBA buffer\n");
+        log_err("Failed to open file '%s': Failed to allocate RGBA buffer\n", file_name);
         goto alloc_rgba_buffer_failed;
     }
 
@@ -176,7 +174,7 @@ decoder_open_file(struct decoder* decoder, const char* file_name, int pause)
 
     decoder->reformat_ctx = NULL;
 
-    log_dbg("Video stream initialized\n");
+    log_dbg("Opened video file '%s'\n", file_name);
 
     return 0;
 

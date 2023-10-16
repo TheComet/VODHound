@@ -59,4 +59,7 @@ fs_list_strlist_matching(
     int (*match)(const char* str, void* user),
     void* user);
 
+VH_PUBLIC_API int
+fs_file_exists(const char* file_path);
+
 C_END

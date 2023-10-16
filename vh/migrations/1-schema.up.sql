@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS motion_layers (
 CREATE TABLE IF NOT EXISTS videos (
     id INTEGER PRIMARY KEY NOT NULL,
     file_name TEXT NOT NULL,
+    path_hint TEXT NOT NULL,
     UNIQUE (file_name)
 );
 CREATE TABLE IF NOT EXISTS video_paths (

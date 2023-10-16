@@ -4,6 +4,28 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
+static char* last_error;
+const char*
+mfile_last_error(void)
+{
+    FormatMessageA(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
+        NULL,
+        GetLastError(),
+        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        (LPSTR)&last_error,
+        0,
+        NULL);
+    return last_error;
+}
+void
+mfile_last_error_free(void)
+{
+    if (last_error)
+        LocalFree(last_error);
+    last_error = NULL;
+}
+
 int
 mfile_map(struct mfile* mf, const char* utf8_filename)
 {

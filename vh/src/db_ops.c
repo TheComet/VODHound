@@ -42,22 +42,22 @@
     X(person_get_team_id)          \
                                    \
     X(game_add_or_get)             \
+    X(games_query)                 \
     X(game_associate_tournament)   \
     X(game_associate_event)        \
     X(game_associate_video)        \
     X(game_unassociate_video)      \
+    X(game_get_video)              \
     X(game_player_add)             \
                                    \
     X(video_path_add)              \
+    X(video_paths_query)           \
     X(video_add_or_get)            \
+    X(video_set_path_hint)         \
                                    \
     X(score_add)                   \
                                    \
-    X(frame_add)                   \
-                                   \
-    X(query_games)                 \
-    X(query_game_teams)            \
-    X(query_game_players)
+    X(frame_add)
 
 #define STMT_PREPARE_OR_RESET(stmt, error_return, text)                       \
     if (ctx->stmt)                                                            \
@@ -123,12 +123,16 @@ run_migration_script(sqlite3* db, const char* file_name)
     const char* sql_next;
     int sql_len;
 
-    log_info("Running migration script '%s'\n", file_name);
-
     if (mfile_map(&mf, file_name) != 0)
+    {
+        log_err("Failed to open file '%s': %s\n", file_name, mfile_last_error());
+        mfile_last_error_free();
         goto open_script_failed;
+    }
     sql = mf.address;
     sql_len = mf.size;
+
+    log_info("Running migration script '%s'\n", file_name);
 
 next_step:
     ret = sqlite3_prepare_v2(db, sql, sql_len, &stmt, &sql_next);
@@ -222,7 +226,7 @@ check_version_and_migrate(sqlite3* db, int reinit_db)
     if (exec_sql_wrapper(db, "COMMIT TRANSACTION") != 0)
         goto migrate_failed;
 
-    log_info("Successfully migrated from version %d to version 1\n", version);
+    log_note("Successfully migrated from version %d to version 1\n", version);
 
     return 0;
 
@@ -759,7 +763,7 @@ person_add_or_get(
         "INSERT INTO people (sponsor_id, name, tag, social, pronouns) VALUES (?, ?, ?, ?, ?) "
         "ON CONFLICT DO UPDATE SET name=excluded.name RETURNING id;");
 
-    if (sponsor_id == -1)
+    if (sponsor_id < 0)
     {
         if ((ret = sqlite3_bind_null(ctx->person_add_or_get, 1)) != SQLITE_OK)
         {
@@ -999,6 +1003,29 @@ game_unassociate_video(struct db* ctx, int game_id, int video_id)
 }
 
 static int
+game_get_video(struct db* ctx, int game_id, const char** file_name, const char** path_hint, int64_t* frame_offset)
+{
+    int ret;
+    STMT_PREPARE_OR_RESET(game_get_video, -1,
+        "SELECT file_name, path_hint, frame_offset FROM game_videos JOIN videos ON game_videos.video_id = videos.id WHERE game_videos.game_id = ?;");
+
+    if ((ret = sqlite3_bind_int(ctx->game_get_video, 1, game_id)) != SQLITE_OK)
+        goto error;
+
+    if ((ret = sqlite3_step(ctx->game_get_video)) != SQLITE_ROW)
+        return 0;
+
+    *file_name = (const char*)sqlite3_column_text(ctx->game_get_video, 0);
+    *path_hint = (const char*)sqlite3_column_text(ctx->game_get_video, 1);
+    *frame_offset = sqlite3_column_int64(ctx->game_get_video, 2);
+    return 1;
+
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    return -1;
+}
+
+static int
 game_player_add(
         struct db* ctx,
         int person_id,
@@ -1118,14 +1145,40 @@ video_path_add(struct db* ctx, struct str_view path)
 }
 
 static int
-video_add_or_get(struct db* ctx, struct str_view file_name)
+video_paths_query(struct db* ctx, int (*on_video_path)(const char* path, void* user), void* user)
+{
+    int ret;
+    STMT_PREPARE_OR_RESET(video_paths_query, -1,
+        "SELECT path FROM video_paths;");
+
+next_step:
+    ret = sqlite3_step(ctx->video_paths_query);
+    switch (ret)
+    {
+    case SQLITE_BUSY: goto next_step;
+    case SQLITE_DONE: return 0;
+    case SQLITE_ROW:
+        ret = on_video_path((const char*)sqlite3_column_text(ctx->video_paths_query, 0), user);
+        if (ret) return ret;
+        goto next_step;
+    default: goto error;
+    }
+
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    return -1;
+}
+
+static int
+video_add_or_get(struct db* ctx, struct str_view file_name, struct str_view path_hint)
 {
     int ret, video_id = -1;
     STMT_PREPARE_OR_RESET(video_add_or_get, -1,
-        "INSERT INTO videos (file_name) VALUES (?) "
+        "INSERT INTO videos (file_name, path_hint) VALUES (?, ?) "
         "ON CONFLICT DO UPDATE SET file_name=excluded.file_name RETURNING id;");
 
-    if ((ret = sqlite3_bind_text(ctx->video_add_or_get, 1, file_name.data, file_name.len, SQLITE_STATIC)) != SQLITE_OK)
+    if ((ret = sqlite3_bind_text(ctx->video_add_or_get, 1, file_name.data, file_name.len, SQLITE_STATIC)) != SQLITE_OK ||
+        (ret = sqlite3_bind_text(ctx->video_add_or_get, 2, path_hint.data, path_hint.len, SQLITE_STATIC)) != SQLITE_OK)
     {
         log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
         return -1;
@@ -1149,7 +1202,24 @@ next_step:
 }
 
 static int
-query_games(struct db* ctx,
+video_set_path_hint(struct db* ctx, struct str_view file_name, struct str_view path_hint)
+{
+    int ret;
+    STMT_PREPARE_OR_RESET(video_set_path_hint, -1,
+        "UPDATE videos SET path_hint = ? WHERE file_name = ?;");
+
+    if ((ret = sqlite3_bind_text(ctx->video_set_path_hint, 1, path_hint.data, path_hint.len, SQLITE_STATIC)) != SQLITE_OK ||
+        (ret = sqlite3_bind_text(ctx->video_set_path_hint, 2, file_name.data, file_name.len, SQLITE_STATIC)) != SQLITE_OK)
+    {
+        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        return -1;
+    }
+
+    return step_stmt_wrapper(ctx->db, ctx->video_set_path_hint);
+}
+
+static int
+games_query(struct db* ctx,
     int (*on_game)(
         int game_id,
         uint64_t time_started,
@@ -1170,7 +1240,7 @@ query_games(struct db* ctx,
     void* user)
 {
     int ret;
-    STMT_PREPARE_OR_RESET(query_games, -1,
+    STMT_PREPARE_OR_RESET(games_query, -1,
         "WITH grouped_games AS ( "
         "    SELECT "
         "        games.id, "
@@ -1182,7 +1252,7 @@ query_games(struct db* ctx,
         "        winner_team_id, "
         "        stage_id, "
         "        teams.name team_name, "
-        "        scores.score scores, "
+        "        IFNULL(scores.score, '') scores, "
         "        group_concat(game_players.slot, '+') slots, "
         "        group_concat(REPLACE(IFNULL(sponsors.short_name, ''), '+', '\\+'), '+') sponsors, "
         "        group_concat(REPLACE(people.name, '+', '\\+'), '+') players, "
@@ -1191,7 +1261,7 @@ query_games(struct db* ctx,
         "    FROM game_players "
         "    JOIN games ON games.id = game_players.game_id "
         "    JOIN teams ON teams.id = game_players.team_id "
-        "    JOIN scores ON scores.team_id = game_players.team_id AND scores.game_id = game_players.game_id "
+        "    LEFT JOIN scores ON scores.team_id = game_players.team_id AND scores.game_id = game_players.game_id "
         "    JOIN people ON people.id = game_players.person_id "
         "    JOIN fighters ON fighters.id = game_players.fighter_id "
         "    LEFT JOIN sponsors ON sponsors.id = people.sponsor_id "
@@ -1201,8 +1271,8 @@ query_games(struct db* ctx,
         "    grouped_games.id, "
         "    time_started, "
         "    time_ended, "
-        "    tournaments.name tourney, "
-        "    event_types.name event, "
+        "    IFNULL(tournaments.name, '') tourney, "
+        "    IFNULL(event_types.name, '') event, "
         "    IFNULL(stages.name, grouped_games.stage_id) stage, "
         "    IFNULL(round_types.short_name, '') || IFNULL(round_number, '') round, "
         "    set_formats.short_name format, "
@@ -1226,139 +1296,28 @@ query_games(struct db* ctx,
         "ORDER BY time_started;");
 
 next_step:
-    ret = sqlite3_step(ctx->query_games);
+    ret = sqlite3_step(ctx->games_query);
     switch (ret)
     {
         case SQLITE_BUSY: goto next_step;
         case SQLITE_DONE: break;
         case SQLITE_ROW:
             ret = on_game(
-                sqlite3_column_int(ctx->query_games, 0),
-                (uint64_t)sqlite3_column_int64(ctx->query_games, 1),
-                (uint64_t)sqlite3_column_int64(ctx->query_games, 2),
-                (const char*)sqlite3_column_text(ctx->query_games, 3),
-                (const char*)sqlite3_column_text(ctx->query_games, 4),
-                (const char*)sqlite3_column_text(ctx->query_games, 5),
-                (const char*)sqlite3_column_text(ctx->query_games, 6),
-                (const char*)sqlite3_column_text(ctx->query_games, 7),
-                (const char*)sqlite3_column_text(ctx->query_games, 8),
-                (const char*)sqlite3_column_text(ctx->query_games, 9),
-                (const char*)sqlite3_column_text(ctx->query_games, 10),
-                (const char*)sqlite3_column_text(ctx->query_games, 11),
-                (const char*)sqlite3_column_text(ctx->query_games, 12),
-                (const char*)sqlite3_column_text(ctx->query_games, 13),
-                (const char*)sqlite3_column_text(ctx->query_games, 14),
-                user);
-            if (ret) return ret;
-            goto next_step;
-        default:
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            break;
-    }
-
-    return 0;
-}
-
-static int
-query_game_teams(struct db* ctx, int game_id,
-    int (*on_game_team)(
-        int game_id,
-        int team_id,
-        const char* team,
-        int score,
-        void* user),
-    void* user)
-{
-    int ret;
-    STMT_PREPARE_OR_RESET(query_game_teams, -1,
-        "SELECT "
-        "    game_players.team_id, "
-        "    teams.name team, "
-        "    score "
-        "FROM game_players "
-        "JOIN teams ON teams.id = game_players.team_id "
-        "JOIN scores ON scores.team_id = game_players.team_id "
-        "WHERE game_players.game_id = ? "
-        "GROUP BY game_players.team_id "
-        "ORDER BY game_players.team_id;"
-        );
-
-    if ((ret = sqlite3_bind_int(ctx->query_game_teams, 1, game_id)) != SQLITE_OK)
-    {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return -1;
-    }
-
-next_step:
-    ret = sqlite3_step(ctx->query_game_teams);
-    switch (ret)
-    {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_DONE: break;
-        case SQLITE_ROW:
-            ret = on_game_team(
-                game_id,
-                sqlite3_column_int(ctx->query_game_teams, 0),
-                (const char*)sqlite3_column_text(ctx->query_game_teams, 1),
-                sqlite3_column_int(ctx->query_game_teams, 2),
-                user);
-            if (ret) return ret;
-            goto next_step;
-        default:
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            break;
-    }
-
-    return 0;
-}
-
-static int
-query_game_players(struct db* ctx, int game_id, int team_id,
-    int (*on_game_player)(
-        int slot,
-        const char* sponsor,
-        const char* name,
-        const char* fighter,
-        int costume,
-        void* user),
-    void* user)
-{
-    int ret;
-    STMT_PREPARE_OR_RESET(query_game_players, -1,
-        "SELECT "
-        "    game_players.slot, "
-        "    sponsors.short_name sponsor, "
-        "    people.name name, "
-        "    fighters.name fighter, "
-        "    costume "
-        "FROM game_players "
-        "JOIN people ON people.id = game_players.person_id "
-        "JOIN fighters ON fighters.id = game_players.fighter_id "
-        "LEFT JOIN sponsors ON people.sponsor_id = sponsors.id "
-        "WHERE game_players.game_id = ? AND game_players.team_id = ? "
-        "ORDER BY game_players.slot;"
-        );
-
-    if ((ret = sqlite3_bind_int(ctx->query_game_players, 1, game_id)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->query_game_players, 2, team_id)) != SQLITE_OK)
-    {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return -1;
-    }
-
-next_step:
-    ret = sqlite3_step(ctx->query_game_players);
-    switch (ret)
-    {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_DONE: break;
-        case SQLITE_ROW:
-            ret = on_game_player(
-                sqlite3_column_int(ctx->query_game_players, 0),
-                (const char*)sqlite3_column_text(ctx->query_game_players, 1),
-                (const char*)sqlite3_column_text(ctx->query_game_players, 2),
-                (const char*)sqlite3_column_text(ctx->query_game_players, 3),
-                sqlite3_column_int(ctx->query_game_players, 4),
+                sqlite3_column_int(ctx->games_query, 0),
+                (uint64_t)sqlite3_column_int64(ctx->games_query, 1),
+                (uint64_t)sqlite3_column_int64(ctx->games_query, 2),
+                (const char*)sqlite3_column_text(ctx->games_query, 3),
+                (const char*)sqlite3_column_text(ctx->games_query, 4),
+                (const char*)sqlite3_column_text(ctx->games_query, 5),
+                (const char*)sqlite3_column_text(ctx->games_query, 6),
+                (const char*)sqlite3_column_text(ctx->games_query, 7),
+                (const char*)sqlite3_column_text(ctx->games_query, 8),
+                (const char*)sqlite3_column_text(ctx->games_query, 9),
+                (const char*)sqlite3_column_text(ctx->games_query, 10),
+                (const char*)sqlite3_column_text(ctx->games_query, 11),
+                (const char*)sqlite3_column_text(ctx->games_query, 12),
+                (const char*)sqlite3_column_text(ctx->games_query, 13),
+                (const char*)sqlite3_column_text(ctx->games_query, 14),
                 user);
             if (ret) return ret;
             goto next_step;

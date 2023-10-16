@@ -193,11 +193,13 @@ set (MIGRATION_FILES
     "1-schema.down.sql"
     "1-schema.up.sql"
     "mappingInfo.json")
-
+    
+set (MIGRATION_FILES_IN)
 set (MIGRATION_FILES_OUT)
 foreach (file ${MIGRATION_FILES})
     set (in "${PROJECT_SOURCE_DIR}/migrations/${file}")
     set (out "${VODHOUND_BUILD_BINDIR}/migrations/${file}")
+    list (APPEND MIGRATION_FILES_IN ${in})
     list (APPEND MIGRATION_FILES_OUT ${out})
     add_custom_command (
         OUTPUT ${out}
@@ -206,6 +208,9 @@ foreach (file ${MIGRATION_FILES})
         COMMENT "Copying migration file ${file}")
 endforeach ()
 add_custom_target (vh_schema ALL DEPENDS ${MIGRATION_FILES_OUT})
+add_dependencies (vh vh_schema)
+
+target_sources (vh PRIVATE ${MIGRATION_FILES_IN})
 
 ###############################################################################
 # Install targets

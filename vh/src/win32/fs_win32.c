@@ -81,3 +81,9 @@ fs_list(struct str_view path, int (*on_entry)(const char* name, void* user), voi
     first_file_failed : path_deinit(&correct_path);
     str_set_failed    : return ret;
 }
+
+int
+fs_file_exists(const char* file_path)
+{
+    return GetFileAttributes(file_path) != INVALID_FILE_ATTRIBUTES;
+}

@@ -489,6 +489,18 @@ void iupdrvGfxCanvasSetTexRGBA(Ihandle* ih, int id, const char* value)
         return;
     }
 
+    if (value == NULL)
+    {
+        if (ctx->textures[id])
+        {
+            ID3D11ShaderResourceView_Release(ctx->texture_views[id]);
+            ID3D11Texture2D_Release(ctx->textures[id]);
+            ctx->texture_views[id] = NULL;
+            ctx->textures[id] = NULL;
+        }
+        return;
+    }
+
     if (ctx->textures[id] == NULL)
     {
         D3D11_TEXTURE2D_DESC texture_desc;

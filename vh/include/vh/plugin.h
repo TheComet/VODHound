@@ -33,6 +33,13 @@ struct video_player_interface
     void (*close)(struct plugin_ctx* plugin);
 
     /*!
+     * \brief Clears the canvas to its default background color.
+     * When a video is closed, the last frame displayed will persist on
+     * the canvas. This is to avoid flickering when switching videos.
+     */
+    void (*clear)(struct plugin_ctx* plugin);
+
+    /*!
      * \brief Return true if a video is currently open. If the video is closed,
      * then this should return false.
      */

@@ -48,20 +48,7 @@ struct db_interface
     int (*person_get_team_id)(struct db* db, struct str_view name);
 
     int (*game_add_or_get)(struct db* db, int round_type_id, int round_number, int set_format_id, int winner_team_id, int stage_id, uint64_t time_started, uint64_t time_ended);
-    int (*game_associate_tournament)(struct db* db, int game_id, int tournament_id);
-    int (*game_associate_event)(struct db* db, int game_id, int event_id);
-    int (*game_associate_video)(struct db* db, int game_id, int video_id, int64_t frame_offset);
-    int (*game_unassociate_video)(struct db* db, int game_id, int video_id);
-    int (*game_player_add)(struct db* db, int person_id, int game_id, int slot, int team_id, int fighter_id, int costume, int is_loser_side);
-
-    int (*video_path_add)(struct db* db, struct str_view path);
-    int (*video_add_or_get)(struct db* db, struct str_view file_name);
-
-    int (*score_add)(struct db* db, int game_id, int team_id, int score);
-
-    int (*frame_add)(struct db* db, int game_id, int slot, uint64_t time_stamp, int frame_number, int frames_left, float posx, float posy, float damage, float hitstun, float shield, int status_id, int hit_status_id, uint64_t hash40, int stocks, int attack_connected, int facing_left, int opponent_in_hitlag);
-
-    int (*query_games)(struct db* db,
+    int (*games_query)(struct db* db,
         int (*on_game)(
             int game_id,
             uint64_t time_started,
@@ -80,23 +67,21 @@ struct db_interface
             const char* costumes,
             void* user),
         void* user);
-    int (*query_game_teams)(struct db* db, int game_id,
-        int (*on_game_team)(
-            int game_id,
-            int team_id,
-            const char* team,
-            int score,
-            void* user),
-        void* user);
-    int (*query_game_players)(struct db* db, int game_id, int team_id,
-        int (*on_game_player)(
-            int slot,
-            const char* sponsor,
-            const char* name,
-            const char* fighter,
-            int costume,
-            void* user),
-        void* user);
+    int (*game_associate_tournament)(struct db* db, int game_id, int tournament_id);
+    int (*game_associate_event)(struct db* db, int game_id, int event_id);
+    int (*game_associate_video)(struct db* db, int game_id, int video_id, int64_t frame_offset);
+    int (*game_unassociate_video)(struct db* db, int game_id, int video_id);
+    int (*game_get_video)(struct db* db, int game_id, const char** file_name, const char** path_hint, int64_t* frame_offset);
+    int (*game_player_add)(struct db* db, int person_id, int game_id, int slot, int team_id, int fighter_id, int costume, int is_loser_side);
+
+    int (*video_path_add)(struct db* db, struct str_view path);
+    int (*video_paths_query)(struct db* db, int (*on_video_path)(const char* path, void* user), void* user);
+    int (*video_add_or_get)(struct db* db, struct str_view file_name, struct str_view path_hint);
+    int (*video_set_path_hint)(struct db* db, struct str_view file_name, struct str_view path_hint);
+
+    int (*score_add)(struct db* db, int game_id, int team_id, int score);
+
+    int (*frame_add)(struct db* db, int game_id, int slot, uint64_t time_stamp, int frame_number, int frames_left, float posx, float posy, float damage, float hitstun, float shield, int status_id, int hit_status_id, uint64_t hash40, int stocks, int attack_connected, int facing_left, int opponent_in_hitlag);
 };
 
 VH_PUBLIC_API struct db_interface*

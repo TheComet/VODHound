@@ -140,7 +140,22 @@ destroy(struct plugin_ctx* ctx)
     mem_free(ctx);
 }
 
-Ihandle* ui_create(struct plugin_ctx* ctx)
+static void ui_add_timeline(struct plugin_ctx* ctx)
+{
+    Ihandle* slider = IupVal("HORIZONTAL");
+    IupSetAttribute(slider, "EXPAND", "HORIZONTAL");
+
+    IupAppend(ctx->controls, IupFill());
+    IupAppend(ctx->controls, IupFill());
+    IupAppend(ctx->controls, IupFill());
+    IupAppend(ctx->controls, slider);
+    IupAppend(ctx->controls, IupFill());
+
+    IupMap(slider);
+    IupRefresh(ctx->controls);
+}
+
+static Ihandle* ui_create(struct plugin_ctx* ctx)
 {
     Ihandle* slider = IupVal("HORIZONTAL");
     IupSetAttribute(slider, "EXPAND", "HORIZONTAL");
@@ -170,7 +185,7 @@ Ihandle* ui_create(struct plugin_ctx* ctx)
 
     return ctx->ui;
 }
-void ui_destroy(struct plugin_ctx* ctx, Ihandle* ui)
+static void ui_destroy(struct plugin_ctx* ctx, Ihandle* ui)
 {
     if (ctx->video_ui)
         IupDetach(ctx->video_ui);
@@ -178,93 +193,88 @@ void ui_destroy(struct plugin_ctx* ctx, Ihandle* ui)
     IupDestroy(ui);
 }
 
-struct ui_interface ui = {
+static struct ui_interface ui = {
     ui_create,
     ui_destroy
 };
 
-int video_open_file(struct plugin_ctx* ctx, const char* file_name, int pause)
+static int video_open_file(struct plugin_ctx* ctx, const char* file_name, int pause)
 {
-    Ihandle* slider = IupVal("HORIZONTAL");
-    IupSetAttribute(slider, "EXPAND", "HORIZONTAL");
-
-    IupAppend(ctx->controls, IupFill());
-    IupAppend(ctx->controls, IupFill());
-    IupAppend(ctx->controls, IupFill());
-    IupAppend(ctx->controls, slider);
-    IupAppend(ctx->controls, IupFill());
-
-    IupMap(slider);
-
     if (ctx->video_ctx)
         return ctx->video_plugin.i->video->open_file(ctx->video_ctx, file_name, pause);
     return -1;
 }
-void video_close(struct plugin_ctx* ctx)
+static void video_close(struct plugin_ctx* ctx)
 {
     if (ctx->video_ctx)
         ctx->video_plugin.i->video->close(ctx->video_ctx);
 }
-int video_is_open(const struct plugin_ctx* ctx)
+static void video_clear(struct plugin_ctx* ctx)
+{
+    if (ctx->video_ctx)
+        ctx->video_plugin.i->video->clear(ctx->video_ctx);
+}
+static int video_is_open(const struct plugin_ctx* ctx)
 {
     if (ctx->video_ctx)
         return ctx->video_plugin.i->video->is_open(ctx->video_ctx);
     return 0;
 }
-void video_play(struct plugin_ctx* ctx)
+static void video_play(struct plugin_ctx* ctx)
 {
     if (ctx->video_ctx)
         ctx->video_plugin.i->video->play(ctx->video_ctx);
 }
-void video_pause(struct plugin_ctx* ctx)
+static void video_pause(struct plugin_ctx* ctx)
 {
     if (ctx->video_ctx)
         ctx->video_plugin.i->video->pause(ctx->video_ctx);
 }
-void video_step(struct plugin_ctx* ctx, int frames)
+static void video_step(struct plugin_ctx* ctx, int frames)
 {
     if (ctx->video_ctx)
         ctx->video_plugin.i->video->step(ctx->video_ctx, frames);
 }
-int video_seek(struct plugin_ctx* ctx, uint64_t offset, int num, int den)
+static int video_seek(struct plugin_ctx* ctx, uint64_t offset, int num, int den)
 {
     if (ctx->video_ctx)
         return ctx->video_plugin.i->video->seek(ctx->video_ctx, offset, num, den);
     return 0;
 }
-uint64_t video_offset(const struct plugin_ctx* ctx, int num, int den)
+static uint64_t video_offset(const struct plugin_ctx* ctx, int num, int den)
 {
     if (ctx->video_ctx)
         return ctx->video_plugin.i->video->offset(ctx->video_ctx, num, den);
     return 0;
 }
-uint64_t video_duration(const struct plugin_ctx* ctx, int num, int den)
+static uint64_t video_duration(const struct plugin_ctx* ctx, int num, int den)
 {
     if (ctx->video_ctx)
         return ctx->video_plugin.i->video->duration(ctx->video_ctx, num, den);
     return 0;
 }
-int video_is_playing(const struct plugin_ctx* ctx)
+static int video_is_playing(const struct plugin_ctx* ctx)
 {
     if (ctx->video_ctx)
         return ctx->video_plugin.i->video->is_playing(ctx->video_ctx);
     return 0;
 }
-void video_set_volume(struct plugin_ctx* ctx, int percent)
+static void video_set_volume(struct plugin_ctx* ctx, int percent)
 {
     if (ctx->video_ctx)
         ctx->video_plugin.i->video->set_volume(ctx->video_ctx, percent);
 }
-int video_volume(const struct plugin_ctx* ctx)
+static int video_volume(const struct plugin_ctx* ctx)
 {
     if (ctx->video_ctx)
         return ctx->video_plugin.i->video->volume(ctx->video_ctx);
     return 0;
 }
 
-struct video_player_interface controls = {
+static struct video_player_interface controls = {
     video_open_file,
     video_close,
+    video_clear,
     video_is_open,
     video_play,
     video_pause,
