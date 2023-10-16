@@ -1102,13 +1102,13 @@ frame_add(
 }
 
 static int
-video_path_add(struct db* ctx, struct path path)
+video_path_add(struct db* ctx, struct str_view path)
 {
     int ret;
     STMT_PREPARE_OR_RESET(video_path_add, -1,
         "INSERT OR IGNORE INTO video_paths (path) VALUES (?);");
 
-    if ((ret = sqlite3_bind_text(ctx->video_path_add, 1, path.str.data, path.str.len, SQLITE_STATIC)) != SQLITE_OK)
+    if ((ret = sqlite3_bind_text(ctx->video_path_add, 1, path.data, path.len, SQLITE_STATIC)) != SQLITE_OK)
     {
         log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
         return -1;

@@ -730,10 +730,6 @@ plugin_view_open_plugin(Ihandle* plugin_view, struct str_view plugin_name)
     IupMap(state->ui);
     IupRefresh(state->ui);
 
-    //state->plugin.i->video->open_file(state->ctx, "C:\\Users\\Startklar\\Downloads\\Prefers_Land_Behind.mp4", 1);
-    //state->plugin.i->video->open_file(state->ctx, "C:\\Users\\AlexanderMurray\\Downloads\\pika-dj-mixups.mp4", 1);
-    state->plugin.i->video->open_file(state->ctx, "/home/thecomet/videos/ssbu/2023-09-05 - Stino/2023-09-05_19-49-31.mkv", 1);
-
     return 0;
 
     add_to_ui_failed      : state->plugin.i->ui->destroy(state->ctx, state->ui);
@@ -742,6 +738,31 @@ plugin_view_open_plugin(Ihandle* plugin_view, struct str_view plugin_name)
     load_plugin_failed    : vec_pop(plugin_state_vec);
 
     return -1;
+}
+
+static int
+on_replay_browser_node_selected(Ihandle* ih, int node_id, int selected)
+{
+}
+
+static Ihandle*
+create_replay_browser(void)
+{
+    Ihandle* groups, * filter_label, * filters, * replays;
+    Ihandle* vbox, * hbox, * sbox;
+
+    groups = IupSetAttributes(IupList(NULL), "EXPAND=YES, 1=All, VALUE=1");
+    sbox = IupSetAttributes(IupSbox(groups), "DIRECTION=SOUTH, COLOR=255 255 255");
+
+    filter_label = IupSetAttributes(IupLabel("Filters:"), "PADDING=10x5");
+    filters = IupSetAttributes(IupText(NULL), "EXPAND=HORIZONTAL");
+    hbox = IupHbox(filter_label, filters, NULL);
+
+    replays = IupTree();
+    IupSetCallback(replays, "SELECTION_CB", (Icallback)on_replay_browser_node_selected);
+    IupSetHandle("replay_browser", replays);
+
+    return IupVbox(sbox, hbox, replays, NULL);
 }
 
 static int
@@ -786,25 +807,6 @@ on_plugin_view_tab_change(Ihandle* ih, int new_pos, int old_pos)
     }
 
     return IUP_DEFAULT;
-}
-
-static Ihandle*
-create_replay_browser(void)
-{
-    Ihandle *groups, *filter_label, *filters, *replays;
-    Ihandle *vbox, *hbox, *sbox;
-
-    groups = IupSetAttributes(IupList(NULL), "EXPAND=YES, 1=All, VALUE=1");
-    sbox = IupSetAttributes(IupSbox(groups), "DIRECTION=SOUTH, COLOR=255 255 255");
-
-    filter_label = IupSetAttributes(IupLabel("Filters:"), "PADDING=10x5");
-    filters = IupSetAttributes(IupText(NULL), "EXPAND=HORIZONTAL");
-    hbox = IupHbox(filter_label, filters, NULL);
-
-    replays = IupTree();
-    IupSetHandle("replay_browser", replays);
-
-    return IupVbox(sbox, hbox, replays, NULL);
 }
 
 static int
@@ -988,6 +990,7 @@ static int on_query_game(
             game_number);
     str_terminate(&ctx->name);
     IupSetAttribute(ctx->replays, "ADDLEAF", ctx->name.data);
+    IupTreeSetUserId(ctx->replays, )
 
     return 0;
 }
@@ -1023,6 +1026,12 @@ int main(int argc, char **argv)
     import_rfr_into_db(dbi, db, "reframed/2023-09-20_19-52-03 - Singles Bracket - Bo3 (Pools 3) - TaDavidID (Villager) vs TheComet (Pikachu) - Game 3 (1-1) - Hollow Bastion.rfr");
     import_rfr_into_db(dbi, db, "reframed/2023-09-20_20-06-46 - Singles Bracket - Bo3 (Pools 4) - TheComet (Pikachu) vs karsten187 (Wolf) - Game 1 (0-0) - Small Battlefield.rfr");
     import_rfr_into_db(dbi, db, "reframed/2023-09-20_20-11-47 - Singles Bracket - Bo3 (Pools 4) - TheComet (Pikachu) vs karsten187 (Wolf) - Game 2 (0-1) - Small Battlefield.rfr");
+#endif
+
+#if 0
+    dbi->video_path_add(db, cstr_view("C:\\Users\\Startklar\\Downloads"));
+    dbi->video_path_add(db, cstr_view("C:\\Users\\AlexanderMurray\\Downloads"));
+    dbi->video_path_add(db, cstr_view("/home/thecomet/videos/ssbu/2023-09-05 - Stino"));
 #endif
 
     if (IupOpen(&argc, &argv) != IUP_NOERROR)

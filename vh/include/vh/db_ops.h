@@ -54,7 +54,7 @@ struct db_interface
     int (*game_unassociate_video)(struct db* db, int game_id, int video_id);
     int (*game_player_add)(struct db* db, int person_id, int game_id, int slot, int team_id, int fighter_id, int costume, int is_loser_side);
 
-    int (*video_path_add)(struct db* db, struct path path);
+    int (*video_path_add)(struct db* db, struct str_view path);
     int (*video_add_or_get)(struct db* db, struct str_view file_name);
 
     int (*score_add)(struct db* db, int game_id, int team_id, int score);
