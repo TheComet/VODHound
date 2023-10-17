@@ -68,7 +68,7 @@ import_reframed_config(struct db_interface* dbi, struct db* db, const char* file
     int frame_offset = json_object_get_int(json_object_object_get(autoassociatevideos, "offset"));
     if (path && *path)
     {
-        if (dbi->stream_recording_sources_add(db, cstr_view(path), frame_offset) < 0)
+        if (dbi->stream_recording_sources.add(db, cstr_view(path), frame_offset) < 0)
             goto fail;
     }
 
@@ -77,7 +77,7 @@ import_reframed_config(struct db_interface* dbi, struct db* db, const char* file
     const char* lastport = json_object_get_string(json_object_object_get(connectinfo, "lastport"));
     if (lastip && lastport && *lastip && *lastport)
     {
-        if (dbi->switch_info_add(db, cstr_view("Nintendo Switch"), cstr_view(lastip), atoi(lastport)) < 0)
+        if (dbi->switch_info.add(db, cstr_view("Nintendo Switch"), cstr_view(lastip), atoi(lastport)) < 0)
             goto fail;
     }
 
@@ -89,7 +89,7 @@ import_reframed_config(struct db_interface* dbi, struct db* db, const char* file
         const char* path = json_object_get_string(json_object_array_get_idx(videopaths, i));
         if (!path || !*path)
             continue;
-        if (dbi->video_path_add(db, cstr_view(path)) != 0)
+        if (dbi->video.add_path(db, cstr_view(path)) != 0)
             goto fail;
     }
 
@@ -130,7 +130,7 @@ import_reframed_all(struct db_interface* dbi, struct db* db)
     struct path file_path;
     path_init(&file_path);
 
-    if (dbi->transaction_begin(db) != 0)
+    if (dbi->transaction.begin(db) != 0)
         goto transaction_begin_failed;
 
     /*
@@ -164,13 +164,13 @@ import_reframed_all(struct db_interface* dbi, struct db* db)
     if (import_reframed_motion_labels(dbi, db, file_path.str.data) < 0)
         goto fail;*/
 
-    if (dbi->transaction_commit(db) != 0)
+    if (dbi->transaction.commit(db) != 0)
         goto fail;
 
     path_deinit(&file_path);
     return 0;
 
-    fail                     : dbi->transaction_rollback(db);
+    fail                     : dbi->transaction.rollback(db);
     transaction_begin_failed : path_deinit(&file_path);
     return -1;
 }

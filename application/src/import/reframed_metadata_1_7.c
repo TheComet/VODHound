@@ -25,7 +25,7 @@ import_reframed_metadata_1_7(
             website = "";
         if (name && *name)
         {
-            tournament_id = dbi->tournament_add_or_get(db, cstr_view(name), cstr_view(website));
+            tournament_id = dbi->tournament.add_or_get(db, cstr_view(name), cstr_view(website));
             if (tournament_id < 0)
                 return -1;
         }
@@ -43,13 +43,13 @@ import_reframed_metadata_1_7(
                 website = "";
             if (name && *name)
             {
-                sponsor_id = dbi->sponsor_add_or_get(db, cstr_view(""), cstr_view(name), cstr_view(website));
+                sponsor_id = dbi->sponsor.add_or_get(db, cstr_view(""), cstr_view(name), cstr_view(website));
                 if (sponsor_id < 0)
                     return -1;
             }
 
             if (tournament_id != -1 && sponsor_id != -1)
-                if (dbi->tournament_sponsor_add(db, tournament_id, sponsor_id) != 0)
+                if (dbi->tournament.add_sponsor(db, tournament_id, sponsor_id) != 0)
                     return -1;
         }
 
@@ -64,7 +64,7 @@ import_reframed_metadata_1_7(
             const char* pronouns = json_object_get_string(json_object_object_get(organizer, "pronouns"));
             if (name && *name)
             {
-                person_id = dbi->person_add_or_get(db,
+                person_id = dbi->person.add_or_get(db,
                         -1,
                         cstr_view(name),
                         cstr_view(name),
@@ -75,7 +75,7 @@ import_reframed_metadata_1_7(
             }
 
             if (tournament_id != -1 && person_id != -1)
-                if (dbi->tournament_organizer_add(db, tournament_id, person_id) != 0)
+                if (dbi->tournament.add_organizer(db, tournament_id, person_id) != 0)
                     return -1;
         }
 
@@ -90,7 +90,7 @@ import_reframed_metadata_1_7(
             const char* pronouns = json_object_get_string(json_object_object_get(commentator, "pronouns"));
             if (name && *name)
             {
-                person_id = dbi->person_add_or_get(db,
+                person_id = dbi->person.add_or_get(db,
                         -1,
                         cstr_view(name),
                         cstr_view(name),
@@ -101,7 +101,7 @@ import_reframed_metadata_1_7(
             }
 
             if (tournament_id != -1 && person_id != -1)
-                if (dbi->tournament_commentator_add(db, tournament_id, person_id) != 0)
+                if (dbi->tournament.add_commentator(db, tournament_id, person_id) != 0)
                     return -1;
         }
 
@@ -114,13 +114,13 @@ import_reframed_metadata_1_7(
     if (strcmp(event_type, "Friendlies"))
     {
         int event_type_id;
-        if ((event_type_id = dbi->event_type_add_or_get(db, cstr_view(event_type))) < 0)
+        if ((event_type_id = dbi->event.add_or_get_type(db, cstr_view(event_type))) < 0)
             return -1;
 
         const char* event_url = json_object_get_string(json_object_object_get(event, "url"));
         if (event_url == NULL)
             event_url = "";  /* Default is empty string for URL */
-        if ((event_id = dbi->event_add_or_get(db, event_type_id, cstr_view(event_url))) < 0)
+        if ((event_id = dbi->event.add_or_get(db, event_type_id, cstr_view(event_url))) < 0)
             return -1;
     }
 
@@ -159,7 +159,7 @@ import_reframed_metadata_1_7(
             long_name = "Freeplay";
         }
 
-        set_format_id = dbi->set_format_add_or_get(db, cstr_view(set_format), cstr_view(long_name));
+        set_format_id = dbi->set_format.add_or_get(db, cstr_view(set_format), cstr_view(long_name));
         if (set_format_id < 0)
             return -1;
     }
@@ -184,7 +184,7 @@ import_reframed_metadata_1_7(
         else if (cstr_equal(round_type, "GFR"))   long_name = "Grand Finals Reset";
         else if (cstr_equal(round_type, "Pools")) long_name = "Pools";
 
-        round_type_id = dbi->round_type_add_or_get(db, round_type, cstr_view(long_name));
+        round_type_id = dbi->round.add_or_get_type(db, round_type, cstr_view(long_name));
         if (round_type_id < 0)
             return -1;
     }
@@ -221,10 +221,10 @@ import_reframed_metadata_1_7(
 
         int sponsor_id = -1;
         if (*sponsor)
-            if ((sponsor_id = dbi->sponsor_add_or_get(db, cstr_view(sponsor), cstr_view(""), cstr_view(""))) < 0)
+            if ((sponsor_id = dbi->sponsor.add_or_get(db, cstr_view(sponsor), cstr_view(""), cstr_view(""))) < 0)
                 return -1;
 
-        int person_id = dbi->person_add_or_get(db,
+        int person_id = dbi->person.add_or_get(db,
             sponsor_id,
             cstr_view(name),
             cstr_view(tag),
@@ -233,18 +233,18 @@ import_reframed_metadata_1_7(
         if (person_id < 0)
             return -1;
 
-        int team_id = dbi->team_add_or_get(db, cstr_view(name), cstr_view(""));
+        int team_id = dbi->team.add_or_get(db, cstr_view(name), cstr_view(""));
         if (team_id < 0)
             return -1;
 
-        if (dbi->team_member_add(db, team_id, person_id) != 0)
+        if (dbi->team.add_member(db, team_id, person_id) != 0)
             return -1;
 
         if (winner == i)
             winner_team_id = team_id;
     }
 
-    int game_id = dbi->game_add_or_get(db,
+    int game_id = dbi->game.add_or_get(db,
         round_type_id,
         round_number,
         set_format_id,
@@ -256,11 +256,11 @@ import_reframed_metadata_1_7(
         return -1;
 
     if (tournament_id != -1)
-        if (dbi->game_associate_tournament(db, game_id, tournament_id) < 0)
+        if (dbi->game.associate_tournament(db, game_id, tournament_id) < 0)
             return -1;
 
     if (event_id != -1)
-        if (dbi->game_associate_event(db, game_id, event_id) < 0)
+        if (dbi->game.associate_event(db, game_id, event_id) < 0)
             return -1;
 
     for (int i = 0; i != json_object_array_length(player_info); ++i)
@@ -271,20 +271,20 @@ import_reframed_metadata_1_7(
         int fighter_id = json_object_get_int(json_object_object_get(player, "fighterid"));
         int costume = json_object_get_int(json_object_object_get(player, "costume"));
 
-        int person_id = dbi->person_get_id(db, cstr_view(name));
+        int person_id = dbi->person.get_id(db, cstr_view(name));
         if (person_id < 0)
             return -1;
 
-        int team_id = dbi->person_get_team_id(db, cstr_view(name));
+        int team_id = dbi->person.get_team_id(db, cstr_view(name));
         if (team_id < 0)
             return -1;
 
-        if (dbi->game_player_add(db, person_id, game_id, i, team_id, fighter_id, costume, is_loser_side) != 0)
+        if (dbi->game.add_player(db, person_id, game_id, i, team_id, fighter_id, costume, is_loser_side) != 0)
             return -1;
 
         struct json_object* score = json_object_object_get(game_info, i == 0 ? "score1" : "score2");
         if (score)
-            if (dbi->score_add(db, game_id, team_id, json_object_get_int(score)) != 0)
+            if (dbi->score.add(db, game_id, team_id, json_object_get_int(score)) != 0)
                 return -1;
     }
 

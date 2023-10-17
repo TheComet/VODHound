@@ -37,7 +37,7 @@ import_reframed_framedata_1_5(
             if (mstream_past_end(ms))
                 return -1;
 
-            if (dbi->frame_add(db, game_id, fighter_idx, timestamp, frame,
+            if (dbi->frame.add(db, game_id, fighter_idx, timestamp, frame,
                     frames_left, posx, posy, damage, hitstun, shield, status,
                     hit_status, motion, stocks, attack_connected, facing_left, opponent_in_hitlag) != 0)
                 return -1;

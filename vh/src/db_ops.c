@@ -22,14 +22,14 @@
     X(hit_status_enum, add)              \
                                          \
     X(tournament, add_or_get)            \
-    X(tournament, sponsor_add)           \
-    X(tournament, organizer_add)         \
-    X(tournament, commentator_add)       \
+    X(tournament, add_sponsor)           \
+    X(tournament, add_organizer)         \
+    X(tournament, add_commentator)       \
                                          \
     X(event, add_or_get_type)            \
     X(event, add_or_get)                 \
                                          \
-    X(round_type, add_or_get)            \
+    X(round, add_or_get_type)            \
                                          \
     X(set_format, add_or_get)            \
                                          \
@@ -49,16 +49,15 @@
     X(game, associate_video)             \
     X(game, unassociate_video)           \
     X(game, get_video)                   \
-    X(game, player_add)                  \
+    X(game, add_player)                  \
                                          \
     X(group, add_or_get)                 \
     X(group, add_game)                   \
                                          \
-    X(video_path, add)                   \
-    X(video_paths, query)                \
-                                         \
     X(video, add_or_get)                 \
     X(video, set_path_hint)              \
+    X(video, add_path)                   \
+    X(video, query_paths)                \
                                          \
     X(score, add)                        \
                                          \
@@ -358,23 +357,19 @@ fighter_name(struct db* ctx, int fighter_id)
     STMT_PREPARE_OR_RESET(fighter_name, NULL, "SELECT name FROM fighters WHERE id=?;");
 
     if ((ret = sqlite3_bind_int(ctx->fighter_name, 1, fighter_id)) != SQLITE_OK)
-    {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return NULL;
-    }
+        goto error;
 
 next_step:
     ret = sqlite3_step(ctx->fighter_name);
     switch (ret)
     {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_DONE: break;
-        case SQLITE_ROW: return (const char*)sqlite3_column_text(ctx->fighter_name, 0);
-        default:
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            break;
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE : return NULL;
+        case SQLITE_ROW  : return (const char*)sqlite3_column_text(ctx->fighter_name, 0);
     }
 
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
     return NULL;
 }
 
@@ -404,28 +399,25 @@ status_enum_add(struct db* ctx, int fighter_id, int status_id, struct str_view n
     if (fighter_id == -1)
     {
         if ((ret = sqlite3_bind_null(ctx->status_enum_add, 1)) != SQLITE_OK)
-        {
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            return -1;
-        }
+            goto error;
     }
     else
     {
         if ((ret = sqlite3_bind_int(ctx->status_enum_add, 1, fighter_id)) != SQLITE_OK)
-        {
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            return -1;
-        }
+            goto error;
     }
 
     if ((ret = sqlite3_bind_int(ctx->status_enum_add, 2, status_id)) != SQLITE_OK ||
         (ret = sqlite3_bind_text(ctx->status_enum_add, 3, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK)
     {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return -1;
+        goto error;
     }
 
     return step_stmt_wrapper(ctx->db, ctx->status_enum_add);
+
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    return -1;
 }
 
 static int
@@ -448,7 +440,7 @@ hit_status_enum_add(struct db* ctx, int id, struct str_view name)
 static int
 tournament_add_or_get(struct db* ctx, struct str_view name, struct str_view website)
 {
-    int ret, tournament_id = -1;
+    int ret;
     STMT_PREPARE_OR_RESET(tournament_add_or_get, -1,
         "INSERT INTO tournaments (name, website) VALUES (?, ?) "
         "ON CONFLICT DO UPDATE SET name=excluded.name RETURNING id;");
@@ -456,113 +448,102 @@ tournament_add_or_get(struct db* ctx, struct str_view name, struct str_view webs
     if ((ret = sqlite3_bind_text(ctx->tournament_add_or_get, 1, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK ||
         (ret = sqlite3_bind_text(ctx->tournament_add_or_get, 2, website.data, website.len, SQLITE_STATIC)) != SQLITE_OK)
     {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return -1;
+        goto error;
     }
 
 next_step:
     ret = sqlite3_step(ctx->tournament_add_or_get);
     switch (ret)
     {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_DONE: break;
-        case SQLITE_ROW:
-            tournament_id = sqlite3_column_int(ctx->tournament_add_or_get, 0);
-            goto next_step;
-        default:
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            break;
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE : return -1;
+        case SQLITE_ROW  : return sqlite3_column_int(ctx->tournament_add_or_get, 0);
     }
 
-    return tournament_id;
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    return -1;
 }
 
 static int
-tournament_sponsor_add(struct db* ctx, int tournament_id, int sponsor_id)
+tournament_add_sponsor(struct db* ctx, int tournament_id, int sponsor_id)
 {
     int ret;
-    STMT_PREPARE_OR_RESET(tournament_sponsor_add, -1,
+    STMT_PREPARE_OR_RESET(tournament_add_sponsor, -1,
         "INSERT OR IGNORE INTO tournament_sponsors (tournament_id, sponsor_id) VALUES (?, ?);");
 
-    if ((ret = sqlite3_bind_int(ctx->tournament_sponsor_add, 1, tournament_id)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->tournament_sponsor_add, 2, sponsor_id)) != SQLITE_OK)
+    if ((ret = sqlite3_bind_int(ctx->tournament_add_sponsor, 1, tournament_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->tournament_add_sponsor, 2, sponsor_id)) != SQLITE_OK)
     {
         log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
         return -1;
     }
 
-    return step_stmt_wrapper(ctx->db, ctx->tournament_sponsor_add);
+    return step_stmt_wrapper(ctx->db, ctx->tournament_add_sponsor);
 }
 
 static int
-tournament_organizer_add(struct db* ctx, int tournament_id, int person_id)
+tournament_add_organizer(struct db* ctx, int tournament_id, int person_id)
 {
     int ret;
-    STMT_PREPARE_OR_RESET(tournament_organizer_add, -1,
+    STMT_PREPARE_OR_RESET(tournament_add_organizer, -1,
         "INSERT OR IGNORE INTO tournament_organizers (tournament_id, person_id) VALUES (?, ?);");
 
-    if ((ret = sqlite3_bind_int(ctx->tournament_organizer_add, 1, tournament_id)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->tournament_organizer_add, 2, person_id)) != SQLITE_OK)
+    if ((ret = sqlite3_bind_int(ctx->tournament_add_organizer, 1, tournament_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->tournament_add_organizer, 2, person_id)) != SQLITE_OK)
     {
         log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
         return -1;
     }
 
-    return step_stmt_wrapper(ctx->db, ctx->tournament_organizer_add);
+    return step_stmt_wrapper(ctx->db, ctx->tournament_add_organizer);
 }
 
 static int
-tournament_commentator_add(struct db* ctx, int tournament_id, int person_id)
+tournament_add_commentator(struct db* ctx, int tournament_id, int person_id)
 {
     int ret;
-    STMT_PREPARE_OR_RESET(tournament_commentator_add, -1,
+    STMT_PREPARE_OR_RESET(tournament_add_commentator, -1,
         "INSERT OR IGNORE INTO tournament_commentators (tournament_id, person_id) VALUES (?, ?);");
 
-    if ((ret = sqlite3_bind_int(ctx->tournament_commentator_add, 1, tournament_id)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->tournament_commentator_add, 2, person_id)) != SQLITE_OK)
+    if ((ret = sqlite3_bind_int(ctx->tournament_add_commentator, 1, tournament_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->tournament_add_commentator, 2, person_id)) != SQLITE_OK)
     {
         log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
         return -1;
     }
 
-    return step_stmt_wrapper(ctx->db, ctx->tournament_commentator_add);
+    return step_stmt_wrapper(ctx->db, ctx->tournament_add_commentator);
 }
 
 static int
-event_type_add_or_get(struct db* ctx, struct str_view name)
+event_add_or_get_type(struct db* ctx, struct str_view name)
 {
-    int ret, event_type_id = -1;
-    STMT_PREPARE_OR_RESET(event_type_add_or_get, -1,
+    int ret;
+    STMT_PREPARE_OR_RESET(event_add_or_get_type, -1,
         "INSERT INTO event_types (name) VALUES (?) "
         "ON CONFLICT DO UPDATE SET name=excluded.name RETURNING id;");
 
-    if ((ret = sqlite3_bind_text(ctx->event_type_add_or_get, 1, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK)
-    {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    if ((ret = sqlite3_bind_text(ctx->event_add_or_get_type, 1, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK)
         return -1;
-    }
 
 next_step:
-    ret = sqlite3_step(ctx->event_type_add_or_get);
+    ret = sqlite3_step(ctx->event_add_or_get_type);
     switch (ret)
     {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_DONE: break;
-        case SQLITE_ROW:
-            event_type_id = sqlite3_column_int(ctx->event_type_add_or_get, 0);
-            goto next_step;
-        default:
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            break;
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE : return -1;
+        case SQLITE_ROW  : return sqlite3_column_int(ctx->event_add_or_get_type, 0);
     }
 
-    return event_type_id;
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    return -1;
 }
 
 static int
 event_add_or_get(struct db* ctx, int event_type_id, struct str_view url)
 {
-    int ret, event_id = -1;
+    int ret;
     STMT_PREPARE_OR_RESET(event_add_or_get, -1,
         "INSERT INTO events (event_type_id, url) VALUES (?, ?) "
         "ON CONFLICT DO UPDATE SET event_type_id=excluded.event_type_id RETURNING id;");
@@ -570,67 +551,55 @@ event_add_or_get(struct db* ctx, int event_type_id, struct str_view url)
     if ((ret = sqlite3_bind_int(ctx->event_add_or_get, 1, event_type_id)) != SQLITE_OK ||
         (ret = sqlite3_bind_text(ctx->event_add_or_get, 2, url.data, url.len, SQLITE_STATIC)) != SQLITE_OK)
     {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return -1;
+        goto error;
     }
 
 next_step:
     ret = sqlite3_step(ctx->event_add_or_get);
     switch (ret)
     {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_DONE: break;
-        case SQLITE_ROW:
-            event_id = sqlite3_column_int(ctx->event_add_or_get, 0);
-            goto next_step;
-        default:
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            break;
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE : return -1;
+        case SQLITE_ROW  : return sqlite3_column_int(ctx->event_add_or_get, 0);
     }
 
-    return event_id;
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    return -1;
 }
 
 static int
-round_type_add_or_get(struct db* ctx, struct str_view short_name, struct str_view long_name)
+round_add_or_get_type(struct db* ctx, struct str_view short_name, struct str_view long_name)
 {
-    int ret, round_type_id = -1;
-    if (ctx->round_type_add_or_get)
-        sqlite3_reset(ctx->round_type_add_or_get);
-    else
-        if (prepare_stmt_wrapper(ctx->db, &ctx->round_type_add_or_get, cstr_view(
-            "INSERT INTO round_types (short_name, long_name) VALUES (?, ?) "
-            "ON CONFLICT DO UPDATE SET short_name=excluded.short_name RETURNING id;")) != 0)
-            return -1;
+    int ret;
+    STMT_PREPARE_OR_RESET(round_add_or_get_type, -1,
+        "INSERT INTO round_types (short_name, long_name) VALUES (?, ?) "
+        "ON CONFLICT DO UPDATE SET short_name=excluded.short_name RETURNING id;");
 
-    if ((ret = sqlite3_bind_text(ctx->round_type_add_or_get, 1, short_name.data, short_name.len, SQLITE_STATIC) != SQLITE_OK) ||
-        (ret = sqlite3_bind_text(ctx->round_type_add_or_get, 2, long_name.data, long_name.len, SQLITE_STATIC) != SQLITE_OK))
+    if ((ret = sqlite3_bind_text(ctx->round_add_or_get_type, 1, short_name.data, short_name.len, SQLITE_STATIC) != SQLITE_OK) ||
+        (ret = sqlite3_bind_text(ctx->round_add_or_get_type, 2, long_name.data, long_name.len, SQLITE_STATIC) != SQLITE_OK))
     {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return -1;
+        goto error;
     }
 
 next_step:
-    ret = sqlite3_step(ctx->round_type_add_or_get);
+    ret = sqlite3_step(ctx->round_add_or_get_type);
     switch (ret)
     {
-    case SQLITE_BUSY: goto next_step;
-    case SQLITE_DONE: break;
-    case SQLITE_ROW:
-        round_type_id = sqlite3_column_int(ctx->round_type_add_or_get, 0);
-        goto next_step;
-    default:
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        break;
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE : return -1;
+        case SQLITE_ROW  : return sqlite3_column_int(ctx->round_add_or_get_type, 0);
     }
 
-    return round_type_id;
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    return -1;
 }
 
 static int
 set_format_add_or_get(struct db* ctx, struct str_view short_name, struct str_view long_name)
 {
-    int ret, set_format_id = -1;
+    int ret;
     STMT_PREPARE_OR_RESET(set_format_add_or_get, -1,
         "INSERT INTO set_formats (short_name, long_name) VALUES (?, ?) "
         "ON CONFLICT DO UPDATE SET short_name=excluded.short_name RETURNING id;");
@@ -638,31 +607,27 @@ set_format_add_or_get(struct db* ctx, struct str_view short_name, struct str_vie
     if ((ret = sqlite3_bind_text(ctx->set_format_add_or_get, 1, short_name.data, short_name.len, SQLITE_STATIC)) != SQLITE_OK ||
         (ret = sqlite3_bind_text(ctx->set_format_add_or_get, 2, long_name.data, long_name.len, SQLITE_STATIC)) != SQLITE_OK)
     {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return -1;
+        goto error;
     }
 
 next_step:
     ret = sqlite3_step(ctx->set_format_add_or_get);
     switch (ret)
     {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_DONE: break;
-        case SQLITE_ROW:
-            set_format_id = sqlite3_column_int(ctx->set_format_add_or_get, 0);
-            goto next_step;
-        default:
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            break;
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE : return -1;
+        case SQLITE_ROW  : return sqlite3_column_int(ctx->set_format_add_or_get, 0);
     }
 
-    return set_format_id;
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    return -1;
 }
 
 static int
 team_add_or_get(struct db* ctx, struct str_view name, struct str_view url)
 {
-    int ret, team_id = -1;
+    int ret;
     STMT_PREPARE_OR_RESET(team_add_or_get, -1,
         "INSERT INTO teams (name, url) VALUES (?, ?) "
         "ON CONFLICT DO UPDATE SET name=excluded.name RETURNING id;");
@@ -670,62 +635,54 @@ team_add_or_get(struct db* ctx, struct str_view name, struct str_view url)
     if ((ret = sqlite3_bind_text(ctx->team_add_or_get, 1, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK ||
         (ret = sqlite3_bind_text(ctx->team_add_or_get, 2, url.data, url.len, SQLITE_STATIC)) != SQLITE_OK)
     {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return -1;
+        goto error;
     }
 
 next_step:
     ret = sqlite3_step(ctx->team_add_or_get);
     switch (ret)
     {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_DONE: break;
-        case SQLITE_ROW:
-            team_id = sqlite3_column_int(ctx->team_add_or_get, 0);
-            goto next_step;
-        default:
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            break;
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE : return -1;
+        case SQLITE_ROW  : return sqlite3_column_int(ctx->team_add_or_get, 0);
     }
 
-    return team_id;
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    return -1;
 }
 
 static int
-team_member_add(struct db* ctx, int team_id, int person_id)
+team_add_member(struct db* ctx, int team_id, int person_id)
 {
     int ret;
-    STMT_PREPARE_OR_RESET(team_member_add, -1,
+    STMT_PREPARE_OR_RESET(team_add_member, -1,
         "INSERT OR IGNORE INTO team_members (team_id, person_id) VALUES (?, ?);");
 
-    if ((ret = sqlite3_bind_int(ctx->team_member_add, 1, team_id)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->team_member_add, 2, person_id)) != SQLITE_OK)
+    if ((ret = sqlite3_bind_int(ctx->team_add_member, 1, team_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->team_add_member, 2, person_id)) != SQLITE_OK)
     {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return -1;
+        goto error;
     }
 
 next_step:
-    ret = sqlite3_step(ctx->team_member_add);
+    ret = sqlite3_step(ctx->team_add_member);
     switch (ret)
     {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_DONE: break;
-        case SQLITE_ROW:
-            team_id = sqlite3_column_int(ctx->team_member_add, 0);
-            goto next_step;
-        default:
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            break;
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE : return -1;
+        case SQLITE_ROW  : return sqlite3_column_int(ctx->team_add_member, 0);
     }
 
-    return 0;
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    return -1;
 }
 
 static int
 sponsor_add_or_get(struct db* ctx, struct str_view short_name, struct str_view full_name, struct str_view website)
 {
-    int ret, sponsor_id = -1;
+    int ret;
     STMT_PREPARE_OR_RESET(sponsor_add_or_get, -1,
         "INSERT INTO sponsors (short_name, full_name, website) VALUES (?, ?, ?) "
         "ON CONFLICT DO UPDATE SET short_name=excluded.short_name RETURNING id;");
@@ -734,25 +691,21 @@ sponsor_add_or_get(struct db* ctx, struct str_view short_name, struct str_view f
         (ret = sqlite3_bind_text(ctx->sponsor_add_or_get, 2, full_name.data, full_name.len, SQLITE_STATIC)) != SQLITE_OK ||
         (ret = sqlite3_bind_text(ctx->sponsor_add_or_get, 3, website.data, website.len, SQLITE_STATIC)) != SQLITE_OK)
     {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return -1;
+        goto error;
     }
 
 next_step:
     ret = sqlite3_step(ctx->sponsor_add_or_get);
     switch (ret)
     {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_DONE: break;
-        case SQLITE_ROW:
-            sponsor_id = sqlite3_column_int(ctx->sponsor_add_or_get, 0);
-            goto next_step;
-        default:
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            break;
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE : return -1;
+        case SQLITE_ROW  : return sqlite3_column_int(ctx->sponsor_add_or_get, 0);
     }
 
-    return sponsor_id;
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    return -1;
 }
 
 static int
@@ -764,7 +717,7 @@ person_add_or_get(
         struct str_view social,
         struct str_view pronouns)
 {
-    int ret, person_id = -1;
+    int ret;
     STMT_PREPARE_OR_RESET(person_add_or_get, -1,
         "INSERT INTO people (sponsor_id, name, tag, social, pronouns) VALUES (?, ?, ?, ?, ?) "
         "ON CONFLICT DO UPDATE SET name=excluded.name RETURNING id;");
@@ -772,18 +725,12 @@ person_add_or_get(
     if (sponsor_id < 0)
     {
         if ((ret = sqlite3_bind_null(ctx->person_add_or_get, 1)) != SQLITE_OK)
-        {
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            return -1;
-        }
+            goto error;
     }
     else
     {
         if ((ret = sqlite3_bind_int(ctx->person_add_or_get, 1, sponsor_id)) != SQLITE_OK)
-        {
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            return -1;
-        }
+            goto error;
     }
 
     if ((ret = sqlite3_bind_text(ctx->person_add_or_get, 2, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK ||
@@ -791,25 +738,21 @@ person_add_or_get(
         (ret = sqlite3_bind_text(ctx->person_add_or_get, 4, social.data, social.len, SQLITE_STATIC)) != SQLITE_OK ||
         (ret = sqlite3_bind_text(ctx->person_add_or_get, 5, pronouns.data, pronouns.len, SQLITE_STATIC)) != SQLITE_OK)
     {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return -1;
+        goto error;
     }
 
 next_step:
     ret = sqlite3_step(ctx->person_add_or_get);
     switch (ret)
     {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_DONE: break;
-        case SQLITE_ROW:
-            person_id = sqlite3_column_int(ctx->person_add_or_get, 0);
-            goto next_step;
-        default:
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            break;
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE: return -1;
+        case SQLITE_ROW  : return sqlite3_column_int(ctx->person_add_or_get, 0);
     }
 
-    return person_id;
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    return -1;
 }
 
 static int
@@ -820,23 +763,19 @@ person_get_id(struct db* ctx, struct str_view name)
         "SELECT id FROM people WHERE name=?;");
 
     if ((ret = sqlite3_bind_text(ctx->person_get_id, 1, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK)
-    {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return -1;
-    }
+        goto error;
 
 next_step:
     ret = sqlite3_step(ctx->person_get_id);
     switch (ret)
     {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_DONE: break;
-        case SQLITE_ROW: return sqlite3_column_int(ctx->person_get_id, 0);
-        default:
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            break;
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE: return -1;
+        case SQLITE_ROW  : return sqlite3_column_int(ctx->person_get_id, 0);
     }
 
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
     return -1;
 }
 
@@ -851,23 +790,19 @@ person_get_team_id(struct db* ctx, struct str_view name)
         "WHERE name=?;");
 
     if ((ret = sqlite3_bind_text(ctx->person_get_team_id, 1, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK)
-    {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return -1;
-    }
+        goto error;
 
 next_step:
     ret = sqlite3_step(ctx->person_get_team_id);
     switch (ret)
     {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_DONE: break;
-        case SQLITE_ROW: return sqlite3_column_int(ctx->person_get_team_id, 0);
-        default:
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            break;
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE : return -1;
+        case SQLITE_ROW  : return sqlite3_column_int(ctx->person_get_team_id, 0);
     }
 
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
     return -1;
 }
 
@@ -882,7 +817,7 @@ game_add_or_get(
         uint64_t time_started,
         uint64_t time_ended)
 {
-    int ret, game_id = -1;
+    int ret;
     STMT_PREPARE_OR_RESET(game_add_or_get, -1,
         "INSERT INTO games (round_type_id, round_number, set_format_id, winner_team_id, stage_id, time_started, time_ended) VALUES (?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT DO UPDATE SET stage_id=excluded.stage_id RETURNING id;");
@@ -922,17 +857,10 @@ next_step:
     ret = sqlite3_step(ctx->game_add_or_get);
     switch (ret)
     {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_DONE: break;
-        case SQLITE_ROW:
-            game_id = sqlite3_column_int(ctx->game_add_or_get, 0);
-            goto next_step;
-        default:
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            break;
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE : return -1;
+        case SQLITE_ROW  : return sqlite3_column_int(ctx->game_add_or_get, 0);
     }
-
-    return game_id;
 
 error:
     log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
@@ -940,7 +868,7 @@ error:
 }
 
 static int
-games_query(struct db* ctx,
+game_query(struct db* ctx,
     int (*on_game)(
         int game_id,
         uint64_t time_started,
@@ -961,7 +889,7 @@ games_query(struct db* ctx,
     void* user)
 {
     int ret;
-    STMT_PREPARE_OR_RESET(games_query, -1,
+    STMT_PREPARE_OR_RESET(game_query, -1,
         "WITH grouped_games AS ( "
         "    SELECT "
         "        games.id, "
@@ -1017,37 +945,35 @@ games_query(struct db* ctx,
         "ORDER BY time_started DESC;");
 
 next_step:
-    ret = sqlite3_step(ctx->games_query);
+    ret = sqlite3_step(ctx->game_query);
     switch (ret)
     {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_DONE: break;
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE : return 0;
         case SQLITE_ROW:
             ret = on_game(
-                sqlite3_column_int(ctx->games_query, 0),
-                (uint64_t)sqlite3_column_int64(ctx->games_query, 1),
-                (uint64_t)sqlite3_column_int64(ctx->games_query, 2),
-                (const char*)sqlite3_column_text(ctx->games_query, 3),
-                (const char*)sqlite3_column_text(ctx->games_query, 4),
-                (const char*)sqlite3_column_text(ctx->games_query, 5),
-                (const char*)sqlite3_column_text(ctx->games_query, 6),
-                (const char*)sqlite3_column_text(ctx->games_query, 7),
-                (const char*)sqlite3_column_text(ctx->games_query, 8),
-                (const char*)sqlite3_column_text(ctx->games_query, 9),
-                (const char*)sqlite3_column_text(ctx->games_query, 10),
-                (const char*)sqlite3_column_text(ctx->games_query, 11),
-                (const char*)sqlite3_column_text(ctx->games_query, 12),
-                (const char*)sqlite3_column_text(ctx->games_query, 13),
-                (const char*)sqlite3_column_text(ctx->games_query, 14),
+                sqlite3_column_int(ctx->game_query, 0),
+                (uint64_t)sqlite3_column_int64(ctx->game_query, 1),
+                (uint64_t)sqlite3_column_int64(ctx->game_query, 2),
+                (const char*)sqlite3_column_text(ctx->game_query, 3),
+                (const char*)sqlite3_column_text(ctx->game_query, 4),
+                (const char*)sqlite3_column_text(ctx->game_query, 5),
+                (const char*)sqlite3_column_text(ctx->game_query, 6),
+                (const char*)sqlite3_column_text(ctx->game_query, 7),
+                (const char*)sqlite3_column_text(ctx->game_query, 8),
+                (const char*)sqlite3_column_text(ctx->game_query, 9),
+                (const char*)sqlite3_column_text(ctx->game_query, 10),
+                (const char*)sqlite3_column_text(ctx->game_query, 11),
+                (const char*)sqlite3_column_text(ctx->game_query, 12),
+                (const char*)sqlite3_column_text(ctx->game_query, 13),
+                (const char*)sqlite3_column_text(ctx->game_query, 14),
                 user);
             if (ret) return ret;
             goto next_step;
-        default:
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            break;
     }
 
-    return 0;
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    return -1;
 }
 
 static int
@@ -1143,7 +1069,7 @@ error:
 }
 
 static int
-game_player_add(
+game_add_player(
         struct db* ctx,
         int person_id,
         int game_id,
@@ -1154,23 +1080,23 @@ game_player_add(
         int is_loser_side)
 {
     int ret;
-    STMT_PREPARE_OR_RESET(game_player_add, -1,
+    STMT_PREPARE_OR_RESET(game_add_player, -1,
         "INSERT OR IGNORE INTO game_players (person_id, game_id, slot, team_id, fighter_id, costume, is_loser_side) "
         "VALUES (?, ?, ?, ?, ?, ?, ?);");
 
-    if ((ret = sqlite3_bind_int(ctx->game_player_add, 1, person_id)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->game_player_add, 2, game_id)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->game_player_add, 3, slot)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->game_player_add, 4, team_id)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->game_player_add, 5, fighter_id)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->game_player_add, 6, costume)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->game_player_add, 7, is_loser_side)) != SQLITE_OK)
+    if ((ret = sqlite3_bind_int(ctx->game_add_player, 1, person_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->game_add_player, 2, game_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->game_add_player, 3, slot)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->game_add_player, 4, team_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->game_add_player, 5, fighter_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->game_add_player, 6, costume)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->game_add_player, 7, is_loser_side)) != SQLITE_OK)
     {
         log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
         return -1;
     }
 
-    return step_stmt_wrapper(ctx->db, ctx->game_player_add);
+    return step_stmt_wrapper(ctx->db, ctx->game_add_player);
 }
 
 static int
@@ -1191,7 +1117,6 @@ next_step:
         case SQLITE_BUSY : goto next_step;
         case SQLITE_DONE : return -1;
         case SQLITE_ROW  : return sqlite3_column_int(ctx->group_add_or_get, 0);
-        default: break;
     }
 
 error:
@@ -1217,50 +1142,9 @@ group_add_game(struct db* ctx, int group_id, int game_id)
 }
 
 static int
-video_path_add(struct db* ctx, struct str_view path)
-{
-    int ret;
-    STMT_PREPARE_OR_RESET(video_path_add, -1,
-        "INSERT OR IGNORE INTO video_paths (path) VALUES (?);");
-
-    if ((ret = sqlite3_bind_text(ctx->video_path_add, 1, path.data, path.len, SQLITE_STATIC)) != SQLITE_OK)
-    {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return -1;
-    }
-
-    return step_stmt_wrapper(ctx->db, ctx->video_path_add);
-}
-
-static int
-video_paths_query(struct db* ctx, int (*on_video_path)(const char* path, void* user), void* user)
-{
-    int ret;
-    STMT_PREPARE_OR_RESET(video_paths_query, -1,
-        "SELECT path FROM video_paths;");
-
-next_step:
-    ret = sqlite3_step(ctx->video_paths_query);
-    switch (ret)
-    {
-    case SQLITE_BUSY: goto next_step;
-    case SQLITE_DONE: return 0;
-    case SQLITE_ROW:
-        ret = on_video_path((const char*)sqlite3_column_text(ctx->video_paths_query, 0), user);
-        if (ret) return ret;
-        goto next_step;
-    default: goto error;
-    }
-
-error:
-    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-    return -1;
-}
-
-static int
 video_add_or_get(struct db* ctx, struct str_view file_name, struct str_view path_hint)
 {
-    int ret, video_id = -1;
+    int ret;
     STMT_PREPARE_OR_RESET(video_add_or_get, -1,
         "INSERT INTO videos (file_name, path_hint) VALUES (?, ?) "
         "ON CONFLICT DO UPDATE SET file_name=excluded.file_name RETURNING id;");
@@ -1268,25 +1152,21 @@ video_add_or_get(struct db* ctx, struct str_view file_name, struct str_view path
     if ((ret = sqlite3_bind_text(ctx->video_add_or_get, 1, file_name.data, file_name.len, SQLITE_STATIC)) != SQLITE_OK ||
         (ret = sqlite3_bind_text(ctx->video_add_or_get, 2, path_hint.data, path_hint.len, SQLITE_STATIC)) != SQLITE_OK)
     {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return -1;
+        goto error;
     }
 
 next_step:
     ret = sqlite3_step(ctx->video_add_or_get);
     switch (ret)
     {
-        case SQLITE_BUSY: goto next_step;
-        case SQLITE_DONE: break;
-        case SQLITE_ROW:
-            video_id = sqlite3_column_int(ctx->video_add_or_get, 0);
-            goto next_step;
-        default:
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-            break;
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE : return -1;
+        case SQLITE_ROW  : return sqlite3_column_int(ctx->video_add_or_get, 0);
     }
 
-    return video_id;
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    return -1;
 }
 
 static int
@@ -1304,6 +1184,45 @@ video_set_path_hint(struct db* ctx, struct str_view file_name, struct str_view p
     }
 
     return step_stmt_wrapper(ctx->db, ctx->video_set_path_hint);
+}
+
+static int
+video_add_path(struct db* ctx, struct str_view path)
+{
+    int ret;
+    STMT_PREPARE_OR_RESET(video_add_path, -1,
+        "INSERT OR IGNORE INTO video_paths (path) VALUES (?);");
+
+    if ((ret = sqlite3_bind_text(ctx->video_add_path, 1, path.data, path.len, SQLITE_STATIC)) != SQLITE_OK)
+    {
+        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        return -1;
+    }
+
+    return step_stmt_wrapper(ctx->db, ctx->video_add_path);
+}
+
+static int
+video_query_paths(struct db* ctx, int (*on_video_path)(const char* path, void* user), void* user)
+{
+    int ret;
+    STMT_PREPARE_OR_RESET(video_query_paths, -1,
+        "SELECT path FROM video_paths;");
+
+next_step:
+    ret = sqlite3_step(ctx->video_query_paths);
+    switch (ret)
+    {
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE : return 0;
+        case SQLITE_ROW:
+            ret = on_video_path((const char*)sqlite3_column_text(ctx->video_query_paths, 0), user);
+            if (ret) return ret;
+            goto next_step;
+    }
+
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    return -1;
 }
 
 static int
@@ -1424,7 +1343,7 @@ struct db_interface db_sqlite = {
     transaction_commit_nested,
     transaction_rollback_nested,
 
-#define X(stmt) stmt,
+#define X(group, stmt) group##_##stmt,
     STMT_LIST
 #undef X
 };

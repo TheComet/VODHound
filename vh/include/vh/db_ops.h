@@ -56,8 +56,8 @@ struct db_interface
     } event;
 
     struct {
-        int (*add_or_get)(struct db* db, struct str_view short_name, struct str_view long_name);
-    } round_type;
+        int (*add_or_get_type)(struct db* db, struct str_view short_name, struct str_view long_name);
+    } round;
 
     struct {
         int (*add_or_get)(struct db* db, struct str_view short_name, struct str_view long_name);
@@ -104,7 +104,7 @@ struct db_interface
         int (*associate_video)(struct db* db, int game_id, int video_id, int64_t frame_offset);
         int (*unassociate_video)(struct db* db, int game_id, int video_id);
         int (*get_video)(struct db* db, int game_id, const char** file_name, const char** path_hint, int64_t* frame_offset);
-        int (*player_add)(struct db* db, int person_id, int game_id, int slot, int team_id, int fighter_id, int costume, int is_loser_side);
+        int (*add_player)(struct db* db, int person_id, int game_id, int slot, int team_id, int fighter_id, int costume, int is_loser_side);
     } game;
 
     struct {
@@ -113,13 +113,10 @@ struct db_interface
     } group;
 
     struct {
-        int (*add)(struct db* db, struct str_view path);
-        int (*paths_query)(struct db* db, int (*on_video_path)(const char* path, void* user), void* user);
-    } video_path;
-
-    struct {
         int (*add_or_get)(struct db* db, struct str_view file_name, struct str_view path_hint);
         int (*set_path_hint)(struct db* db, struct str_view file_name, struct str_view path_hint);
+        int (*add_path)(struct db* db, struct str_view path);
+        int (*query_paths)(struct db* db, int (*on_video_path)(const char* path, void* user), void* user);
     } video;
 
     struct {

@@ -64,7 +64,7 @@ import_reframed_metadata_1_5(
             long_name = "Freeplay";
         }
 
-        set_format_id = dbi->set_format_add_or_get(db, cstr_view(set_format), cstr_view(long_name));
+        set_format_id = dbi->set_format.add_or_get(db, cstr_view(set_format), cstr_view(long_name));
         if (set_format_id < 0)
             return -1;
     }
@@ -74,9 +74,9 @@ import_reframed_metadata_1_5(
     if (strcmp(event_type, "Friendlies"))
     {
         int event_type_id;
-        if ((event_type_id = dbi->event_type_add_or_get(db, cstr_view(event_type))) < 0)
+        if ((event_type_id = dbi->event.add_or_get_type(db, cstr_view(event_type))) < 0)
             return -1;
-        if ((event_id = dbi->event_add_or_get(db, event_type_id, cstr_view(""))) < 0)
+        if ((event_id = dbi->event.add_or_get(db, event_type_id, cstr_view(""))) < 0)
             return -1;
     }
 
@@ -84,7 +84,7 @@ import_reframed_metadata_1_5(
     int round_number = -1;
     if (strcmp(event_type, "Singles Bracket") == 0)
     {
-        round_type_id = dbi->round_type_add_or_get(db, cstr_view("WR"), cstr_view("Winner's Round"));
+        round_type_id = dbi->round.add_or_get_type(db, cstr_view("WR"), cstr_view("Winner's Round"));
         if (round_type_id < 0)
             return -1;
 
@@ -122,7 +122,7 @@ import_reframed_metadata_1_5(
         const char* social = "";
         const char* pronouns = "";
 
-        int person_id = dbi->person_add_or_get(db,
+        int person_id = dbi->person.add_or_get(db,
             sponsor_id,
             cstr_view(name),
             cstr_view(tag),
@@ -131,18 +131,18 @@ import_reframed_metadata_1_5(
         if (person_id < 0)
             return -1;
 
-        int team_id = dbi->team_add_or_get(db, cstr_view(name), cstr_view(""));
+        int team_id = dbi->team.add_or_get(db, cstr_view(name), cstr_view(""));
         if (team_id < 0)
             return -1;
 
-        if (dbi->team_member_add(db, team_id, person_id) != 0)
+        if (dbi->team.add_member(db, team_id, person_id) != 0)
             return -1;
 
         if (winner == i)
             winner_team_id = team_id;
     }
 
-    int game_id = dbi->game_add_or_get(db,
+    int game_id = dbi->game.add_or_get(db,
         round_type_id,
         round_number,
         set_format_id,
@@ -154,7 +154,7 @@ import_reframed_metadata_1_5(
         return -1;
 
     if (event_id != -1)
-        if (dbi->game_associate_event(db, game_id, event_id) < 0)
+        if (dbi->game.associate_event(db, game_id, event_id) < 0)
             return -1;
 
     for (int i = 0; i != json_object_array_length(player_info); ++i)
@@ -165,15 +165,15 @@ import_reframed_metadata_1_5(
         int fighter_id = json_object_get_int(json_object_object_get(player, "fighterid"));
         int costume = 0;
 
-        int person_id = dbi->person_get_id(db, cstr_view(name));
+        int person_id = dbi->person.get_id(db, cstr_view(name));
         if (person_id < 0)
             return -1;
 
-        int team_id = dbi->person_get_team_id(db, cstr_view(name));
+        int team_id = dbi->person.get_team_id(db, cstr_view(name));
         if (team_id < 0)
             return -1;
 
-        if (dbi->game_player_add(db, person_id, game_id, i, team_id, fighter_id, costume, is_loser_side) != 0)
+        if (dbi->game.add_player(db, person_id, game_id, i, team_id, fighter_id, costume, is_loser_side) != 0)
             return -1;
 
         /* 1.5 did not have scores yet, but we would still like to have a valid game number.
@@ -184,7 +184,7 @@ import_reframed_metadata_1_5(
         int score = i == 0 ? game_number - 1 : 0;
         if (score < 0)
             score = 0;
-        if (dbi->score_add(db, game_id, team_id, score) != 0)
+        if (dbi->score.add(db, game_id, team_id, score) != 0)
             return -1;
     }
 

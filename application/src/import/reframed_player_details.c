@@ -36,11 +36,11 @@ import_reframed_player_details(
             int sponsor_id = -1;
             if (*sponsor)
             {
-                sponsor_id = dbi->sponsor_add_or_get(db, cstr_view(sponsor), cstr_view(""), cstr_view(""));
+                sponsor_id = dbi->sponsor.add_or_get(db, cstr_view(sponsor), cstr_view(""), cstr_view(""));
                 if (sponsor_id < 0)
                     goto fail;
             }
-            if (dbi->person_add_or_get(db, sponsor_id, cstr_view(name), tag, cstr_view(social), cstr_view(pronouns)) < 0)
+            if (dbi->person.add_or_get(db, sponsor_id, cstr_view(name), tag, cstr_view(social), cstr_view(pronouns)) < 0)
                 goto fail;
         }
     }

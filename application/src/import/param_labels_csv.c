@@ -21,7 +21,7 @@ import_param_labels_csv(struct db_interface* dbi, struct db* db, const char* fil
 
     log_info("Importing hash40 strings from '%s'\n", file_name);
 
-    if (dbi->transaction_begin(db) != 0)
+    if (dbi->transaction.begin(db) != 0)
         goto transaction_begin_failed;
 
     ms = mstream_from_mfile(&mf);
@@ -43,16 +43,16 @@ import_param_labels_csv(struct db_interface* dbi, struct db* db, const char* fil
         if (h40 == 0 || label.len == 0)
             continue;
 
-        if (dbi->motion_add(db, h40, label) != 0)
+        if (dbi->motion.add(db, h40, label) != 0)
             goto add_failed;
     }
 
-    dbi->transaction_commit(db);
+    dbi->transaction.commit(db);
     mfile_unmap(&mf);
 
     return 0;
 
-    add_failed               : dbi->transaction_rollback(db);
+    add_failed               : dbi->transaction.rollback(db);
     transaction_begin_failed : mfile_unmap(&mf);
     open_file_failed         : return -1;
 }

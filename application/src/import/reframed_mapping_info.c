@@ -26,14 +26,14 @@ import_reframed_mapping_info(struct db_interface* dbi, struct db* db, const char
     log_info("Importing mapping info from '%s'\n", file_name);
     log_dbg("mapping info version: %s\n", json_object_get_string(jversion));
 
-    if (dbi->transaction_begin(db) != 0)
+    if (dbi->transaction.begin(db) != 0)
         goto transaction_begin_failed;
 
     { json_object_object_foreach(fighter_ids, fighter_id_str, fighter_name)
     {
         int fighter_id = atoi(fighter_id_str);
         const char* name = json_object_get_string(fighter_name);
-        if (dbi->fighter_add(db, fighter_id, cstr_view(name)) != 0)
+        if (dbi->fighter.add(db, fighter_id, cstr_view(name)) != 0)
             goto fail;
     }}
 
@@ -41,7 +41,7 @@ import_reframed_mapping_info(struct db_interface* dbi, struct db* db, const char
     {
         int stage_id = atoi(stage_id_str);
         const char* name = json_object_get_string(stage_name);
-        if (dbi->stage_add(db, stage_id, cstr_view(name)) != 0)
+        if (dbi->stage.add(db, stage_id, cstr_view(name)) != 0)
             goto fail;
     }}
 
@@ -49,7 +49,7 @@ import_reframed_mapping_info(struct db_interface* dbi, struct db* db, const char
     {
         int status_id = atoi(status_str);
         const char* name = json_object_get_string(enum_name);
-        if (dbi->status_enum_add(db, -1, status_id, cstr_view(name)) != 0)
+        if (dbi->status_enum.add(db, -1, status_id, cstr_view(name)) != 0)
             goto fail;
     }}
 
@@ -60,7 +60,7 @@ import_reframed_mapping_info(struct db_interface* dbi, struct db* db, const char
         {
             int status_id = atoi(status_str);
             const char* name = json_object_get_string(enum_name);
-            if (dbi->status_enum_add(db, fighter_id, status_id, cstr_view(name)) != 0)
+            if (dbi->status_enum.add(db, fighter_id, status_id, cstr_view(name)) != 0)
                 goto fail;
         }
     }}
@@ -69,14 +69,14 @@ import_reframed_mapping_info(struct db_interface* dbi, struct db* db, const char
     {
         int hit_status_id = atoi(hit_status_str);
         const char* name = json_object_get_string(hit_status_name);
-        if (dbi->hit_status_enum_add(db, hit_status_id, cstr_view(name)) != 0)
+        if (dbi->hit_status_enum.add(db, hit_status_id, cstr_view(name)) != 0)
             goto fail;
     }}
 
     json_object_put(root);
-    return dbi->transaction_commit(db);
+    return dbi->transaction.commit(db);
 
-    fail                     : dbi->transaction_rollback(db);
+    fail                     : dbi->transaction.rollback(db);
     transaction_begin_failed : json_object_put(root);
     unsupported_version      : return -1;
 }

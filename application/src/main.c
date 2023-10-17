@@ -187,7 +187,7 @@ on_replay_browser_node_selected(Ihandle* ih, int node_id, int selected)
     VEC_END_EACH
 
     /* If no video is associated with this game, clear and return */
-    if (dbi->game_get_video(db, game_id, &file_name, &path_hint, &ctx.frame_offset) <= 0)
+    if (dbi->game.get_video(db, game_id, &file_name, &path_hint, &ctx.frame_offset) <= 0)
         goto clear_video;
 
     /* Try the path hint first */
@@ -200,10 +200,10 @@ on_replay_browser_node_selected(Ihandle* ih, int node_id, int selected)
     }
 
     /* Will have to search video paths for the video file */
-    if (dbi->video_paths_query(db, on_replay_browser_video_path, &ctx) > 0)
+    if (dbi->video.query_paths(db, on_replay_browser_video_path, &ctx) > 0)
     {
         path_dirname(&ctx.file_path);
-        dbi->video_set_path_hint(db, ctx.file_name, path_view(ctx.file_path));
+        dbi->video.set_path_hint(db, ctx.file_name, path_view(ctx.file_path));
         path_deinit(&ctx.file_path);
         return IUP_DEFAULT;
     }
@@ -455,14 +455,6 @@ int main(int argc, char **argv)
     IupSetAttribute(replays, "TITLE", "Replays");
     IupSetAttribute(replays, "dbi", (char*)dbi);
     IupSetAttribute(replays, "db", (char*)db);
-    /*
-    IupSetAttribute(replays, "ADDBRANCH", "2023-08-20");
-    IupSetAttribute(replays, "ADDLEAF1", "19:45 Game 1");
-    IupSetAttribute(replays, "ADDLEAF2", "19:52 Game 2");
-    IupSetAttribute(replays, "INSERTBRANCH1", "2023-08-22");
-    IupSetAttribute(replays, "ADDLEAF4", "12:25 Game 1");
-    IupSetAttribute(replays, "ADDLEAF5", "12:28 Game 2");
-    IupSetAttribute(replays, "ADDLEAF6", "12:32 Game 3");*/
 
     {
         struct query_game_ctx ctx;
@@ -471,7 +463,7 @@ int main(int argc, char **argv)
         ctx.replays = replays;
         str_init(&ctx.name);
 
-        dbi->games_query(db, on_game_query, &ctx);
+        dbi->game.query(db, on_game_query, &ctx);
 
         str_deinit(&ctx.name);
     }

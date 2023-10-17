@@ -15,10 +15,10 @@ import_reframed_videometadata_1_0(
     if (file_name == NULL || !*file_name)
         return 0;
 
-    video_id = dbi->video_add_or_get(db, cstr_view(file_name), cstr_view(""));
+    video_id = dbi->video.add_or_get(db, cstr_view(file_name), cstr_view(""));
     if (video_id < 0)
         return -1;
-    if (dbi->game_associate_video(db, game_id, video_id, offset) < 0)
+    if (dbi->game.associate_video(db, game_id, video_id, offset) < 0)
         return -1;
 
     return 0;
