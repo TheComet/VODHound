@@ -13,57 +13,60 @@
 #   define min(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
-#define STMT_LIST                       \
-    X(motion_add)                       \
-    X(fighter_add)                      \
-    X(fighter_name)                     \
-    X(stage_add)                        \
-    X(status_enum_add)                  \
-    X(hit_status_enum_add)              \
-                                        \
-    X(tournament_add_or_get)            \
-    X(tournament_sponsor_add)           \
-    X(tournament_organizer_add)         \
-    X(tournament_commentator_add)       \
-                                        \
-    X(event_type_add_or_get)            \
-    X(event_add_or_get)                 \
-                                        \
-    X(round_type_add_or_get)            \
-                                        \
-    X(set_format_add_or_get)            \
-                                        \
-    X(team_member_add)                  \
-    X(team_add_or_get)                  \
-                                        \
-    X(sponsor_add_or_get)               \
-    X(person_add_or_get)                \
-    X(person_get_id)                    \
-    X(person_get_team_id)               \
-                                        \
-    X(game_add_or_get)                  \
-    X(games_query)                      \
-    X(game_associate_tournament)        \
-    X(game_associate_event)             \
-    X(game_associate_video)             \
-    X(game_unassociate_video)           \
-    X(game_get_video)                   \
-    X(game_player_add)                  \
-                                        \
-    X(group_add_or_get)                 \
-    X(group_add_game)                   \
-                                        \
-    X(video_path_add)                   \
-    X(video_paths_query)                \
-    X(video_add_or_get)                 \
-    X(video_set_path_hint)              \
-                                        \
-    X(score_add)                        \
-                                        \
-    X(frame_add)                        \
-                                        \
-    X(switch_info_add)                  \
-    X(stream_recording_sources_add)
+#define STMT_LIST                        \
+    X(motion, add)                       \
+    X(fighter, add)                      \
+    X(fighter, name)                     \
+    X(stage, add)                        \
+    X(status_enum, add)                  \
+    X(hit_status_enum, add)              \
+                                         \
+    X(tournament, add_or_get)            \
+    X(tournament, sponsor_add)           \
+    X(tournament, organizer_add)         \
+    X(tournament, commentator_add)       \
+                                         \
+    X(event, add_or_get_type)            \
+    X(event, add_or_get)                 \
+                                         \
+    X(round_type, add_or_get)            \
+                                         \
+    X(set_format, add_or_get)            \
+                                         \
+    X(team, add_or_get)                  \
+    X(team, add_member)                  \
+                                         \
+    X(sponsor, add_or_get)               \
+                                         \
+    X(person, add_or_get)                \
+    X(person, get_id)                    \
+    X(person, get_team_id)               \
+                                         \
+    X(game, add_or_get)                  \
+    X(game, query)                       \
+    X(game, associate_tournament)        \
+    X(game, associate_event)             \
+    X(game, associate_video)             \
+    X(game, unassociate_video)           \
+    X(game, get_video)                   \
+    X(game, player_add)                  \
+                                         \
+    X(group, add_or_get)                 \
+    X(group, add_game)                   \
+                                         \
+    X(video_path, add)                   \
+    X(video_paths, query)                \
+                                         \
+    X(video, add_or_get)                 \
+    X(video, set_path_hint)              \
+                                         \
+    X(score, add)                        \
+                                         \
+    X(frame, add)                        \
+                                         \
+    X(switch_info, add)                  \
+                                         \
+    X(stream_recording_sources, add)
 
 #define STMT_PREPARE_OR_RESET(stmt, error_return, text)                       \
     if (ctx->stmt)                                                            \
@@ -75,7 +78,7 @@ struct db
 {
     sqlite3* db;
 
-#define X(stmt) sqlite3_stmt* stmt;
+#define X(group, stmt) sqlite3_stmt* group##_##stmt;
     STMT_LIST
 #undef X
 };
@@ -266,7 +269,7 @@ open_and_prepare(const char* uri, int reinit_db)
 static void
 close_db(struct db* ctx)
 {
-#define X(stmt) sqlite3_finalize(ctx->stmt);
+#define X(group, stmt) sqlite3_finalize(ctx->group##_##stmt);
     STMT_LIST
 #undef X
 
