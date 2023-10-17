@@ -13,7 +13,7 @@ utf8_to_utf16(const char* utf8, int utf8_bytes)
     if (utf16_bytes == 0)
         return NULL;
 
-    wchar_t* utf16 = (wchar_t*)mem_alloc((sizeof(wchar_t) + 1) * utf16_bytes);
+    wchar_t* utf16 = mem_alloc((sizeof(wchar_t) + 1) * utf16_bytes);
     if (utf16 == NULL)
         return NULL;
 
@@ -28,10 +28,31 @@ utf8_to_utf16(const char* utf8, int utf8_bytes)
     return utf16;
 }
 
-void
-utf16_free(wchar_t* utf16)
+char*
+utf16_to_utf8(const wchar_t* utf16, int utf16_len)
 {
-    mem_free(utf16);
+    int utf8_bytes = WideCharToMultiByte(CP_UTF8, 0, utf16, utf16_len, NULL, 0, NULL, NULL);
+    if (utf8_bytes == 0)
+        return NULL;
+
+    char* utf8 = mem_alloc(utf8_bytes + 1);
+    if (utf8 == NULL)
+        return NULL;
+
+    if (WideCharToMultiByte(CP_UTF8, 0, utf16, utf16_len, utf8, utf8_bytes, NULL, NULL) == 0)
+    {
+        mem_free(utf8);
+        return NULL;
+    }
+
+    utf8[utf8_bytes] = 0;
+    return utf8;
+}
+
+void
+utf_free(void* utf)
+{
+    mem_free(utf);
 }
 
 FILE*

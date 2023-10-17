@@ -76,7 +76,7 @@ mfile_map(struct mfile* mf, const char* utf8_filename)
     /* The file mapping isn't required anymore */
     CloseHandle(mapping);
     CloseHandle(hFile);
-    utf16_free(utf16_filename);
+    utf_free(utf16_filename);
 
     mf->size = liFileSize.QuadPart;
 
@@ -85,7 +85,7 @@ mfile_map(struct mfile* mf, const char* utf8_filename)
     map_view_failed            : CloseHandle(mapping);
     create_file_mapping_failed :
     get_file_size_failed       : CloseHandle(hFile);
-    open_failed                : utf16_free(utf16_filename);
+    open_failed                : utf_free(utf16_filename);
     utf16_conv_failed          : return -1;
 }
 

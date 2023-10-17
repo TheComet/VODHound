@@ -1,7 +1,10 @@
 #include "vh/fs.h"
+#include "vh/utf8.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <KnownFolders.h>
+#include <ShlObj.h>
 
 void
 path_set_take(struct path* path, struct str str)
@@ -86,4 +89,40 @@ int
 fs_file_exists(const char* file_path)
 {
     return GetFileAttributes(file_path) != INVALID_FILE_ATTRIBUTES;
+}
+
+static struct str appdata_dir;
+
+struct str_view
+fs_appdata_dir(void)
+{
+    return str_view(appdata_dir);
+}
+
+int
+fs_init(void)
+{
+    char* utf8_path;
+    PWSTR path = NULL;
+    HRESULT hr = SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, NULL, &path);
+    if (FAILED(hr))
+        goto get_folder_failed;
+
+    utf8_path = utf16_to_utf8(path, (int)wcslen(path));
+    if (utf8_path == NULL)
+        goto utf_conversion_failed;
+
+    appdata_dir.data = utf8_path;
+    appdata_dir.len = (int)strlen(utf8_path);
+
+    return 0;
+
+    utf_conversion_failed : CoTaskMemFree(path);
+    get_folder_failed     : return -1;
+}
+
+void
+fs_deinit(void)
+{
+    utf_free(appdata_dir.data);
 }

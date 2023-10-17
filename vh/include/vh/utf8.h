@@ -11,8 +11,11 @@ C_BEGIN
 VH_PRIVATE_API wchar_t*
 utf8_to_utf16(const char* utf8, int utf8_bytes);
 
+VH_PRIVATE_API char*
+utf16_to_utf8(const wchar_t* utf16, int utf16_len);
+
 VH_PRIVATE_API void
-utf16_free(wchar_t* utf16);
+utf_free(void* utf);
 
 #endif
 
