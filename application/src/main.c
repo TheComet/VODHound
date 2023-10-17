@@ -223,6 +223,34 @@ clear_video:
     return IUP_DEFAULT;
 }
 
+static int
+on_filter_action(Ihandle* ih, int c, const char* text)
+{
+    return IUP_DEFAULT;
+}
+
+static int
+on_filter_caret(Ihandle* ih, int lin, int col, int pos)
+{
+    int x, y;
+    struct str_view sx, sy;
+    struct str_view text = cstr_view(IupGetAttribute(ih, "VALUE"));
+    //Ihandle* suggestions = IupGetAttributeHandle(ih, "suggestions");
+    //Ihandle* list = IupGetChild(suggestions, 0);
+
+    struct str_view screenpos = cstr_view(IupGetAttribute(ih, "SCREENPOSITION"));
+    str_split2(screenpos, ',',  &sx, &sy);
+    str_dec_to_int(sx, &x);
+    str_dec_to_int(sy, &y);
+
+    //IupShowXY(suggestions, x, y);
+    IupSetAttribute(ih, "APPENDITEM", "test1");
+    IupSetAttribute(ih, "APPENDITEM", "test2");
+    IupSetAttribute(ih, "SHOWDROPDOWN", "YES");
+
+    return IUP_DEFAULT;
+}
+
 static Ihandle*
 create_replay_browser(void)
 {
@@ -232,8 +260,20 @@ create_replay_browser(void)
     groups = IupSetAttributes(IupList(NULL), "EXPAND=YES, 1=All, VALUE=1");
     sbox = IupSetAttributes(IupSbox(groups), "DIRECTION=SOUTH, COLOR=255 255 255");
 
+    Ihandle* suggestions = IupDialog(IupList(NULL));
+    IupSetAttribute(suggestions, "RESIZE", "NO");
+    IupSetAttribute(suggestions, "MENUBOX", "NO");
+    IupSetAttribute(suggestions, "MAXBOX", "NO");
+    IupSetAttribute(suggestions, "MINBOX", "NO");
+    IupSetAttribute(suggestions, "NOFLUSH", "Yes");
+    IupSetAttribute(suggestions, "BORDER", "NO");
+
     filter_label = IupSetAttributes(IupLabel("Filters:"), "PADDING=10x5");
-    filters = IupSetAttributes(IupText(NULL), "EXPAND=HORIZONTAL");
+    //filters = IupSetAttributes(IupText(NULL), "EXPAND=HORIZONTAL");
+    filters = IupSetAttributes(IupList(NULL), "EXPAND=HORIZONTAL, EDITBOX=YES, DROPDOWN=YES");
+    IupSetCallback(filters, "ACTION", (Icallback)on_filter_action);
+    IupSetCallback(filters, "CARET_CB", (Icallback)on_filter_caret);
+    IupSetAttributeHandle(filters, "suggestions", suggestions);
     hbox = IupHbox(filter_label, filters, NULL);
 
     replays = IupTree();

@@ -431,10 +431,10 @@ decode_next_frame(struct decoder* decoder)
             send_error              : av_packet_unref(decoder->current_packet);
             return false;*/
         }
-        else if (decoder->current_packet->stream_index == decoder->astream_idx)
+        /*else if (decoder->current_packet->stream_index == decoder->astream_idx)
         {
 
-        }
+        }*/
         else
         {
             av_packet_unref(decoder->current_packet);
