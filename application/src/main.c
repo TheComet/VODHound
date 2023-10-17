@@ -469,9 +469,7 @@ int main(int argc, char **argv)
     IupGfxOpen();
 
     Ihandle* dlg = create_main_dialog(dbi, db);
-
-    IupSetAttribute(dlg, "PLACEMENT", "MAXIMIZED");
-    IupShow(dlg);
+    IupMap(dlg);
 
     Ihandle* replays = IupGetHandle("replay_browser");
     IupSetAttribute(replays, "TITLE", "Replays");
@@ -492,6 +490,9 @@ int main(int argc, char **argv)
 
     Ihandle* plugin_view = IupGetHandle("plugin_view");
     plugin_view_open_plugin(plugin_view, cstr_view("VOD Review"));
+
+    IupSetAttribute(dlg, "PLACEMENT", "MAXIMIZED");
+    IupShow(dlg);
 
     IupMainLoop();
 
