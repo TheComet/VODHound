@@ -1,11 +1,23 @@
+-- Maps SSBU stage IDs (they start at index 0) to readable stage names.
+-- The stage names are user-defined, and are used in queries and are
+-- displayed in the UI. The table is initialized from a list of predefined
+-- handwritten names.
 CREATE TABLE IF NOT EXISTS stages (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL
 );
+
+-- Maps SSBU fighter IDs (starting at index 0) to readable fighter names.
+-- The fighter names are user-defined, and are used in queries and are
+-- displayed in the UI. The table is initialized from a list of predefined
+-- handwritten names.
 CREATE TABLE IF NOT EXISTS fighters (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL
 );
+
+-- Maps "hit status" values to their symbol name (extracted from the game).
+-- Example: 
 CREATE TABLE IF NOT EXISTS hit_status_enums (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL

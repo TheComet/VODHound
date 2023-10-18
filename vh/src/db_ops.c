@@ -908,10 +908,10 @@ game_query(struct db* ctx,
         "        group_concat(REPLACE(IFNULL(fighters.name, game_players.fighter_id), '+', '\\+'), '+') fighters, "
         "        group_concat(game_players.costume, '+') costumes "
         "    FROM game_players "
-        "    JOIN games ON games.id = game_players.game_id "
-        "    JOIN teams ON teams.id = game_players.team_id "
+        "    INNER JOIN games ON games.id = game_players.game_id "
+        "    INNER JOIN teams ON teams.id = game_players.team_id "
         "    LEFT JOIN scores ON scores.team_id = game_players.team_id AND scores.game_id = game_players.game_id "
-        "    JOIN people ON people.id = game_players.person_id "
+        "    INNER JOIN people ON people.id = game_players.person_id "
         "    LEFT JOIN fighters ON fighters.id = game_players.fighter_id "
         "    LEFT JOIN sponsors ON sponsors.id = people.sponsor_id "
         "    GROUP BY games.id, game_players.team_id "
@@ -940,7 +940,7 @@ game_query(struct db* ctx,
         "LEFT JOIN event_types ON event_types.id = events.event_type_id "
         "LEFT JOIN stages ON stages.id = grouped_games.stage_id "
         "LEFT JOIN round_types ON grouped_games.round_type_id = round_types.id "
-        "JOIN set_formats ON grouped_games.set_format_id = set_formats.id "
+        "INNER JOIN set_formats ON grouped_games.set_format_id = set_formats.id "
         "GROUP BY grouped_games.id "
         "ORDER BY time_started DESC;");
 
