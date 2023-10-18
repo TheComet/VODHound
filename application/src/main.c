@@ -65,68 +65,27 @@ plugin_view_open_plugin(Ihandle* plugin_view, struct str_view plugin_name)
     return -1;
 }
 
-struct query_game_ctx
+static int
+on_filter_action(Ihandle* ih, int c, const char* text)
 {
-    struct db_interface* dbi;
-    struct db* db;
-    Ihandle* replays;
-    struct str name;
-};
-
-static int on_game_query(
-    int game_id,
-    uint64_t time_started,
-    uint64_t time_ended,
-    const char* tournament,
-    const char* event,
-    const char* stage,
-    const char* round,
-    const char* format,
-    const char* teams,
-    const char* scores,
-    const char* slots,
-    const char* sponsors,
-    const char* players,
-    const char* fighters,
-    const char* costumes,
-    void* user)
-{
-    struct query_game_ctx* ctx = user;
-    struct str_view team1, team2, fighter1, fighter2, score1, score2;
-    int s1, s2, game_number;
-
-    char datetime[17];
-    char node_attr[19];  /* "ADDLEAF" + "-2147483648" */
-
-    time_started = time_started / 1000;
-    strftime(datetime, sizeof(datetime), "%y-%m-%d %H:%M", localtime((time_t*)&time_started));
-
-    str_split2(cstr_view(teams), ',', &team1, &team2);
-    str_split2(cstr_view(fighters), ',', &fighter1, &fighter2);
-    str_split2(cstr_view(scores), ',', &score1, &score2);
-
-    str_dec_to_int(score1, &s1);
-    str_dec_to_int(score2, &s2);
-    game_number = s1 + s2 + 1;
-
-    str_fmt(&ctx->name, "%s - %s %s - %.*s (%.*s) vs %.*s (%.*s) Game %d",
-        datetime, round, format,
-        team1.len, team1.data, fighter1.len, fighter1.data,
-        team2.len, team2.data, fighter2.len, fighter2.data,
-        game_number);
-    str_terminate(&ctx->name);
-
-    IupSetInt(ctx->replays, "VALUE", 0);  /* Select the "Replays" root node */
-    int insert_id = IupGetInt(ctx->replays, "CHILDCOUNT");  /* Number of children in the "Replays" root node */
-    int node_id = insert_id + 1;  /* Account for there being 1 root node */
-    sprintf(node_attr, "ADDLEAF%d", insert_id);
-    IupSetAttribute(ctx->replays, node_attr, ctx->name.data);
-    IupTreeSetUserId(ctx->replays, node_id, (void*)(intptr_t)game_id);
-
-    return 0;
+    return IUP_DEFAULT;
 }
 
-struct on_replay_browser_video_path_ctx
+static int
+on_filter_caret(Ihandle* ih, int lin, int col, int pos)
+{
+    struct str_view text = cstr_view(IupGetAttribute(ih, "VALUE"));
+    struct dbi_interface* dbi = (struct dbi_interface*)IupGetAttribute(ih, "dbi");
+    struct db* db = (struct db*)IupGetAttribute(ih, "db");
+    Ihandle* replay_tree = IupGetAttributeHandle(ih, "replay_tree");
+
+    IupSetAttributeId(replay_tree, "TITLE", 2, "");
+    IupSetAttributeId(replay_tree, "STATE", 2, "HIDDEN");
+
+    return IUP_DEFAULT;
+}
+
+struct replay_browser_video_path_ctx
 {
     struct vec* plugin_state_vec;
     int64_t frame_offset;
@@ -138,7 +97,7 @@ static int
 on_replay_browser_video_path(const char* path, void* user)
 {
     int combined_success = 0;
-    struct on_replay_browser_video_path_ctx* ctx = user;
+    struct replay_browser_video_path_ctx* ctx = user;
 
     path_set(&ctx->file_path, cstr_view(path));
     path_join(&ctx->file_path, ctx->file_name);
@@ -163,7 +122,7 @@ on_replay_browser_node_selected(Ihandle* ih, int node_id, int selected)
     Ihandle* plugin_view;
     struct db_interface* dbi;
     struct db* db;
-    struct on_replay_browser_video_path_ctx ctx;
+    struct replay_browser_video_path_ctx ctx;
     const char* file_name;
     const char* path_hint;
     int game_id;
@@ -223,34 +182,88 @@ clear_video:
     return IUP_DEFAULT;
 }
 
-static int
-on_filter_action(Ihandle* ih, int c, const char* text)
+struct replay_browser_game_query_ctx
 {
-    return IUP_DEFAULT;
-}
+    struct db_interface* dbi;
+    struct db* db;
+    Ihandle* replay_tree;
+    struct str name;
+};
 
-static int
-on_filter_caret(Ihandle* ih, int lin, int col, int pos)
+static int on_replay_browser_game_query(
+    int game_id,
+    uint64_t time_started,
+    uint64_t time_ended,
+    const char* tournament,
+    const char* event,
+    const char* stage,
+    const char* round,
+    const char* format,
+    const char* teams,
+    const char* scores,
+    const char* slots,
+    const char* sponsors,
+    const char* players,
+    const char* fighters,
+    const char* costumes,
+    void* user)
 {
-    struct str_view text = cstr_view(IupGetAttribute(ih, "VALUE"));
-    struct dbi_interface* dbi = (struct dbi_interface*)IupGetAttribute(ih, "dbi");
-    struct db* db = (struct db*)IupGetAttribute(ih, "db");
+    struct replay_browser_game_query_ctx* ctx = user;
+    struct str_view team1, team2, fighter1, fighter2, score1, score2;
+    int s1, s2, game_number;
 
+    char datetime[17];
+    char node_attr[19];  /* "ADDLEAF" + "-2147483648" */
 
-    return IUP_DEFAULT;
+    time_started = time_started / 1000;
+    strftime(datetime, sizeof(datetime), "%y-%m-%d %H:%M", localtime((time_t*)&time_started));
+
+    str_split2(cstr_view(teams), ',', &team1, &team2);
+    str_split2(cstr_view(fighters), ',', &fighter1, &fighter2);
+    str_split2(cstr_view(scores), ',', &score1, &score2);
+
+    str_dec_to_int(score1, &s1);
+    str_dec_to_int(score2, &s2);
+    game_number = s1 + s2 + 1;
+
+    str_fmt(&ctx->name, "%s - %s %s - %.*s (%.*s) vs %.*s (%.*s) Game %d",
+        datetime, round, format,
+        team1.len, team1.data, fighter1.len, fighter1.data,
+        team2.len, team2.data, fighter2.len, fighter2.data,
+        game_number);
+    str_terminate(&ctx->name);
+
+    IupSetInt(ctx->replay_tree, "VALUE", 0);  /* Select the "Replays" root node */
+    int insert_id = IupGetInt(ctx->replay_tree, "CHILDCOUNT");  /* Number of children in the "Replays" root node */
+    int node_id = insert_id + 1;  /* Account for there being 1 root node */
+    if (node_id > 5)
+        return 0;
+    sprintf(node_attr, "ADDLEAF%d", insert_id);
+    IupSetAttributeId(ctx->replay_tree, "ADDLEAF", insert_id, ctx->name.data);
+    IupTreeSetUserId(ctx->replay_tree, node_id, (void*)(intptr_t)game_id);
+
+    return 0;
 }
 
 static Ihandle*
 create_replay_browser(struct db_interface* dbi, struct db* db)
 {
-    Ihandle *groups, *filter_label, *filters, *replays;
+    Ihandle *groups, *filter_label, *filters, * replay_tree;
     Ihandle *vbox, *hbox, *sbox;
 
     groups = IupSetAttributes(IupList(NULL), "EXPAND=YES, 1=All, VALUE=1");
     sbox = IupSetAttributes(IupSbox(groups), "DIRECTION=SOUTH, COLOR=255 255 255");
 
+    replay_tree = IupTree();
+    IupSetAttribute(replay_tree, "TITLE", "Replays");
+    IupSetAttribute(replay_tree, "dbi", (char*)dbi);
+    IupSetAttribute(replay_tree, "db", (char*)db);
+    IupSetCallback(replay_tree, "SELECTION_CB", (Icallback)on_replay_browser_node_selected);
+    IupSetHandle("replay_browser", replay_tree);
+
     filter_label = IupSetAttributes(IupLabel("Filters:"), "PADDING=10x5");
     filters = IupSetAttributes(IupText(NULL), "EXPAND=HORIZONTAL");
+    IupSetAttributeHandle(filters, "replay_tree", replay_tree);
     IupSetAttribute(filters, "dbi", (char*)dbi);
     IupSetAttribute(filters, "db", (char*)db);
     IupSetCallback(filters, "ACTION", (Icallback)on_filter_action);
@@ -258,11 +271,7 @@ create_replay_browser(struct db_interface* dbi, struct db* db)
 
     hbox = IupHbox(filter_label, filters, NULL);
 
-    replays = IupTree();
-    IupSetCallback(replays, "SELECTION_CB", (Icallback)on_replay_browser_node_selected);
-    IupSetHandle("replay_browser", replays);
-
-    return IupVbox(sbox, hbox, replays, NULL);
+    return IupVbox(sbox, hbox, replay_tree, NULL);
 }
 
 static int
@@ -471,19 +480,16 @@ int main(int argc, char **argv)
     Ihandle* dlg = create_main_dialog(dbi, db);
     IupMap(dlg);
 
-    Ihandle* replays = IupGetHandle("replay_browser");
-    IupSetAttribute(replays, "TITLE", "Replays");
-    IupSetAttribute(replays, "dbi", (char*)dbi);
-    IupSetAttribute(replays, "db", (char*)db);
+    Ihandle* replay_tree = IupGetHandle("replay_browser");
 
     {
-        struct query_game_ctx ctx;
+        struct replay_browser_game_query_ctx ctx;
         ctx.dbi = dbi;
         ctx.db = db;
-        ctx.replays = replays;
+        ctx.replay_tree = replay_tree;
         str_init(&ctx.name);
 
-        dbi->game.query(db, on_game_query, &ctx);
+        dbi->game.query(db, on_replay_browser_game_query, &ctx);
 
         str_deinit(&ctx.name);
     }

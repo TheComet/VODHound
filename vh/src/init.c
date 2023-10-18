@@ -1,4 +1,5 @@
 #include "vh/backtrace.h"
+#include "vh/db_ops.h"
 #include "vh/fs.h"
 #include "vh/mem.h"
 #include "vh/init.h"
@@ -16,9 +17,12 @@ vh_init(void)
         goto backtrace_init_failed;
     if (fs_init() < 0)
         goto fs_init_failed;
+    if (db_init() < 0)
+        goto db_init_failed;
 
     return 0;
 
+    db_init_failed          : fs_deinit();
     fs_init_failed          : backtrace_deinit();
     backtrace_init_failed   : return -1;
 }
@@ -27,6 +31,7 @@ vh_init(void)
 void
 vh_deinit(void)
 {
+    db_deinit();
     fs_deinit();
     backtrace_deinit();
 }

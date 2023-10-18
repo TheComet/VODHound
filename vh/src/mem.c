@@ -58,7 +58,7 @@ mem_threadlocal_init(void)
 
 /* ------------------------------------------------------------------------- */
 void*
-mem_alloc(uintptr_t size)
+mem_alloc(int size)
 {
     void* p = NULL;
     report_info_t info = {0};
@@ -119,7 +119,7 @@ mem_alloc(uintptr_t size)
 
 /* ------------------------------------------------------------------------- */
 void*
-mem_realloc(void* p, uintptr_t new_size)
+mem_realloc(void* p, int new_size)
 {
     void* old_p = p;
     p = realloc(p, new_size);

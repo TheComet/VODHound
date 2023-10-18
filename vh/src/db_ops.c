@@ -1354,3 +1354,41 @@ struct db_interface* db(const char* type)
         return &db_sqlite;
     return NULL;
 }
+
+#if defined(VH_MEM_DEBUGGING)
+static int
+vh_mem_roundup(int size) { return size; }
+static int
+vh_mem_init(void* user) { (void)user; return 0; }
+static void
+vh_mem_deinit(void* user) { (void)user; }
+
+static struct sqlite3_mem_methods vh_mem_sqlite = {
+    mem_alloc,
+    mem_free,
+    mem_realloc,
+    mem_size,
+    vh_mem_roundup,
+    vh_mem_init,
+    vh_mem_deinit,
+    NULL
+};
+#endif
+
+int
+db_init(void)
+{
+#if defined(VH_MEM_DEBUGGING)
+    sqlite3_config(SQLITE_CONFIG_MALLOC, &vh_mem_sqlite);
+#endif
+
+    if (sqlite3_initialize() != SQLITE_OK)
+        return -1;
+    return 0;
+}
+
+void
+db_deinit(void)
+{
+    sqlite3_shutdown();
+}

@@ -139,4 +139,10 @@ struct db_interface
 VH_PUBLIC_API struct db_interface*
 db(const char* type);
 
+VH_PRIVATE_API int
+db_init(void);
+
+VH_PRIVATE_API void
+db_deinit(void);
+
 C_END

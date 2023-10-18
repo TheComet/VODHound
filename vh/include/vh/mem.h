@@ -12,7 +12,7 @@
 
 #if defined(_WIN32)
 #   include <malloc.h>
-#   define mem_size  _msize
+static inline int mem_size(void* p) { return (int)_msize(p); }
 #elif defined(__APPLE__)
 #   include <malloc/malloc.h>
 #   define mem_size  malloc_size
@@ -51,14 +51,14 @@ mem_threadlocal_deinit(void);
  * additional work to monitor and track down memory leaks.
  */
 VH_PUBLIC_API void*
-mem_alloc(size_t size);
+mem_alloc(int size);
 
 /*!
  * @brief Does the same thing as a normal call to realloc(), but does some
  * additional work to monitor and track down memory leaks.
  */
 VH_PUBLIC_API void*
-mem_realloc(void* ptr, size_t new_size);
+mem_realloc(void* ptr, int new_size);
 
 /*!
  * @brief Does the same thing as a normal call to fee(), but does some
