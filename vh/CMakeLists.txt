@@ -74,6 +74,7 @@ add_library (vh ${VH_LIB_TYPE}
     "include/vh/fs.h"
     "include/vh/hash.h"
     "include/vh/hm.h"
+    "include/vh/import.h"
     "include/vh/init.h"
     "include/vh/log.h"
     "include/vh/mem.h"
@@ -100,6 +101,20 @@ add_library (vh ${VH_LIB_TYPE}
     "src/rb.c"
     "src/str.c"
     "src/vec.c"
+    "src/import/param_labels_csv.c"
+    "src/import/reframed.c"
+    "src/import/reframed_framedata.c"
+    "src/import/reframed_framedata_1_5.c"
+    "src/import/reframed_mapping_info.c"
+    "src/import/reframed_metadata.c"
+    "src/import/reframed_metadata_1_5.c"
+    "src/import/reframed_metadata_1_6.c"
+    "src/import/reframed_metadata_1_7.c"
+    "src/import/reframed_motion_labels.c"
+    "src/import/reframed_player_details.c"
+    "src/import/reframed_replay.c"
+    "src/import/reframed_videometadata.c"
+    "src/import/reframed_videometadata_1_0.c"
 
     $<$<PLATFORM_ID:Linux>:$<$<BOOL:${VH_MEM_BACKTRACE}>:src/linux/backtrace_linux.c>>
     $<$<PLATFORM_ID:Linux>:src/linux/dynlib_linux.c>
@@ -135,6 +150,7 @@ target_link_libraries (vh
         $<$<PLATFORM_ID:Windows>:wsock32>
         $<$<PLATFORM_ID:Windows>:ws2_32>
         VODHound::json-c
+        ZLIB::ZLIB
         sqlite)
 set_target_properties (vh
     PROPERTIES

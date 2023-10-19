@@ -35,7 +35,7 @@ option (JSON_C_DISABLE_EXTRA_LIBS           "Avoid linking against extra librari
 option (JSON_C_DISABLE_JSON_POINTER         "Disable JSON pointer (RFC6901) and JSON patch support." OFF)
 option (JSON_C_DISABLE_JSON_PATCH           "Disable JSON patch (RFC6902) support."                  OFF)
 option (JSON_C_NEWLOCALE_NEEDS_FREELOCALE   "Work around newlocale bugs in old FreeBSD by calling freelocale"  OFF)
-option (JSON_C_PIC                          "Compile with position independent code"                 OFF)
+option (JSON_C_PIC                          "Compile with position independent code"                 ON)
 option (JSON_C_BUILD_APPS                   "Default to building apps" OFF)
 
 check_include_file("fcntl.h"        HAVE_FCNTL_H)
@@ -359,6 +359,7 @@ set_target_properties(${PROJECT_NAME}
         VERSION 5.3.0
         SOVERSION 5
         DEBUG_POSTFIX "d"
+        POSITION_INDEPENDENT_CODE ${JSON_C_PIC}
         MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>)
 if (NOT JSON_C_DISABLE_BSYMBOLIC AND BSYMBOLIC_WORKS)
     #target_compile_options (json-c PRIVATE "-Wl,-Bsymbolic-functions")

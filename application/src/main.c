@@ -1,7 +1,6 @@
-#include "application/import.h"
-
 #include "vh/db_ops.h"
 #include "vh/init.h"
+#include "vh/import.h"
 #include "vh/log.h"
 #include "vh/plugin.h"
 #include "vh/plugin_loader.h"
@@ -236,8 +235,6 @@ static int on_replay_browser_game_query(
     IupSetInt(ctx->replay_tree, "VALUE", 0);  /* Select the "Replays" root node */
     int insert_id = IupGetInt(ctx->replay_tree, "CHILDCOUNT");  /* Number of children in the "Replays" root node */
     int node_id = insert_id + 1;  /* Account for there being 1 root node */
-    if (node_id > 5)
-        return 0;
     sprintf(node_attr, "ADDLEAF%d", insert_id);
     IupSetAttributeId(ctx->replay_tree, "ADDLEAF", insert_id, ctx->name.data);
     IupTreeSetUserId(ctx->replay_tree, node_id, (void*)(intptr_t)game_id);

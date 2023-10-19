@@ -1,4 +1,4 @@
-#include "application/import.h"
+#include "vh/import.h"
 
 #include "vh/fs.h"
 #include "vh/db_ops.h"
@@ -34,7 +34,6 @@ struct on_game_path_file_ctx
 static int
 on_game_path_file(const char* name_cstr, void* user)
 {
-    int ret;
     struct on_game_path_file_ctx* ctx = user;
     struct str_view name = cstr_view(name_cstr);
 
@@ -64,12 +63,14 @@ import_reframed_config(struct db_interface* dbi, struct db* db, const char* file
 
     struct json_object* autoassociatevideos = json_object_object_get(
                 json_object_object_get(root, "activesessionmanager"), "autoassociatevideos");
-    const char* path = json_object_get_string(json_object_object_get(autoassociatevideos, "dir"));
-    int frame_offset = json_object_get_int(json_object_object_get(autoassociatevideos, "offset"));
-    if (path && *path)
     {
-        if (dbi->stream_recording_sources.add(db, cstr_view(path), frame_offset) < 0)
-            goto fail;
+        const char* path = json_object_get_string(json_object_object_get(autoassociatevideos, "dir"));
+        int frame_offset = json_object_get_int(json_object_object_get(autoassociatevideos, "offset"));
+        if (path && *path)
+        {
+            if (dbi->stream_recording_sources.add(db, cstr_view(path), frame_offset) < 0)
+                goto fail;
+        }
     }
 
     struct json_object* connectinfo = json_object_object_get(root, "connectview");
@@ -77,16 +78,16 @@ import_reframed_config(struct db_interface* dbi, struct db* db, const char* file
     const char* lastport = json_object_get_string(json_object_object_get(connectinfo, "lastport"));
     if (lastip && lastport && *lastip && *lastport)
     {
-        if (dbi->switch_info.add(db, cstr_view("Nintendo Switch"), cstr_view(lastip), atoi(lastport)) < 0)
+        if (dbi->switch_info.add(db, cstr_view("Nintendo Switch"), cstr_view(lastip), (uint16_t)atoi(lastport)) < 0)
             goto fail;
     }
 
     struct json_object* videopaths = json_object_object_get(json_object_object_get(root, "replaymanager"), "videopaths");
     if (json_object_get_type(videopaths) != json_type_array)
         goto fail;
-    for (int i = 0; i != json_object_array_length(videopaths); ++i)
+    for (int i = 0; i != (int)json_object_array_length(videopaths); ++i)
     {
-        const char* path = json_object_get_string(json_object_array_get_idx(videopaths, i));
+        const char* path = json_object_get_string(json_object_array_get_idx(videopaths, (size_t)i));
         if (!path || !*path)
             continue;
         if (dbi->video.add_path(db, cstr_view(path)) != 0)
@@ -97,12 +98,12 @@ import_reframed_config(struct db_interface* dbi, struct db* db, const char* file
     if (json_object_get_type(gamepaths) != json_type_array)
         goto fail;
 
-    struct on_game_path_file_ctx gamepaths_ctx = { dbi, db };
+    struct on_game_path_file_ctx gamepaths_ctx = { dbi, db, {} };
     path_init(&gamepaths_ctx.path);
 
-    for (int i = 0; i != json_object_array_length(gamepaths); ++i)
+    for (int i = 0; i != (int)json_object_array_length(gamepaths); ++i)
     {
-        const char* path = json_object_get_string(json_object_array_get_idx(gamepaths, i));
+        const char* path = json_object_get_string(json_object_array_get_idx(gamepaths, (size_t)i));
         if (!path || !*path)
             continue;
 

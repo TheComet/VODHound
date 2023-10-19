@@ -67,7 +67,8 @@ target_include_directories (sqlite
 target_link_libraries (sqlite
     PRIVATE
         sqlite_def
-        $<$<PLATFORM_ID:Linux>:$<$<BOOL:${SQLITE_EXTENSIONS}>:dl>>)
+        $<$<PLATFORM_ID:Linux>:$<$<BOOL:${SQLITE_EXTENSIONS}>:dl>>
+        $<$<PLATFORM_ID:Linux>:$<$<BOOL:${SQLITE_FTS5}>:m>>)
 set_target_properties (sqlite
     PROPERTIES
         MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>
@@ -102,7 +103,7 @@ if (SQLITE_CLI)
         target_link_libraries (sqlite_cli PRIVATE Readline::Readline)
         target_compile_definitions (sqlite_cli PRIVATE HAVE_READLINE)
     endif ()
-    
+
     install (
         TARGETS sqlite_cli
         RUNTIME DESTINATION ${VODHOUND_INSTALL_BINDIR})
