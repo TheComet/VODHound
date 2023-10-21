@@ -7,6 +7,7 @@ install (
     FILES "cmake/modules/VODHoundPlugin.cmake"
     DESTINATION "${VODHOUND_BUILD_CMAKEDIR}/modules")
 
+add_subdirectory ("search")
 add_subdirectory ("video-ffmpeg")
 add_subdirectory ("vod-review")
 

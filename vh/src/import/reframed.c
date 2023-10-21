@@ -98,7 +98,9 @@ import_reframed_config(struct db_interface* dbi, struct db* db, const char* file
     if (json_object_get_type(gamepaths) != json_type_array)
         goto fail;
 
-    struct on_game_path_file_ctx gamepaths_ctx = { dbi, db, {} };
+    struct on_game_path_file_ctx gamepaths_ctx;
+    gamepaths_ctx.dbi = dbi;
+    gamepaths_ctx.db = db;
     path_init(&gamepaths_ctx.path);
 
     for (int i = 0; i != (int)json_object_array_length(gamepaths); ++i)

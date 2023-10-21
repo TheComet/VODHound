@@ -45,7 +45,7 @@ add_subdirectory ("thirdparty/iup-cmake")
 add_subdirectory ("vh")
 add_subdirectory ("iupgfx")
 add_subdirectory ("application")
-add_subdirectory ("application-gtk4")
+#add_subdirectory ("application-gtk4")
 add_subdirectory ("plugins")
 
 # "application" target should be the startup project in VS
