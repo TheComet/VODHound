@@ -10,4 +10,3 @@ install (
 add_subdirectory ("search")
 add_subdirectory ("video-ffmpeg")
 add_subdirectory ("vod-review")
-

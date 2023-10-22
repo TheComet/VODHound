@@ -1,232 +1,219 @@
 #include "search/ast.h"
+#include "search/parser.y.h"
 
-// ----------------------------------------------------------------------------
-QueryASTNode* QueryASTNode::newStatement(QueryASTNode* child, QueryASTNode* next)
+#include "vh/hm.h"
+#include "vh/mem.h"
+
+#include <stddef.h>
+
+#define MALLOC_AND_INIT(node_type, loc)      \
+    mem_alloc(sizeof(union ast_node));       \
+    if (node == NULL)                        \
+        return NULL;                         \
+    node->base.info.type = node_type;        \
+    node->base.info.loc.begin = loc->begin;  \
+    node->base.info.loc.end = loc->end;      \
+    node->base.left = NULL;                  \
+    node->base.right = NULL;
+
+union ast_node* ast_statement(union ast_node* child, union ast_node* next, struct YYLTYPE* loc)
 {
-    return new QueryASTNode(Statement(child, next));
+    union ast_node* node = MALLOC_AND_INIT(AST_STATEMENT, loc);
+    node->statement.child = child;
+    node->statement.next = next;
+    return node;
 }
 
-// ----------------------------------------------------------------------------
-QueryASTNode* QueryASTNode::newRepitition(QueryASTNode* child, int minreps, int maxreps)
+union ast_node* ast_repetition(union ast_node* child, int min_reps, int max_reps, struct YYLTYPE* loc)
 {
-    return new QueryASTNode(Repitition(child, minreps, maxreps));
+    union ast_node* node = MALLOC_AND_INIT(AST_REPETITION, loc);
+    node->repetition.child = child;
+    node->repetition.min_reps = min_reps;
+    node->repetition.max_reps = max_reps;
+    return node;
 }
 
-// ----------------------------------------------------------------------------
-QueryASTNode* QueryASTNode::newUnion(QueryASTNode* child, QueryASTNode* next)
+union ast_node* ast_union(union ast_node* child, union ast_node* next, struct YYLTYPE* loc)
 {
-    return new QueryASTNode(Union(child, next));
+    union ast_node* node = MALLOC_AND_INIT(AST_UNION, loc);
+    node->union_.child = child;
+    node->union_.next = next;
+    return node;
 }
 
-// ----------------------------------------------------------------------------
-QueryASTNode* QueryASTNode::newInversion(QueryASTNode* child)
+union ast_node* ast_inversion(union ast_node* child, struct YYLTYPE* loc)
 {
-    return new QueryASTNode(Inversion(child));
+    union ast_node* node = MALLOC_AND_INIT(AST_INVERSION, loc);
+    node->inversion.child = child;
+    return node;
 }
 
-// ----------------------------------------------------------------------------
-QueryASTNode* QueryASTNode::newWildcard()
+union ast_node* ast_context_qualifier(union ast_node* child, uint8_t flags, struct YYLTYPE* loc)
 {
-    return new QueryASTNode(WILDCARD);
+    union ast_node* node = MALLOC_AND_INIT(AST_CONTEXT_QUALIFIER, loc);
+    node->context_qualifier.child = child;
+    node->context_qualifier.flags = flags;
+    return node;
 }
 
-// ----------------------------------------------------------------------------
-QueryASTNode* QueryASTNode::newLabel(const char* label)
+union ast_node* ast_label_steal(char* label, struct YYLTYPE* loc)
 {
-    return new QueryASTNode(label);
+    union ast_node* node = MALLOC_AND_INIT(AST_LABEL, loc);
+    node->labels.label = label;
+    return node;
 }
 
-// ----------------------------------------------------------------------------
-QueryASTNode* QueryASTNode::newLabel(const char* label, const char* oppLabel)
+union ast_node* ast_labels_steal(char* label, char* opponent_label, struct YYLTYPE* loc)
 {
-    return new QueryASTNode(label, oppLabel);
+    union ast_node* node = MALLOC_AND_INIT(AST_LABEL, loc);
+    node->labels.label = label;
+    node->labels.opponent_label = opponent_label;
+    return node;
 }
 
-// ----------------------------------------------------------------------------
-QueryASTNode* QueryASTNode::newContextQualifier(QueryASTNode* child, uint8_t contextQualifierFlags)
+union ast_node* ast_wildcard(struct YYLTYPE* loc)
 {
-    return new QueryASTNode(ContextQualifier(child, contextQualifierFlags));
+    union ast_node* node = MALLOC_AND_INIT(AST_WILDCARD, loc);
+    return node;
 }
 
-// ----------------------------------------------------------------------------
-void QueryASTNode::destroySingle(QueryASTNode* node)
+void ast_destroy_single(union ast_node* node)
 {
-    delete node;
-}
-
-// ----------------------------------------------------------------------------
-void QueryASTNode::destroyRecurse(QueryASTNode* node)
-{
-    switch (node->type)
+    if (node->info.type == AST_LABEL)
     {
-    case STATEMENT:
-        destroyRecurse(node->statement.child);
-        destroyRecurse(node->statement.next);
-        break;
-    case REPITITION:
-        destroyRecurse(node->repitition.child);
-        break;
-    case UNION:
-        destroyRecurse(node->union_.child);
-        destroyRecurse(node->union_.next);
-        break;
-    case INVERSION:
-        destroyRecurse(node->inversion.child);
-        break;
-    case WILDCARD:
-        break;
-    case LABEL:
-        break;
-    case CONTEXT_QUALIFIER:
-        destroyRecurse(node->contextQualifier.child);
-        break;
+        mem_free(node->labels.label);
+        if (node->labels.opponent_label)
+            mem_free(node->labels.opponent_label);
     }
 
-    destroySingle(node);
+    mem_free(node);
+}
+
+void ast_destroy_recurse(union ast_node* node)
+{
+    if (node->base.left)
+        ast_destroy_recurse(node->base.left);
+    if (node->base.right)
+        ast_destroy_recurse(node->base.right);
+
+    ast_destroy_single(node);
 }
 
 // ----------------------------------------------------------------------------
-static void calculateNodeIDs(const QueryASTNode* node, rfcommon::HashMap<const QueryASTNode*, int>* nodeIDs, int* counter)
+static int calculate_node_ids(const union ast_node* node, struct hm* node_ids, int* counter)
 {
     *counter += 1;
-    nodeIDs->insertIfNew(node, *counter);
+    if (hm_insert(node_ids, &node, counter) <= 0)
+        return -1;
 
-    switch (node->type)
-    {
-    case QueryASTNode::STATEMENT:
-        calculateNodeIDs(node->statement.child, nodeIDs, counter);
-        calculateNodeIDs(node->statement.next, nodeIDs, counter);
-        break;
-    case QueryASTNode::REPITITION:
-        calculateNodeIDs(node->repitition.child, nodeIDs, counter);
-        break;
-    case QueryASTNode::UNION:
-        calculateNodeIDs(node->union_.child, nodeIDs, counter);
-        calculateNodeIDs(node->union_.next, nodeIDs, counter);
-        break;
-    case QueryASTNode::INVERSION:
-        calculateNodeIDs(node->inversion.child, nodeIDs, counter);
-        break;
-    case QueryASTNode::WILDCARD:
-        break;
-    case QueryASTNode::LABEL:
-        break;
-    case QueryASTNode::CONTEXT_QUALIFIER:
-        calculateNodeIDs(node->contextQualifier.child, nodeIDs, counter);
-        break;
-    }
+    if (node->base.left)
+        if (calculate_node_ids(node->base.left, node_ids, counter) < 0)
+            return -1;
+    if (node->base.right)
+        if (calculate_node_ids(node->base.right, node_ids, counter) < 0)
+            return -1;
+
+    return 0;
 }
 
-static void writeNodes(const QueryASTNode* node, FILE* fp, const rfcommon::HashMap<const QueryASTNode*, int>& nodeIDs)
+static void write_nodes(const union ast_node* node, FILE* fp, const struct hm* node_ids)
 {
-    const int nodeID = nodeIDs.find(node)->value();
-    switch (node->type)
+    const int node_id = *(int*)hm_find(node_ids, &node);
+    switch (node->info.type)
     {
-    case QueryASTNode::STATEMENT:
-        fprintf(fp, "  n%d [label=\"->\"];\n", nodeID);
-        writeNodes(node->statement.child, fp, nodeIDs);
-        writeNodes(node->statement.next, fp, nodeIDs);
-        break;
-    case QueryASTNode::REPITITION:
-        fprintf(fp, "  n%d [label=\"rep %d,%d\"];\n",
-                nodeID, node->repitition.minreps, node->repitition.maxreps);
-        writeNodes(node->repitition.child, fp, nodeIDs);
-        break;
-    case QueryASTNode::UNION:
-        fprintf(fp, "  n%d [label=\"|\"];\n", nodeID);
-        writeNodes(node->union_.child, fp, nodeIDs);
-        writeNodes(node->union_.next, fp, nodeIDs);
-        break;
-    case QueryASTNode::INVERSION:
-        fprintf(fp, "  n%d [label=\"!\"];\n", nodeID);
-        writeNodes(node->inversion.child, fp, nodeIDs);
-        break;
-    case QueryASTNode::WILDCARD:
-        fprintf(fp, "  n%d [shape=\"rectangle\",label=\".\"];\n", nodeID);
-        break;
-    case QueryASTNode::LABEL:
-        if (node->labels.oppLabel.length())
-            fprintf(fp, "  n%d [shape=\"rectangle\",label=\"%s [%s]\"];\n",
-                    nodeID, node->labels.label.cStr(), node->labels.oppLabel.cStr());
-        else
-            fprintf(fp, "  n%d [shape=\"rectangle\",label=\"%s\"];\n",
-                    nodeID, node->labels.label.cStr());
-        break;
-    case QueryASTNode::CONTEXT_QUALIFIER: {
-        rfcommon::SmallVector<rfcommon::SmallString<5>, 5> flags;
-        if (!!(node->contextQualifier.flags & QueryASTNode::OS))
-            flags.emplace("OS");
-        if (!!(node->contextQualifier.flags & QueryASTNode::HIT))
-            flags.emplace("HIT");
-        if (!!(node->contextQualifier.flags & QueryASTNode::WHIFF))
-            flags.emplace("WHIFF");
-
-        fprintf(fp, "  n%d [shape=\"record\",label=\"", nodeID);
-        for (int i = 0; i != flags.count(); ++i)
-        {
-            if (i == 0)
-                fprintf(fp, "%s", flags[i].cStr());
+        case AST_STATEMENT:
+            fprintf(fp, "  n%d [label=\"->\"];\n", node_id);
+            break;
+        case AST_REPETITION:
+            fprintf(fp, "  n%d [label=\"rep %d,%d\"];\n",
+                    node_id, node->repetition.min_reps, node->repetition.max_reps);
+            break;
+        case AST_UNION:
+            fprintf(fp, "  n%d [label=\"|\"];\n", node_id);
+            break;
+        case AST_INVERSION:
+            fprintf(fp, "  n%d [label=\"!\"];\n", node_id);
+            break;
+        case AST_WILDCARD:
+            fprintf(fp, "  n%d [shape=\"rectangle\",label=\".\"];\n", node_id);
+            break;
+        case AST_LABEL:
+            if (node->labels.opponent_label)
+                fprintf(fp, "  n%d [shape=\"rectangle\",label=\"%s [%s]\"];\n",
+                        node_id, node->labels.label, node->labels.opponent_label);
             else
-                fprintf(fp, " | %s", flags[i].cStr());
-        }
-        fprintf(fp, "\"];\n");
-        writeNodes(node->contextQualifier.child, fp, nodeIDs);
-    } break;
+                fprintf(fp, "  n%d [shape=\"rectangle\",label=\"%s\"];\n",
+                        node_id, node->labels.label);
+            break;
+        case AST_CONTEXT_QUALIFIER: {
+            #define APPEND_WITH_PIPE(str) {  \
+                if (need_pipe)               \
+                    fprintf(fp, " | " str);  \
+                else                         \
+                    fprintf(fp, str);        \
+                need_pipe = 1;               \
+            }
+
+            int need_pipe = 0;
+            fprintf(fp, "  n%d [shape=\"record\",label=\"", node_id);
+            if (node->context_qualifier.flags & AST_CTX_OS) APPEND_WITH_PIPE("OS")
+            if (node->context_qualifier.flags & AST_CTX_HIT) APPEND_WITH_PIPE("HIT")
+            if (node->context_qualifier.flags & AST_CTX_WHIFF) APPEND_WITH_PIPE("WHIFF")
+            fprintf(fp, "\"];\n");
+
+            #undef APPEND_WITH_PIPE
+        } break;
     }
+
+    if (node->base.left)
+        write_nodes(node->base.left, fp, node_ids);
+    if (node->base.right)
+        write_nodes(node->base.right, fp, node_ids);
 }
 
-static void writeEdges(const QueryASTNode* node, FILE* fp, const rfcommon::HashMap<const QueryASTNode*, int>& nodeIDs)
+static void write_edges(const union ast_node* node, FILE* fp, const struct hm* node_ids)
 {
-    switch (node->type)
+    if (node->base.left)
     {
-    case QueryASTNode::STATEMENT:
         fprintf(fp, "  n%d -> n%d;\n",
-            nodeIDs.find(node)->value(), nodeIDs.find(node->statement.child)->value());
+            *(int*)hm_find(node_ids, &node), *(int*)hm_find(node_ids, &node->base.left));
+        write_edges(node->base.left, fp, node_ids);
+    }
+
+    if (node->base.right)
+    {
         fprintf(fp, "  n%d -> n%d;\n",
-            nodeIDs.find(node)->value(), nodeIDs.find(node->statement.next)->value());
-        writeEdges(node->statement.child, fp, nodeIDs);
-        writeEdges(node->statement.next, fp, nodeIDs);
-        break;
-    case QueryASTNode::REPITITION:
-        fprintf(fp, "  n%d -> n%d;\n",
-            nodeIDs.find(node)->value(), nodeIDs.find(node->repitition.child)->value());
-        writeEdges(node->repitition.child, fp, nodeIDs);
-        break;
-    case QueryASTNode::UNION:
-        fprintf(fp, "  n%d -> n%d;\n",
-            nodeIDs.find(node)->value(), nodeIDs.find(node->union_.child)->value());
-        fprintf(fp, "  n%d -> n%d;\n",
-            nodeIDs.find(node)->value(), nodeIDs.find(node->union_.next)->value());
-        writeEdges(node->union_.child, fp, nodeIDs);
-        writeEdges(node->union_.next, fp, nodeIDs);
-        break;
-    case QueryASTNode::INVERSION:
-        fprintf(fp, "  n%d -> n%d;\n",
-            nodeIDs.find(node)->value(), nodeIDs.find(node->inversion.child)->value());
-        writeEdges(node->inversion.child, fp, nodeIDs);
-        break;
-    case QueryASTNode::WILDCARD:
-        break;
-    case QueryASTNode::LABEL:
-        break;
-    case QueryASTNode::CONTEXT_QUALIFIER:
-        fprintf(fp, "  n%d -> n%d;\n",
-            nodeIDs.find(node)->value(), nodeIDs.find(node->contextQualifier.child)->value());
-        writeEdges(node->contextQualifier.child, fp, nodeIDs);
-        break;
+            *(int*)hm_find(node_ids, &node), *(int*)hm_find(node_ids, &node->base.right));
+        write_edges(node->base.right, fp, node_ids);
     }
 }
 
-void QueryASTNode::exportDOT(const char* filename) const
+int ast_export_dot(union ast_node* root, const char* file_name)
 {
-    int counter = 0;
-    rfcommon::HashMap<const QueryASTNode*, int> nodeIDs;
-    calculateNodeIDs(this, &nodeIDs, &counter);
+    FILE* fp;
+    struct hm node_ids;
+    int counter;
 
-    FILE* fp = fopen(filename, "w");
+    fp = fopen(file_name, "w");
+    if (fp == NULL)
+        goto fopen_failed;
+
+    if (hm_init(&node_ids, sizeof(union ast_node*), sizeof(int)) != 0)
+        goto hm_init_failed;
+
+    counter = 0;
+    if (calculate_node_ids(root, &node_ids, &counter) < 0)
+        goto calc_node_ids_failed;
     fprintf(fp, "digraph ast {\n");
-        writeNodes(this, fp, nodeIDs);
-        writeEdges(this, fp, nodeIDs);
+        write_nodes(root, fp, &node_ids);
+        write_edges(root, fp, &node_ids);
     fprintf(fp, "}\n");
     fclose(fp);
+
+    hm_deinit(&node_ids);
+    return 0;
+
+    calc_node_ids_failed : hm_deinit(&node_ids);
+    hm_init_failed       : fclose(fp);
+    fopen_failed         : return -1;
 }

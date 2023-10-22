@@ -58,10 +58,10 @@ struct hm
  * @note This parameter may be 0.
  * @return If successful, returns HM_OK. If allocation fails, HM_OOM is returned.
  */
-VH_PRIVATE_API struct hm*
+VH_PUBLIC_API struct hm*
 hm_create(hm_size key_size, hm_size value_size);
 
-VH_PRIVATE_API struct hm*
+VH_PUBLIC_API struct hm*
 hm_create_with_options(
         hm_size key_size,
         hm_size value_size,
@@ -72,10 +72,10 @@ hm_create_with_options(
  * @brief Initializes a new hm. See hm_create() for details on
  * parameters and return values.
  */
-VH_PRIVATE_API int
+VH_PUBLIC_API int
 hm_init(struct hm* hm, hm_size key_size, hm_size value_size);
 
-VH_PRIVATE_API int
+VH_PUBLIC_API int
 hm_init_with_options(
         struct hm* hm,
         hm_size key_size,
@@ -86,13 +86,13 @@ hm_init_with_options(
 /*!
  * @brief Cleans up internal resources without freeing the hm object itself.
  */
-VH_PRIVATE_API void
+VH_PUBLIC_API void
 hm_deinit(struct hm* hm);
 
 /*!
  * @brief Cleans up all resources and frees the hm.
  */
-VH_PRIVATE_API void
+VH_PUBLIC_API void
 hm_free(struct hm* hm);
 
 /*!
@@ -107,28 +107,28 @@ hm_free(struct hm* hm);
  * of bytes are copied from this location in memory into the hm. If
  * value_size is 0, then nothing is copied.
  * @return If the key already exists, then nothing is copied into the hm
- * and HM_EXISTS is returned. If the key is successfully inserted, HM_OK
- * is returned. If insertion failed, HM_OOM is returned.
+ * and 0 is returned. If the key is successfully inserted, 1
+ * is returned. If insertion failed, -1 is returned.
  */
-VH_PRIVATE_API int
+VH_PUBLIC_API int
 hm_insert(
     struct hm* hm,
     const void* key,
     const void* value);
 
-VH_PRIVATE_API void*
+VH_PUBLIC_API void*
 hm_emplace(
     struct hm* hm,
     const void* key);
 
-VH_PRIVATE_API void*
+VH_PUBLIC_API void*
 hm_erase(struct hm* hm,
               const void* key);
 
-VH_PRIVATE_API void*
+VH_PUBLIC_API void*
 hm_find(const struct hm* hm, const void* key);
 
-VH_PRIVATE_API int
+VH_PUBLIC_API int
 hm_exists(const struct hm* hm, const void* key);
 
 #define hm_count(hm) ((hm)->slots_used)

@@ -5,9 +5,9 @@
 
 #define IS_POWER_OF_2(x) (((x) & ((x)-1)) == 0)
 
-#define SLOT(hm, pos)  (*(hash32*)(hm->storage + sizeof(hash32) * pos))
-#define KEY(hm, pos)   (void*)       (hm->storage + sizeof(hash32) * hm->table_count + hm->key_size * pos)
-#define VALUE(hm, pos) (void*)       (hm->storage + sizeof(hash32) * hm->table_count + hm->key_size * hm->table_count + hm->value_size * pos)
+#define SLOT(hm, pos)  (*(hash32*)(hm->storage + sizeof(hash32) * (hm_size)pos))
+#define KEY(hm, pos)   (void*)       (hm->storage + sizeof(hash32) * hm->table_count + hm->key_size * (hm_size)pos)
+#define VALUE(hm, pos) (void*)       (hm->storage + sizeof(hash32) * hm->table_count + hm->key_size * hm->table_count + hm->value_size * (hm_size)pos)
 
 #if defined(VH_HASHMAP_STATS)
 #   include <stdio.h>
@@ -114,12 +114,12 @@ malloc_and_init_storage(hm_size key_size, hm_size value_size, hm_size table_coun
     assert(IS_POWER_OF_2(table_count));
 
     /* Store the hashes, keys and values in one contiguous chunk of memory */
-    storage = mem_alloc((sizeof(hash32) + (size_t)key_size + (size_t)value_size) * (size_t)table_count);
+    storage = mem_alloc((int)(sizeof(hash32) + key_size + value_size) * (int)table_count);
     if (storage == NULL)
         return NULL;
 
     /* Initialize hash table -- NOTE: Only works if HM_VH_HM_SLOT_UNUSED is 0 */
-    memset(storage, 0, (sizeof(hash32) + (size_t)key_size) * (size_t)table_count);
+    memset(storage, 0, (sizeof(hash32) + key_size) * table_count);
     return storage;
 }
 
@@ -253,7 +253,7 @@ hm_insert(struct hm* hm, const void* key, const void* value)
             return -1;
 
     /* Init values */
-    hash = hash_wrapper(hm, key, hm->key_size);
+    hash = hash_wrapper(hm, key, (int)hm->key_size);
     pos = (int)(hash & (hash32)(hm->table_count - 1));
     i = 0;
     last_tombstone = VH_HM_SLOT_INVALID;
@@ -276,7 +276,7 @@ hm_insert(struct hm* hm, const void* key, const void* value)
          * size is a power of two, this will visit every slot */
         i++;
         pos += i;
-        pos &= (hm->table_count - 1);
+        pos &= (int)(hm->table_count - 1);
         STATS_INSERTION_PROBE(hm);
     }
 
@@ -315,7 +315,7 @@ hm_emplace(struct hm* hm, const void* key)
             return NULL;
 
     /* Init values */
-    hash = hash_wrapper(hm, key, hm->key_size);
+    hash = hash_wrapper(hm, key, (int)hm->key_size);
     pos = (int)(hash & (hash32)(hm->table_count - 1));
     i = 0;
     last_tombstone = VH_HM_SLOT_INVALID;
@@ -338,7 +338,7 @@ hm_emplace(struct hm* hm, const void* key)
          * size is a power of two, this will visit every slot */
         i++;
         pos += i;
-        pos &= (hm->table_count - 1);
+        pos &= (int)(hm->table_count - 1);
         STATS_INSERTION_PROBE(hm);
     }
 
@@ -366,7 +366,7 @@ hm_emplace(struct hm* hm, const void* key)
 void*
 hm_erase(struct hm* hm, const void* key)
 {
-    hash32 hash = hash_wrapper(hm, key, hm->key_size);
+    hash32 hash = hash_wrapper(hm, key, (int)hm->key_size);
     int pos = (int)(hash & (hash32)(hm->table_count - 1));
     int i = 0;
 
@@ -387,7 +387,7 @@ hm_erase(struct hm* hm, const void* key)
          * size is a power of two, this will visit every slot */
         i++;
         pos += i;
-        pos &= (hm->table_count - 1);
+        pos &= (int)(hm->table_count - 1);
         STATS_DELETION_PROBE(hm);
     }
 
@@ -402,7 +402,7 @@ hm_erase(struct hm* hm, const void* key)
 void*
 hm_find(const struct hm* hm, const void* key)
 {
-    hash32 hash = hash_wrapper(hm, key, hm->key_size);
+    hash32 hash = hash_wrapper(hm, key, (int)hm->key_size);
     int pos = (int)(hash & (hash32)(hm->table_count - 1));
     int i = 0;
     while (1)
@@ -422,7 +422,7 @@ hm_find(const struct hm* hm, const void* key)
          * size is a power of two, this will visit every slot */
         i++;
         pos += i;
-        pos &= (hm->table_count - 1);
+        pos &= (int)(hm->table_count - 1);
     }
 
     return VALUE(hm, pos);
@@ -432,7 +432,7 @@ hm_find(const struct hm* hm, const void* key)
 int
 hm_exists(const struct hm* hm, const void* key)
 {
-    hash32 hash = hash_wrapper(hm, key, hm->key_size);
+    hash32 hash = hash_wrapper(hm, key, (int)hm->key_size);
     int pos = (int)(hash & (hash32)(hm->table_count - 1));
     int i = 0;
     while (1)
@@ -452,6 +452,6 @@ hm_exists(const struct hm* hm, const void* key)
          * size is a power of two, this will visit every slot */
         i++;
         pos += i;
-        pos &= (hm->table_count - 1);
+        pos &= (int)(hm->table_count - 1);
     }
 }

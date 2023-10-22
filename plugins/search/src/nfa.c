@@ -1,3 +1,4 @@
+#if 0
 #include "decision-graph/models/Query.hpp"
 #include "decision-graph/parsers/QueryParser.y.hpp"
 #include "decision-graph/parsers/QueryScanner.lex.hpp"
@@ -775,3 +776,4 @@ void Query::exportDOT(const char* filename, const rfcommon::MotionLabels* labels
     fprintf(fp, "}\n");
     fclose(fp);
 }
+#endif

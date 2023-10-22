@@ -2,6 +2,7 @@ function (vodhound_add_plugin NAME)
     string (TOUPPER ${NAME} PLUGIN_NAME)
     string (REPLACE "-" "_" PLUGIN_NAME ${PLUGIN_NAME})
     string (REPLACE " " "_" PLUGIN_NAME ${PLUGIN_NAME})
+    set (PLUGIN_NAME ${PLUGIN_NAME} PARENT_SCOPE)
 
     string (TOLOWER ${NAME} TARGET_NAME)
     string (REPLACE "_" "-" TARGET_NAME ${TARGET_NAME})
