@@ -396,7 +396,7 @@ vec_realloc(struct vec *vec,
     }
 
     /* Realloc the data. Make sure to have space for the swap element at the end */
-    if ((new_data = realloc(vec->data, (new_capacity  + 1) * vec->element_size)) == NULL)
+    if ((new_data = mem_realloc(vec->data, (new_capacity  + 1) * vec->element_size)) == NULL)
         return -1;
     vec->data = new_data;
 

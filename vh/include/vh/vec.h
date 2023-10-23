@@ -141,10 +141,31 @@ vec_emplace(struct vec* vec);
 
 /*!
  * @brief Copies the contents of another vector and pushes it into the vector.
- * @return Returns VH_OK if successful, VH_VEC_OOM if otherwise.
+ * @return Returns 0 if successful, -1 if a memory allocation failed, -2 if
+ * the two vectors are incompatible.
  */
 VH_PUBLIC_API int
-vec_push_vector(struct vec* vec, const struct vec* src_vec);
+vec_push_vec(struct vec* vec, const struct vec* src_vec);
+
+static void
+vec_steal_vector(struct vec* vec, struct vec* src_vec)
+{
+    vec_deinit(vec);
+    *vec = *src_vec;
+    src_vec->data = (void*)0;
+    src_vec->count = 0;
+    src_vec->capacity = 0;
+}
+
+static void*
+vec_steal_data(struct vec* vec)
+{
+    void* data = vec->data;
+    vec->data = (void*)0;
+    vec->count = 0;
+    vec->capacity = 0;
+    return data;
+}
 
 /*!
  * @brief Removes an element from the back (end) of the vector.
@@ -251,6 +272,14 @@ vec_get(const struct vec* vector, vec_idx index)
     assert(vector);
     assert(index < (vec_idx)vector->count);
     return vector->data + index * (vec_idx)vector->element_size;
+}
+
+static inline void*
+vec_get_back(const struct vec* vector, vec_idx offset)
+{
+    assert(vector);
+    assert((vec_idx)vector->count - offset >= 0);
+    return vector->data + ((vec_idx)vector->count - offset) * (vec_idx)vector->element_size;
 }
 
 VH_PUBLIC_API vec_idx
