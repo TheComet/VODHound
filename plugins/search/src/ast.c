@@ -5,6 +5,7 @@
 #include "vh/mem.h"
 
 #include <stddef.h>
+#include <stdio.h>
 
 #define MALLOC_AND_INIT(node_type, loc)      \
     mem_alloc(sizeof(union ast_node));       \
@@ -60,6 +61,7 @@ union ast_node* ast_label_steal(char* label, struct YYLTYPE* loc)
 {
     union ast_node* node = MALLOC_AND_INIT(AST_LABEL, loc);
     node->labels.label = label;
+    node->labels.opponent_label = NULL;
     return node;
 }
 

@@ -7,6 +7,9 @@
 #include "vh/str.h"
 #include "vh/vec.h"
 
+#include <stdio.h>
+#include <inttypes.h>
+
 /*
  * Represents a subset of the final NFA.
  *
@@ -44,6 +47,39 @@ fragment_deinit(struct fragment* f)
 {
     vec_deinit(&f->in);
     vec_deinit(&f->out);
+}
+static void duplicateMatchers(int idx, rfcommon::Vector<Matcher>* matchers, rfcommon::HashMap<int, int>* indexMap)
+{
+    if (indexMap->insertIfNew(idx, matchers->count()) == indexMap->end())
+        return;
+
+    matchers->push(Matcher(matchers->at(idx)));
+    for (int i : matchers->at(idx).next)
+        duplicateMatchers(i, matchers, indexMap);
+}
+static struct fragment
+fragment_duplicate(const struct fragment* f, rfcommon::Vector<Matcher>* matchers)
+{
+    Fragment dup;
+    rfcommon::HashMap<int, int> indexMap;  // Map indices of old matchers to the newly inserted matchers
+    for (int i : f.in)
+        duplicateMatchers(i, matchers, &indexMap);
+
+    // Fix transitions
+    for (auto kv : indexMap)
+    {
+        Matcher& newMatcher = matchers->at(kv.value());
+        for (int& i : newMatcher.next)
+            i = indexMap.find(i)->value();
+    }
+
+    // Fragment inputs/outputs
+    for (int i : f.in)
+        dup.in.push(indexMap.find(i)->value());
+    for (int i : f.out)
+        dup.out.push(indexMap.find(i)->value());
+
+    return dup;
 }
 
 static int
@@ -212,8 +248,115 @@ nfa_compile_recurse(const union ast_node* ast_node, struct vec* nodes, struct ve
             fragment_deinit(vec_pop(fstack));
         } break;
 
-        case AST_REPETITION : {
+        case AST_REPETITION: {
+            struct fragment* f;
+            int min_reps, max_reps;
+            if (nfa_compile_recurse(ast_node->repetition.child, nodes, fstack, qstack) < 0) return -1;
+            if (vec_count(fstack) < 1)
+            {
+                log_err("Failed to compile AST: Incomplete repetition\n");
+                return -1;
+            }
 
+            f = vec_back(fstack);
+            min_reps = ast_node->repetition.min_reps;
+            max_reps = ast_node->repetition.max_reps;
+
+            /* Invalid values */
+            if (min_reps < 0)
+            {
+                log_err("Cannot repeat from \"%d\" times\n", min_reps);
+                return -1;
+            }
+
+            /* 
+             * If the minimum repetition count is 0, then create a direct
+             * connection from input to output.
+             */
+            if (min_reps == 0 || max_reps == 0)
+                f->direct = 1;
+
+            /* No upper bound, e.g. ".*" */
+            if (max_reps == -1)
+            {
+                // We will need min-1 duplicates of the current fragment to implement the
+                // repitition logic
+                rfcommon::SmallVector<Fragment, 8> fragments;
+                for (int n = 1; n < node->repitition.minreps; ++n)
+                    fragments.push(duplicateFragment(f, matchers));
+
+                // Add repeat to fragment
+                for (int a : f.out)
+                    for (int b : f.in)
+                        matchers->at(a).next.push(b);
+
+                // Wire up outputs among duplicates
+                for (int n = 1; n < fragments.count(); ++n)
+                {
+                    for (int o : fragments[n].out)
+                        for (int i : fragments[n - 1].in)
+                            matchers->at(o).next.push(i);
+                }
+
+                if (fragments.count() > 0)
+                {
+                    for (int i : f.in)
+                        for (int o : fragments[0].out)
+                            matchers->at(o).next.push(i);
+                    f.in = std::move(fragments.back().in);
+                }
+            }
+            else
+            {
+                /* Invalid values */
+                if (max_reps < 0 || min_reps > max_reps)
+                {
+                    log_err("Cannot repeat from \"%d\" to \"%d\" times\n", min_reps, max_reps);
+                    return -1;
+                }
+
+                /* Special case if maxreps is 0, remove all connections */
+                if (max_reps == 0)
+                {
+                    vec_clear(&f->in);
+                    vec_clear(&f->out);
+                    break;
+                }
+
+                // Nothing to do
+                if (max_reps == 1)
+                    break;
+
+                /*
+                 * We will need max - 1 duplicates of the current fragment to
+                 * implement the repitition logic.
+                 */
+                rfcommon::SmallVector<Fragment, 8> fragments;
+                for (int n = 1; n != node->repitition.maxreps; ++n)
+                    fragments.push(duplicateFragment(f, matchers));
+
+                // Wire up outputs among duplicates
+                for (int n = 1; n != fragments.count(); ++n)
+                {
+                    for (int o : fragments[n].out)
+                        for (int i : fragments[n - 1].in)
+                            matchers->at(o).next.push(i);
+                }
+
+                // Wire up outputs to original fragment
+                for (int o : fragments[0].out)
+                    for (int i : f.in)
+                        matchers->at(o).next.push(i);
+
+                // Wire up inputs to original fragment
+                if (node->repitition.minreps > 1)
+                    f.in.clear();
+                for (int n = std::max(0, node->repitition.minreps - 2); n != node->repitition.maxreps - 1; ++n)
+                {
+                    for (int i : fragments[n].in)
+                        f.in.push(i);
+                }
+            }
         } break;
 
         case AST_UNION: {
@@ -378,7 +521,7 @@ nfa_export_dot(const struct nfa_graph* nfa, const char* file_name)
 
         fprintf(fp, "label=\"");
         if (nfa->nodes[n].state.flags & NFA_MATCH_MOTION)
-            fprintf(fp, "0x%lx", nfa->nodes[n].state.fighter_motion);
+            fprintf(fp, "0x%" PRIx64, nfa->nodes[n].state.fighter_motion);
         if ((nfa->nodes[n].state.flags & NFA_MATCH_STATUS))
         {
             if (nfa->nodes[n].state.flags & NFA_MATCH_MOTION)
