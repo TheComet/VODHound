@@ -1,16 +1,413 @@
+#include "search/ast.h"
+#include "search/nfa.h"
+
+#include "vh/hash40.h"
+#include "vh/mem.h"
+#include "vh/log.h"
+#include "vh/str.h"
+#include "vh/vec.h"
+
+/*
+ * Represents a subset of the final NFA.
+ *
+ * Each fragment holds a list of unresolved incoming and outgoing transitions.
+ * As the AST is compiled, fragments are assembled together by connecting these
+ * transitions to each other in order to form larger and larger fragments, until
+ * the final NFA is completed.
+ *
+ * The "in" and "out" lists are indices into the vector of states/matchers.
+ * The "bridge" flag handles a special case where a fragment can have a direct
+ * transition from input to output without going through an internal state/matcher.
+ */
+struct fragment
+{
+    struct vec in;
+    struct vec out;
+    char direct;
+};
+
+struct node
+{
+    struct nfa_state state;
+    struct vec out;
+};
+
+static void
+fragment_init(struct fragment* f)
+{
+    vec_init(&f->in, sizeof(int));
+    vec_init(&f->out, sizeof(int));
+    f->direct = 0;
+}
+static void
+fragment_deinit(struct fragment* f)
+{
+    vec_deinit(&f->in);
+    vec_deinit(&f->out);
+}
+
+static int
+nodes_add_entry(struct vec* nodes)
+{
+    struct node* entry = vec_emplace(nodes);
+    if (entry == NULL)
+        return -1;
+    vec_init(&entry->out, sizeof(int));
+    entry->state.fighter_motion = 0;
+    entry->state.fighter_status = 0;
+    entry->state.flags = 0;
+    return 0;
+}
+
+static int
+nodes_add_motion(struct vec* nodes, uint64_t motion)
+{
+    struct node* node = vec_emplace(nodes);
+    if (node == NULL)
+        return -1;
+    vec_init(&node->out, sizeof(int));
+    node->state.fighter_motion = motion;
+    node->state.fighter_status = 0;
+    node->state.flags = NFA_MATCH_MOTION;
+    return 0;
+}
+
+static int
+nodes_add_wildcard(struct vec* nodes)
+{
+    struct node* node = vec_emplace(nodes);
+    if (node == NULL)
+        return -1;
+    vec_init(&node->out, sizeof(int));
+    node->state.fighter_motion = 0;
+    node->state.fighter_status = 0;
+    node->state.flags = 0;
+    return 0;
+}
+
+static struct nfa_graph*
+graph_finalize(struct vec* nodes, struct vec* in, struct vec* out)
+{
+    struct vec nfa_nodes;
+    struct vec nfa_edges;
+    struct nfa_graph* nfa = mem_alloc(sizeof *nfa);
+    const int terminate = -1;
+    if (nfa == NULL)
+        goto alloc_nfa_failed;
+
+    vec_init(&nfa_nodes, sizeof(struct nfa_node));
+    vec_init(&nfa_edges, sizeof(int));
+
+    /*
+     * By convention, the first entry in the edge list is the list of start
+     * nodes.
+     */
+    if (vec_push_vec(&nfa_edges, in) < 0)
+        goto fail;
+    if (vec_push(&nfa_edges, &terminate) < 0)
+        goto fail;
+
+    VEC_FOR_EACH(nodes, struct node, node)
+        struct nfa_node* nfa_node = vec_emplace(&nfa_nodes);
+        if (nfa_node == NULL)
+            goto fail;
+        nfa_node->state = node->state;
+        nfa_node->next = vec_count(&nfa_edges);
+        if (vec_push_vec(&nfa_edges, &node->out) < 0)
+            goto fail;
+        if (vec_push(&nfa_edges, &terminate) < 0)
+            goto fail;
+    VEC_END_EACH
+
+    /*
+     * Mark all nodes with dangling outgoing transitions with the accept
+     * condition
+     */
+    VEC_FOR_EACH(out, int, out_node)
+        struct nfa_node* node = vec_get(&nfa_nodes, *out_node);
+        node->state.flags |= NFA_MATCH_ACCEPT;
+    VEC_END_EACH
+
+    nfa->node_count = vec_count(&nfa_nodes);
+    nfa->nodes = vec_steal_data(&nfa_nodes);
+    nfa->edges = vec_steal_data(&nfa_edges);
+
+    return nfa;
+
+fail:
+    vec_deinit(&nfa_edges);
+    vec_deinit(&nfa_nodes);
+    mem_free(nfa);
+alloc_nfa_failed:
+    return NULL;
+}
+
+static int
+nfa_compile_recurse(const union ast_node* ast_node, struct vec* nodes, struct vec* fstack, struct vec* qstack)
+{
+    switch (ast_node->info.type)
+    {
+        case AST_STATEMENT: {
+            struct fragment* right;
+            struct fragment* left;
+
+            if (nfa_compile_recurse(ast_node->statement.child, nodes, fstack, qstack) < 0) return -1;
+            if (nfa_compile_recurse(ast_node->statement.next, nodes, fstack, qstack) < 0) return -1;
+            if (vec_count(fstack) < 2)
+            {
+                log_err("Failed to compile AST: Incomplete statement\n");
+                return -1;
+            }
+
+            /*
+             * Connect all outgoing connections of the left-hand fragment
+             * with the incoming connections of the right-hand fragment.
+             *
+             *       ___        ___
+             *   o--|   |--  --|   |--o
+             *   o--|___|--  --|___|--o
+             *      Left       Right
+             */
+            right = vec_get_back(fstack, 1);
+            left = vec_get_back(fstack, 2);
+            VEC_FOR_EACH(&left->out, int, left_out)
+                VEC_FOR_EACH(&right->in, int, right_in)
+                    struct node* node = vec_get(nodes, *left_out);
+                    if (vec_push(&node->out, right_in) < 0)
+                        return -1;
+                VEC_END_EACH
+            VEC_END_EACH
+
+            /*
+             * The left fragment is replace by the result of combining the two
+             * fragments, while the right fragment is destroyed. Thus, the
+             * outgoing connections of the right-hand fragment are now the
+             * outgoing connections of the combined fragment.
+             *
+             * In the special case of the right-hand fragment having direct
+             * connections between its inputs and outputs, the outputs of the
+             * left-hand fragment are visible on the output side of the right-hand
+             * fragment, and thus need to be merged instead of replaced.
+             */
+            if (right->direct)
+                vec_push_vec(&left->out, &right->out);
+            else
+                vec_steal_vector(&left->out, &right->out);
+
+            /*
+             * In the special case of the left-hand fragment having direct
+             * connections between its inputs and outputs, the inputs of the
+             * right-hand fragment are visible on the input side of the left-hand
+             * fragment, and thus need to be merged instead of replaced.
+             */
+            if (left->direct)
+            {
+                VEC_FOR_EACH(&right->in, int, conn)
+                    vec_push(&left->in, conn);
+                VEC_END_EACH
+                left->direct = 0;
+            }
+
+            /* Right-hand fragment has been completely merged, destroy it */
+            fragment_deinit(vec_pop(fstack));
+        } break;
+
+        case AST_REPETITION : {
+
+        } break;
+
+        case AST_UNION: {
+            struct fragment* right;
+            struct fragment* left;
+
+            if (nfa_compile_recurse(ast_node->union_.child, nodes, fstack, qstack) < 0) return -1;
+            if (nfa_compile_recurse(ast_node->union_.next, nodes, fstack, qstack) < 0) return -1;
+            if (vec_count(fstack) < 2)
+            {
+                log_err("Failed to compile AST: Incomplete union\n");
+                return -1;
+            }
+
+            right = vec_get_back(fstack, 1);
+            left = vec_get_back(fstack, 2);
+
+            if (vec_push_vec(&left->in, &right->in) < 0) return -1;
+            if (vec_push_vec(&left->out, &right->out) < 0) return -1;
+            left->direct = (left->direct || right->direct);
+
+            /* Right-hand fragment has been completely merged, destroy it */
+            fragment_deinit(vec_pop(fstack));
+        } break;
+
+        case AST_INVERSION: {
+            if (nfa_compile_recurse(ast_node->inversion.child, nodes, fstack, qstack) < 0) return -1;
+        } break;
+
+        case AST_WILDCARD: {
+            int in, out;
+            struct fragment* f = vec_emplace(fstack);
+            if (f == NULL)
+                return -1;
+            fragment_init(f);
+
+            in = vec_count(nodes);
+            out = vec_count(nodes);
+            if (vec_push(&f->in, &in) < 0) return -1;
+            if (vec_push(&f->out, &out) < 0) return -1;
+
+            if (nodes_add_wildcard(nodes) < 0) return -1;
+        } break;
+
+        case AST_LABEL: {
+            uint64_t motion;
+            const char* label = ast_node->labels.label;
+            /* Assume label is a user-defined label and maps to one or more
+             * motion values */
+            /* TODO */
+
+            /* Assume label is a hex value */
+            if (label[0] != '0' || label[1] != 'x' || str_hex_to_u64(cstr_view(label), &motion) != 0)
+            {
+                /* Assume label is a hash40 string */
+                motion = hash40_str(label);
+            }
+
+            int in, out;
+            struct fragment* f = vec_emplace(fstack);
+            if (f == NULL)
+                return -1;
+            fragment_init(f);
+
+            in = vec_count(nodes);
+            out = vec_count(nodes);
+            if (vec_push(&f->in, &in) < 0) return -1;
+            if (vec_push(&f->out, &out) < 0) return -1;
+
+            if (nodes_add_motion(nodes, motion) < 0) return -1;
+        } break;
+
+        case AST_CONTEXT_QUALIFIER: {
+
+        } break;
+    }
+
+    return 0;
+}
+
+struct nfa_graph*
+nfa_compile(const union ast_node* ast)
+{
+    struct vec fragment_stack;
+    struct vec qualifier_stack;
+    struct vec nodes;
+    struct nfa_graph* nfa;
+    struct fragment* final_fragment;
+
+    nfa = NULL;
+    vec_init(&nodes, sizeof(struct node));
+    vec_init(&fragment_stack, sizeof(struct fragment));
+    vec_init(&qualifier_stack, sizeof(uint8_t));
+
+    if (nfa_compile_recurse(ast, &nodes, &fragment_stack, &qualifier_stack) != 0)
+        goto out;
+
+    /*
+     * There should be a single fragment left on the stack, which is the final
+     * state machine. The only thing left to do is to wire up the dangling
+     * inputs/outputs of this final fragment.
+     */
+    if (vec_count(&fragment_stack) != 1)
+        goto out;
+    final_fragment = vec_front(&fragment_stack);
+
+    /* Remove duplicate state transitions */
+    VEC_FOR_EACH(&nodes, struct node, node)
+        int a, b;
+        for (a = 0; a != vec_count(&node->out); ++a)
+            for (b = a + 1; b < vec_count(&node->out); ++b)
+                if (*(int*)vec_get(&node->out, a) == *(int*)vec_get(&node->out, b))
+                {
+                    vec_erase_index(&node->out, b);
+                    b--;
+                }
+    VEC_END_EACH
+
+    nfa = graph_finalize(&nodes, &final_fragment->in, &final_fragment->out);
+
+out:
+    vec_deinit(&qualifier_stack);
+    VEC_FOR_EACH(&fragment_stack, struct fragment, f)
+        fragment_deinit(f);
+    VEC_END_EACH
+    vec_deinit(&fragment_stack);
+    VEC_FOR_EACH(&nodes, struct node, node)
+        vec_deinit(&node->out);
+    VEC_END_EACH
+    vec_deinit(&nodes);
+    return nfa;
+}
+
+void
+nfa_destroy(struct nfa_graph* nfa)
+{
+    mem_free(nfa->nodes);
+    mem_free(nfa->edges);
+    mem_free(nfa);
+}
+
+int
+nfa_export_dot(const struct nfa_graph* nfa, const char* file_name)
+{
+    int n;
+    int* next;
+    FILE* fp = fopen(file_name, "w");
+    if (fp == NULL)
+        goto open_file_failed;
+
+    fprintf(fp, "digraph {\n");
+    fprintf(fp, "start [shape=\"record\"];\n");
+
+    for (n = 0; n != nfa->node_count; ++n)
+    {
+        fprintf(fp, "n%d [shape=\"record\"", n);
+
+        if (nfa->nodes[n].state.flags & NFA_MATCH_ACCEPT)
+            fprintf(fp, ", color=\"red\"");
+        else
+            fprintf(fp, ", color=\"black\"");
+
+        fprintf(fp, "label=\"");
+        if (nfa->nodes[n].state.flags & NFA_MATCH_MOTION)
+            fprintf(fp, "0x%lx", nfa->nodes[n].state.fighter_motion);
+        if ((nfa->nodes[n].state.flags & NFA_MATCH_STATUS))
+        {
+            if (nfa->nodes[n].state.flags & NFA_MATCH_MOTION)
+                fprintf(fp, ", ");
+            fprintf(fp, ", %d", nfa->nodes[n].state.fighter_status);
+        }
+        if (nfa_node_is_wildcard(&nfa->nodes[n]))
+            fprintf(fp, ".");
+        fprintf(fp, "\"];\n");
+    }
+
+    for (next = nfa->edges; *next != -1; ++next)
+        fprintf(fp, "start -> n%d;\n", *next);
+
+    for (n = 0; n != nfa->node_count; ++n)
+        for (next = &nfa->edges[nfa->nodes[n].next]; *next != -1; ++next)
+            fprintf(fp, "n%d -> n%d;\n", n, *next);
+
+    fprintf(fp, "}\n");
+    fclose(fp);
+    return 0;
+
+fail:
+    fclose(fp);
+open_file_failed:
+    return -1;
+}
+
 #if 0
-#include "decision-graph/models/Query.hpp"
-#include "decision-graph/parsers/QueryParser.y.hpp"
-#include "decision-graph/parsers/QueryScanner.lex.hpp"
-#include "decision-graph/parsers/QueryASTNode.hpp"
-
-#include "rfcommon/HashMap.hpp"
-#include "rfcommon/MotionLabels.hpp"
-
-#include <cstdio>
-#include <cinttypes>
-#include <memory>
-
 // ----------------------------------------------------------------------------
 Matcher Matcher::start()
 {
@@ -82,67 +479,6 @@ bool Matcher::matches(const State& state) const
 
     return true;
 }
-
-// ----------------------------------------------------------------------------
-QueryASTNode* Query::parse(const rfcommon::String& text)
-{
-    qpscan_t scanner;
-    qppstate* parser;
-    YY_BUFFER_STATE buf;
-    QPSTYPE pushed_value;
-    int pushed_char;
-    int parse_result;
-    QueryASTNode* ast = nullptr;
-
-    if (qplex_init(&scanner) != 0)
-        goto init_scanner_failed;
-    buf = qp_scan_bytes(text.cStr(), text.length(), scanner);
-    if (buf == nullptr)
-        goto scan_bytes_failed;
-    parser = qppstate_new();
-    if (parser == nullptr)
-        goto init_parser_failed;
-
-    do
-    {
-        pushed_char = qplex(&pushed_value, scanner);
-        parse_result = qppush_parse(parser, pushed_char, &pushed_value, &ast);
-    } while (parse_result == YYPUSH_MORE);
-
-    qppstate_delete(parser);
-    qp_delete_buffer(buf, scanner);
-    qplex_destroy(scanner);
-
-    if (parse_result == 0)
-        return ast;
-    if (ast)
-        QueryASTNode::destroyRecurse(ast);
-    return nullptr;
-
-    init_parser_failed  : qp_delete_buffer(buf, scanner);
-    scan_bytes_failed   : qplex_destroy(scanner);
-    init_scanner_failed : return nullptr;
-}
-
-// ----------------------------------------------------------------------------
-/*
- * Represents a subset of the final finite automaton.
- *
- * Each fragment holds a list of unresolved incoming and outgoing transitions.
- * As the AST is compiled, fragments are assembled together by connecting these
- * transitions to each other in order to form larger and larger fragments, until
- * the final finite automaton is completed.
- *
- * The "in" and "out" lists are indices into the vector of states/matchers.
- * The "bridge" flag handles a special case where a fragment can have a direct
- * transition from input to output without going through an internal state/matcher.
- */
-struct Fragment
-{
-    rfcommon::SmallVector<int, 4> in;
-    rfcommon::SmallVector<int, 4> out;
-    bool bridge = false;
-};
 
 // ----------------------------------------------------------------------------
 static void duplicateMatchers(int idx, rfcommon::Vector<Matcher>* matchers, rfcommon::HashMap<int, int>* indexMap)

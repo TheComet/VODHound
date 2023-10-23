@@ -13,8 +13,6 @@ parser_init(struct parser* parser)
     if (parser->parser == NULL)
         goto init_parser_failed;
 
-    yy_scan_bytes("test", 5, parser->scanner);
-
     return 0;
 
     init_parser_failed        : yylex_destroy(parser->scanner);

@@ -44,8 +44,8 @@ union ast_node
 
     struct statement {
         struct info info;
-        union ast_node* next;
         union ast_node* child;
+        union ast_node* next;
     } statement;
 
     struct repetition {
@@ -58,8 +58,8 @@ union ast_node
 
     struct union_ {
         struct info info;
-        union ast_node* next;
         union ast_node* child;
+        union ast_node* next;
     } union_;
 
     struct inversion {

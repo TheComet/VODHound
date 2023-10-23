@@ -1,4 +1,5 @@
 #include "search/ast.h"
+#include "search/nfa.h"
 #include "search/parser.h"
 
 #include "vh/init.h"
@@ -7,6 +8,9 @@
 
 int main(int argc, char** argv)
 {
+    struct parser parser;
+    union ast_node* ast = NULL;
+    struct nfa_graph* nfa = NULL;
     if (argc < 2)
     {
         fprintf(stderr, "Usage: %s [options] <query text>\n", argv[0]);
@@ -16,15 +20,21 @@ int main(int argc, char** argv)
     vh_threadlocal_init();
     vh_init();
 
-    struct parser parser;
     parser_init(&parser);
-    union ast_node* ast = parser_parse(&parser, argv[1]);
+    ast = parser_parse(&parser, argv[1]);
     parser_deinit(&parser);
 
     if (ast)
     {
         ast_export_dot(ast, "ast.dot");
+        nfa = nfa_compile(ast);
         ast_destroy_recurse(ast);
+    }
+
+    if (nfa)
+    {
+        nfa_export_dot(nfa, "nfa.dot");
+        nfa_destroy(nfa);
     }
 
     vh_deinit();
