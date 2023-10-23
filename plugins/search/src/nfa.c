@@ -2,6 +2,7 @@
 #include "search/nfa.h"
 
 #include "vh/hash40.h"
+#include "vh/hm.h"
 #include "vh/mem.h"
 #include "vh/log.h"
 #include "vh/str.h"
@@ -57,10 +58,12 @@ static void duplicateMatchers(int idx, rfcommon::Vector<Matcher>* matchers, rfco
     for (int i : matchers->at(idx).next)
         duplicateMatchers(i, matchers, indexMap);
 }
-static struct fragment
-fragment_duplicate(const struct fragment* f, rfcommon::Vector<Matcher>* matchers)
+static int
+fragment_duplicate(struct fragment* dst, const struct fragment* src)
 {
-    Fragment dup;
+    struct hm index_map;
+    if (hm_init(&index_map, sizeof(int), sizeof(int)) < 0)
+        return -1;
     rfcommon::HashMap<int, int> indexMap;  // Map indices of old matchers to the newly inserted matchers
     for (int i : f.in)
         duplicateMatchers(i, matchers, &indexMap);

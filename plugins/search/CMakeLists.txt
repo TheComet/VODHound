@@ -8,6 +8,7 @@ include (VODHoundPlugin)
 vodhound_add_plugin (${PROJECT_NAME}
     SOURCES
         "src/ast.c"
+        "src/dfa.c"
         "src/nfa.c"
         "src/parser.c"
         "src/plugin_search.c"
@@ -15,6 +16,7 @@ vodhound_add_plugin (${PROJECT_NAME}
         "src/scanner.lex"
     HEADERS
         "include/${PROJECT_NAME}/ast.h"
+        "include/${PROJECT_NAME}/dfa.h"
         "include/${PROJECT_NAME}/nfa.h"
         "include/${PROJECT_NAME}/parser.h"
     INCLUDES
