@@ -1,4 +1,5 @@
 #include "vh/backtrace.h"
+#include "vh/crc32.h"
 #include "vh/db_ops.h"
 #include "vh/fs.h"
 #include "vh/mem.h"
@@ -19,6 +20,8 @@ vh_init(void)
         goto fs_init_failed;
     if (db_init() < 0)
         goto db_init_failed;
+
+    crc32_init();
 
     return 0;
 
