@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vh/vec.h"
 #include <stdint.h>
 
 union ast_node;
@@ -27,13 +28,12 @@ struct nfa_state
 struct nfa_node
 {
     struct nfa_state state;
-    int next;
+    struct vec out;
 };
 
 struct nfa_graph
 {
     struct nfa_node* nodes;
-    int* edges;
     int node_count;
 };
 
@@ -46,11 +46,11 @@ nfa_node_is_wildcard(const struct nfa_node* node)
     );
 }
 
-struct nfa_graph*
-nfa_compile(const union ast_node* ast);
+int
+nfa_compile(struct nfa_graph* nfa, const union ast_node* ast);
 
 void
-nfa_destroy(struct nfa_graph* nfa);
+nfa_deinit(struct nfa_graph* nfa);
 
 int
 nfa_export_dot(const struct nfa_graph* nfa, const char* file_name);

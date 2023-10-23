@@ -10,7 +10,9 @@ int main(int argc, char** argv)
 {
     struct parser parser;
     union ast_node* ast = NULL;
-    struct nfa_graph* nfa = NULL;
+    struct nfa_graph nfa;
+    int nfa_result = -1;
+
     if (argc < 2)
     {
         fprintf(stderr, "Usage: %s [options] <query text>\n", argv[0]);
@@ -27,14 +29,14 @@ int main(int argc, char** argv)
     if (ast)
     {
         ast_export_dot(ast, "ast.dot");
-        nfa = nfa_compile(ast);
+        nfa_result = nfa_compile(&nfa, ast);
         ast_destroy_recurse(ast);
     }
 
-    if (nfa)
+    if (nfa_result == 0)
     {
-        nfa_export_dot(nfa, "nfa.dot");
-        nfa_destroy(nfa);
+        nfa_export_dot(&nfa, "nfa.dot");
+        nfa_deinit(&nfa);
     }
 
     vh_deinit();

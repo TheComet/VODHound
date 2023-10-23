@@ -6,7 +6,6 @@
 #include "vh/mem.h"
 #include "vh/log.h"
 #include "vh/str.h"
-#include "vh/vec.h"
 
 #include <stdio.h>
 #include <inttypes.h>
@@ -30,12 +29,6 @@ struct fragment
     char direct;
 };
 
-struct node
-{
-    struct nfa_state state;
-    struct vec out;
-};
-
 static void
 fragment_init(struct fragment* f)
 {
@@ -49,46 +42,75 @@ fragment_deinit(struct fragment* f)
     vec_deinit(&f->in);
     vec_deinit(&f->out);
 }
-static void duplicateMatchers(int idx, rfcommon::Vector<Matcher>* matchers, rfcommon::HashMap<int, int>* indexMap)
-{
-    if (indexMap->insertIfNew(idx, matchers->count()) == indexMap->end())
-        return;
-
-    matchers->push(Matcher(matchers->at(idx)));
-    for (int i : matchers->at(idx).next)
-        duplicateMatchers(i, matchers, indexMap);
-}
 static int
-fragment_duplicate(struct fragment* dst, const struct fragment* src)
+node_duplicate(int node_idx, struct vec* nodes, struct hm* index_map)
 {
-    struct hm index_map;
-    if (hm_init(&index_map, sizeof(int), sizeof(int)) < 0)
-        return -1;
-    rfcommon::HashMap<int, int> indexMap;  // Map indices of old matchers to the newly inserted matchers
-    for (int i : f.in)
-        duplicateMatchers(i, matchers, &indexMap);
-
-    // Fix transitions
-    for (auto kv : indexMap)
+    struct nfa_node* node;
+    struct nfa_node* new_node;
+    int new_idx;
+    
+    new_idx = vec_count(nodes);
+    switch (hm_insert(index_map, &node_idx, &new_idx))
     {
-        Matcher& newMatcher = matchers->at(kv.value());
-        for (int& i : newMatcher.next)
-            i = indexMap.find(i)->value();
+        case 0: return 0;
+        case 1: break;
+        default: return -1;
     }
 
-    // Fragment inputs/outputs
-    for (int i : f.in)
-        dup.in.push(indexMap.find(i)->value());
-    for (int i : f.out)
-        dup.out.push(indexMap.find(i)->value());
+    new_node = vec_emplace(nodes);
+    if (new_node == NULL)
+        return -1;
 
-    return dup;
+    node = vec_get(nodes, node_idx);
+    VEC_FOR_EACH(&node->out, int, conn)
+        if (node_duplicate(*conn, nodes, index_map) < 0)
+            return 1;
+    VEC_END_EACH
+
+    return 0;
+}
+static int
+fragment_duplicate(struct fragment* dst, const struct fragment* src, struct vec* nodes)
+{
+    struct hm index_map;
+
+    /* map indices of old nodes to the newly inserted nodes */
+    if (hm_init(&index_map, sizeof(int), sizeof(int)) < 0)
+        return -1;
+    VEC_FOR_EACH(&src->in, int, conn)
+        node_duplicate(*conn, nodes, &index_map);
+    VEC_END_EACH
+
+    /* Fix transitions of all new nodes */
+    HM_FOR_EACH(&index_map, int, int, src_idx, dst_idx)
+        struct nfa_node* dst_node = vec_get(nodes, *dst_idx);
+        VEC_FOR_EACH(&dst_node->out, int, conn)
+            *conn = *(int*)hm_find(&index_map, conn);
+        VEC_END_EACH
+    HM_END_EACH
+
+    /* Fragment inputs/outputs */
+    VEC_FOR_EACH(&src->in, int, conn)
+        if (vec_push(&dst->in, hm_find(&index_map, conn)) < 0)
+            goto fail;
+    VEC_END_EACH
+    VEC_FOR_EACH(&src->out, int, conn)
+        if (vec_push(&dst->out, hm_find(&index_map, conn)) < 0)
+            goto fail;
+    VEC_END_EACH
+
+    hm_deinit(&index_map);
+    return 0;
+
+fail:
+    hm_deinit(&index_map);
+    return -1;
 }
 
 static int
 nodes_add_entry(struct vec* nodes)
 {
-    struct node* entry = vec_emplace(nodes);
+    struct nfa_node* entry = vec_emplace(nodes);
     if (entry == NULL)
         return -1;
     vec_init(&entry->out, sizeof(int));
@@ -101,7 +123,7 @@ nodes_add_entry(struct vec* nodes)
 static int
 nodes_add_motion(struct vec* nodes, uint64_t motion)
 {
-    struct node* node = vec_emplace(nodes);
+    struct nfa_node* node = vec_emplace(nodes);
     if (node == NULL)
         return -1;
     vec_init(&node->out, sizeof(int));
@@ -114,7 +136,7 @@ nodes_add_motion(struct vec* nodes, uint64_t motion)
 static int
 nodes_add_wildcard(struct vec* nodes)
 {
-    struct node* node = vec_emplace(nodes);
+    struct nfa_node* node = vec_emplace(nodes);
     if (node == NULL)
         return -1;
     vec_init(&node->out, sizeof(int));
@@ -122,63 +144,6 @@ nodes_add_wildcard(struct vec* nodes)
     node->state.fighter_status = 0;
     node->state.flags = 0;
     return 0;
-}
-
-static struct nfa_graph*
-graph_finalize(struct vec* nodes, struct vec* in, struct vec* out)
-{
-    struct vec nfa_nodes;
-    struct vec nfa_edges;
-    struct nfa_graph* nfa = mem_alloc(sizeof *nfa);
-    const int terminate = -1;
-    if (nfa == NULL)
-        goto alloc_nfa_failed;
-
-    vec_init(&nfa_nodes, sizeof(struct nfa_node));
-    vec_init(&nfa_edges, sizeof(int));
-
-    /*
-     * By convention, the first entry in the edge list is the list of start
-     * nodes.
-     */
-    if (vec_push_vec(&nfa_edges, in) < 0)
-        goto fail;
-    if (vec_push(&nfa_edges, &terminate) < 0)
-        goto fail;
-
-    VEC_FOR_EACH(nodes, struct node, node)
-        struct nfa_node* nfa_node = vec_emplace(&nfa_nodes);
-        if (nfa_node == NULL)
-            goto fail;
-        nfa_node->state = node->state;
-        nfa_node->next = vec_count(&nfa_edges);
-        if (vec_push_vec(&nfa_edges, &node->out) < 0)
-            goto fail;
-        if (vec_push(&nfa_edges, &terminate) < 0)
-            goto fail;
-    VEC_END_EACH
-
-    /*
-     * Mark all nodes with dangling outgoing transitions with the accept
-     * condition
-     */
-    VEC_FOR_EACH(out, int, out_node)
-        struct nfa_node* node = vec_get(&nfa_nodes, *out_node);
-        node->state.flags |= NFA_MATCH_ACCEPT;
-    VEC_END_EACH
-
-    nfa->node_count = vec_count(&nfa_nodes);
-    nfa->nodes = vec_steal_data(&nfa_nodes);
-    nfa->edges = vec_steal_data(&nfa_edges);
-
-    return nfa;
-
-fail:
-    vec_deinit(&nfa_edges);
-    vec_deinit(&nfa_nodes);
-    mem_free(nfa);
-alloc_nfa_failed:
-    return NULL;
 }
 
 static int
@@ -211,7 +176,7 @@ nfa_compile_recurse(const union ast_node* ast_node, struct vec* nodes, struct ve
             left = vec_get_back(fstack, 2);
             VEC_FOR_EACH(&left->out, int, left_out)
                 VEC_FOR_EACH(&right->in, int, right_in)
-                    struct node* node = vec_get(nodes, *left_out);
+                    struct nfa_node* node = vec_get(nodes, *left_out);
                     if (vec_push(&node->out, right_in) < 0)
                         return -1;
                 VEC_END_EACH
@@ -282,35 +247,74 @@ nfa_compile_recurse(const union ast_node* ast_node, struct vec* nodes, struct ve
             /* No upper bound, e.g. ".*" */
             if (max_reps == -1)
             {
-                // We will need min-1 duplicates of the current fragment to implement the
-                // repitition logic
-                rfcommon::SmallVector<Fragment, 8> fragments;
-                for (int n = 1; n < node->repitition.minreps; ++n)
-                    fragments.push(duplicateFragment(f, matchers));
+                int n;
+                struct vec fragments;
 
-                // Add repeat to fragment
-                for (int a : f.out)
-                    for (int b : f.in)
-                        matchers->at(a).next.push(b);
-
-                // Wire up outputs among duplicates
-                for (int n = 1; n < fragments.count(); ++n)
+                /*
+                 * We will need min-1 duplicates of the current fragment in order
+                 * to implement the repetition logic.
+                 */
+                vec_init(&fragments, sizeof(struct fragment));
+                for (n = 1; n < ast_node->repetition.min_reps; ++n)
                 {
-                    for (int o : fragments[n].out)
-                        for (int i : fragments[n - 1].in)
-                            matchers->at(o).next.push(i);
+                    struct fragment* new_fragment = vec_emplace(&fragments);
+                    if (new_fragment == NULL)
+                        goto dup_fragments_failed;
+                    fragment_init(new_fragment);
+
+                    if (fragment_duplicate(new_fragment, f, nodes) < 0)
+                        goto dup_fragments_failed;
                 }
 
-                if (fragments.count() > 0)
+                /* Add repeat to fragment */
+                VEC_FOR_EACH(&f->out, int, out)
+                    VEC_FOR_EACH(&f->in, int, in)
+                        struct nfa_node* node = vec_get(nodes, *out);
+                        if (vec_push(&node->out, in) < 0)
+                            goto dup_fragments_failed;
+                    VEC_END_EACH
+                VEC_END_EACH
+
+                /* Wire up outputs among duplicates */
+                for (n = 1; n < vec_count(&fragments); ++n)
                 {
-                    for (int i : f.in)
-                        for (int o : fragments[0].out)
-                            matchers->at(o).next.push(i);
-                    f.in = std::move(fragments.back().in);
+                    struct fragment* f1 = vec_get(&fragments, n - 1);
+                    struct fragment* f2 = vec_get(&fragments, n);
+                    VEC_FOR_EACH(&f1->out, int, out)
+                        VEC_FOR_EACH(&f2->in, int, in)
+                            struct nfa_node* node = vec_get(nodes, *out);
+                            if (vec_push(&node->out, in) < 0)
+                                goto dup_fragments_failed;
+                        VEC_END_EACH
+                    VEC_END_EACH
                 }
+
+                if (vec_count(&fragments) > 0)
+                {
+                    struct fragment* f0 = vec_front(&fragments);
+                    struct fragment* fn = vec_back(&fragments);
+
+                    VEC_FOR_EACH(&f->in, int, in)
+                        VEC_FOR_EACH(&f0->out, int, out)
+                            struct nfa_node* node = vec_get(nodes, *out);
+                            if (vec_push(&node->out, in) < 0)
+                                goto dup_fragments_failed;
+                        VEC_END_EACH
+                    VEC_END_EACH
+
+                    vec_steal_vector(&f->in, &fn->in);
+                }
+
+                vec_deinit(&fragments);
+                break;
+
+            dup_fragments_failed:
+                vec_deinit(&fragments);
+                return -1;
             }
             else
             {
+#if 0
                 /* Invalid values */
                 if (max_reps < 0 || min_reps > max_reps)
                 {
@@ -359,6 +363,7 @@ nfa_compile_recurse(const union ast_node* ast_node, struct vec* nodes, struct ve
                     for (int i : fragments[n].in)
                         f.in.push(i);
                 }
+#endif
             }
         } break;
 
@@ -440,19 +445,28 @@ nfa_compile_recurse(const union ast_node* ast_node, struct vec* nodes, struct ve
     return 0;
 }
 
-struct nfa_graph*
-nfa_compile(const union ast_node* ast)
+int
+nfa_compile(struct nfa_graph* nfa, const union ast_node* ast)
 {
     struct vec fragment_stack;
     struct vec qualifier_stack;
     struct vec nodes;
-    struct nfa_graph* nfa;
+    struct nfa_node* entry_node;
     struct fragment* final_fragment;
+    int ret = -1;
 
-    nfa = NULL;
-    vec_init(&nodes, sizeof(struct node));
+    vec_init(&nodes, sizeof(struct nfa_node));
     vec_init(&fragment_stack, sizeof(struct fragment));
     vec_init(&qualifier_stack, sizeof(uint8_t));
+
+    /*
+     * The "entry" node is a special node that is not evaluated, but merely
+     * acts as a container for holding all start nodes. This is necessary
+     * because NFAs can have multiple start nodes. By convention, we make the
+     * entry node at index 0, which is why it is inserted now.
+     */
+    if (nodes_add_entry(&nodes) < 0)
+        goto out;
 
     if (nfa_compile_recurse(ast, &nodes, &fragment_stack, &qualifier_stack) != 0)
         goto out;
@@ -467,7 +481,7 @@ nfa_compile(const union ast_node* ast)
     final_fragment = vec_front(&fragment_stack);
 
     /* Remove duplicate state transitions */
-    VEC_FOR_EACH(&nodes, struct node, node)
+    VEC_FOR_EACH(&nodes, struct nfa_node, node)
         int a, b;
         for (a = 0; a != vec_count(&node->out); ++a)
             for (b = a + 1; b < vec_count(&node->out); ++b)
@@ -478,7 +492,24 @@ nfa_compile(const union ast_node* ast)
                 }
     VEC_END_EACH
 
-    nfa = graph_finalize(&nodes, &final_fragment->in, &final_fragment->out);
+    /*
+     * Patch in start nodes into the "entry node" we created earlier
+     */
+    entry_node = vec_front(&nodes);
+    vec_steal_vector(&entry_node->out, &final_fragment->in);
+
+    /*
+     * Mark all nodes with dangling outgoing transitions with the accept
+     * condition
+     */
+    VEC_FOR_EACH(&final_fragment->out, int, out_node)
+        struct nfa_node* node = vec_get(&nodes, *out_node);
+        node->state.flags |= NFA_MATCH_ACCEPT;
+    VEC_END_EACH
+
+    nfa->node_count = vec_count(&nodes);
+    nfa->nodes = vec_steal_data(&nodes);
+    ret = 0;
 
 out:
     vec_deinit(&qualifier_stack);
@@ -486,34 +517,31 @@ out:
         fragment_deinit(f);
     VEC_END_EACH
     vec_deinit(&fragment_stack);
-    VEC_FOR_EACH(&nodes, struct node, node)
+    VEC_FOR_EACH(&nodes, struct nfa_node, node)
         vec_deinit(&node->out);
     VEC_END_EACH
     vec_deinit(&nodes);
-    return nfa;
+    return ret;
 }
 
 void
-nfa_destroy(struct nfa_graph* nfa)
+nfa_deinit(struct nfa_graph* nfa)
 {
     mem_free(nfa->nodes);
-    mem_free(nfa->edges);
-    mem_free(nfa);
 }
 
 int
 nfa_export_dot(const struct nfa_graph* nfa, const char* file_name)
 {
     int n;
-    int* next;
     FILE* fp = fopen(file_name, "w");
     if (fp == NULL)
         goto open_file_failed;
 
     fprintf(fp, "digraph {\n");
-    fprintf(fp, "start [shape=\"record\"];\n");
+    fprintf(fp, "start;\n");
 
-    for (n = 0; n != nfa->node_count; ++n)
+    for (n = 1; n < nfa->node_count; ++n)
     {
         fprintf(fp, "n%d [shape=\"record\"", n);
 
@@ -536,12 +564,13 @@ nfa_export_dot(const struct nfa_graph* nfa, const char* file_name)
         fprintf(fp, "\"];\n");
     }
 
-    for (next = nfa->edges; *next != -1; ++next)
-        fprintf(fp, "start -> n%d;\n", *next);
-
     for (n = 0; n != nfa->node_count; ++n)
-        for (next = &nfa->edges[nfa->nodes[n].next]; *next != -1; ++next)
-            fprintf(fp, "n%d -> n%d;\n", n, *next);
+        VEC_FOR_EACH(&nfa->nodes[n].out, int, e)
+            if (n == 0)
+                fprintf(fp, "start -> n%d;\n", *e);
+            else
+                fprintf(fp, "n%d -> n%d;\n", n, *e);
+        VEC_END_EACH
 
     fprintf(fp, "}\n");
     fclose(fp);
