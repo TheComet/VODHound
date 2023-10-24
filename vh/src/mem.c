@@ -47,7 +47,8 @@ mem_threadlocal_init(void)
             sizeof(void*),
             sizeof(report_info_t),
             4096,
-            hash32_ptr) != 0)
+            hash32_ptr,
+            (hm_compare_func)memcmp) != 0)
         {
             return -1;
         }
@@ -107,7 +108,7 @@ mem_alloc(mem_size size)
 #   endif
 
             /* insert info into hashmap */
-            if (hm_insert(&g_report, &p, &info) != 1)
+            if (hm_insert_new(&g_report, &p, &info) != 1)
                 fprintf(stderr, "[memory] Hashmap insert failed\n");
 
         g_ignore_hm_malloc = 0;
@@ -194,7 +195,7 @@ mem_realloc(void* p, mem_size new_size)
 #   endif
 
             /* insert info into hashmap */
-            if (hm_insert(&g_report, &p, &info) != 1)
+            if (hm_insert_new(&g_report, &p, &info) != 1)
                 fprintf(stderr, "[memory] Hashmap insert failed\n");
 
         g_ignore_hm_malloc = 0;

@@ -12,13 +12,16 @@ C_BEGIN
 typedef uint32_t hm_size;
 typedef int32_t hm_idx;
 
+typedef int (*hm_compare_func)(const void* a, const void* b, int size);
+
 struct hm
 {
-    hm_size       table_count;
-    hm_size       key_size;
-    hm_size       value_size;
-    hm_size       slots_used;
-    hash32_func   hash;
+    hm_size          table_count;
+    hm_size          key_size;
+    hm_size          value_size;
+    hm_size          slots_used;
+    hash32_func      hash;
+    hm_compare_func  compare;
     char*            storage;
 #ifdef VH_HASHMAP_STATS
     struct {
@@ -63,10 +66,11 @@ hm_create(hm_size key_size, hm_size value_size);
 
 VH_PUBLIC_API struct hm*
 hm_create_with_options(
-        hm_size key_size,
-        hm_size value_size,
-        hm_size table_count,
-        hash32_func hash_func);
+    hm_size key_size,
+    hm_size value_size,
+    hm_size table_count,
+    hash32_func hash_func,
+    hm_compare_func compare_func);
 
 /*!
  * @brief Initializes a new hm. See hm_create() for details on
@@ -77,11 +81,12 @@ hm_init(struct hm* hm, hm_size key_size, hm_size value_size);
 
 VH_PUBLIC_API int
 hm_init_with_options(
-        struct hm* hm,
-        hm_size key_size,
-        hm_size value_size,
-        hm_size table_count,
-        hash32_func hash_func);
+    struct hm* hm,
+    hm_size key_size,
+    hm_size value_size,
+    hm_size table_count,
+    hash32_func hash_func,
+    hm_compare_func compare_func);
 
 /*!
  * @brief Cleans up internal resources without freeing the hm object itself.
@@ -111,19 +116,13 @@ hm_free(struct hm* hm);
  * is returned. If insertion failed, -1 is returned.
  */
 VH_PUBLIC_API int
-hm_insert(
-    struct hm* hm,
-    const void* key,
-    const void* value);
+hm_insert_new(struct hm* hm, const void* key, const void* value);
 
 VH_PUBLIC_API void*
-hm_emplace(
-    struct hm* hm,
-    const void* key);
+hm_insert_or_get(struct hm* hm, const void* key, const void* value);
 
 VH_PUBLIC_API void*
-hm_erase(struct hm* hm,
-              const void* key);
+hm_erase(struct hm* hm, const void* key);
 
 VH_PUBLIC_API void*
 hm_find(const struct hm* hm, const void* key);

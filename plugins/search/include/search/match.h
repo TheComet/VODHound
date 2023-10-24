@@ -60,3 +60,13 @@ match_wildcard(void)
     m.flags = 0;
     return m;
 }
+
+static inline int
+match_equal(const struct match* a, const struct match* b)
+{
+    uint8_t ignore_flags = MATCH_ACCEPT;
+    return
+        a->fighter_motion == b->fighter_motion &&
+        a->fighter_status == b->fighter_status &&
+        (a->flags & ~ignore_flags) == (b->flags & ~ignore_flags);
+}

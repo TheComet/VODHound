@@ -105,7 +105,7 @@ void ast_destroy_recurse(union ast_node* node)
 static int calculate_node_ids(const union ast_node* node, struct hm* node_ids, int* counter)
 {
     *counter += 1;
-    if (hm_insert(node_ids, &node, counter) <= 0)
+    if (hm_insert_new(node_ids, &node, counter) <= 0)
         return -1;
 
     if (node->base.left)

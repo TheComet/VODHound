@@ -52,7 +52,7 @@ node_duplicate(int node_idx, struct vec* nodes, struct hm* index_map)
     int new_idx;
 
     new_idx = vec_count(nodes);
-    switch (hm_insert(index_map, &node_idx, &new_idx))
+    switch (hm_insert_new(index_map, &node_idx, &new_idx))
     {
         case 0: return 0;
         case 1: break;
@@ -576,26 +576,29 @@ nfa_export_dot(const struct nfa_graph* nfa, const char* file_name)
         else
             fprintf(fp, ", color=\"black\"");
 
-        fprintf(fp, "label=\"");
-        if (nfa->nodes[n].match.flags & MATCH_MOTION)
-            fprintf(fp, "0x%" PRIx64, nfa->nodes[n].match.fighter_motion);
-        if ((nfa->nodes[n].match.flags & MATCH_STATUS))
-        {
-            if (nfa->nodes[n].match.flags & MATCH_MOTION)
-                fprintf(fp, ", ");
-            fprintf(fp, ", %d", nfa->nodes[n].match.fighter_status);
-        }
-        if (match_is_wildcard(&nfa->nodes[n].match))
-            fprintf(fp, ".");
-        fprintf(fp, "\"];\n");
+        fprintf(fp, ", label=\"%d\"", n);
+        fprintf(fp, "];\n");
     }
 
     for (n = 0; n != nfa->node_count; ++n)
         VEC_FOR_EACH(&nfa->nodes[n].next, int, e)
             if (n == 0)
-                fprintf(fp, "start -> n%d;\n", *e);
+                fprintf(fp, "start -> n%d [", *e);
             else
-                fprintf(fp, "n%d -> n%d;\n", n, *e);
+                fprintf(fp, "n%d -> n%d [", n, *e);
+
+            fprintf(fp, "label=\"");
+            if (nfa->nodes[*e].match.flags & MATCH_MOTION)
+                fprintf(fp, "0x%" PRIx64, nfa->nodes[*e].match.fighter_motion);
+            if ((nfa->nodes[*e].match.flags & MATCH_STATUS))
+            {
+                if (nfa->nodes[*e].match.flags & MATCH_MOTION)
+                    fprintf(fp, ", ");
+                fprintf(fp, ", %d", nfa->nodes[*e].match.fighter_status);
+            }
+            if (match_is_wildcard(&nfa->nodes[*e].match))
+                fprintf(fp, ".");
+            fprintf(fp, "\"];\n");
         VEC_END_EACH
 
     fprintf(fp, "}\n");

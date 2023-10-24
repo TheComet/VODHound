@@ -40,6 +40,7 @@ int main(int argc, char** argv)
     {
         nfa_export_dot(&nfa, "nfa.dot");
         dfa_result = dfa_compile(&dfa, &nfa);
+        nfa_export_dot(&nfa, "dfa.dot");
         nfa_deinit(&nfa);
     }
 

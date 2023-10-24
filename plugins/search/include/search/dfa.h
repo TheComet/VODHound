@@ -18,7 +18,7 @@ struct dfa_graph
 };
 
 int
-dfa_compile(struct dfa_graph* dfa, const struct nfa_graph* nfa);
+dfa_compile(struct dfa_graph* dfa, struct nfa_graph* nfa);
 
 void
 dfa_deinit(struct dfa_graph* dfa);

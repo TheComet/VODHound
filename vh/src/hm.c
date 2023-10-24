@@ -144,7 +144,7 @@ resize_rehash(struct hm* hm, hm_size new_table_count)
     {
         if (SLOT(hm, i) == VH_HM_SLOT_UNUSED || SLOT(hm, i) == VH_HM_SLOT_RIP)
             continue;
-        if (hm_insert(&new_hm, KEY(hm, i), VALUE(hm, i)) != 0)
+        if (hm_insert_new(&new_hm, KEY(hm, i), VALUE(hm, i)) != 0)
         {
             mem_free(new_hm.storage);
             return -1;
@@ -164,24 +164,26 @@ struct hm*
 hm_create(hm_size key_size, hm_size value_size)
 {
     return hm_create_with_options(
-            key_size, value_size,
-            VH_HM_MIN_CAPACITY,
-            hash32_jenkins_oaat);
+        key_size, value_size,
+        VH_HM_MIN_CAPACITY,
+        hash32_jenkins_oaat,
+        (hm_compare_func)memcmp);
 }
 
 /* ------------------------------------------------------------------------- */
 struct hm*
 hm_create_with_options(
-        hm_size key_size,
-        hm_size value_size,
-        hm_size table_count,
-        hash32_func hash_func)
+    hm_size key_size,
+    hm_size value_size,
+    hm_size table_count,
+    hash32_func hash_func,
+    hm_compare_func compare_func)
 {
     struct hm* hm = mem_alloc(sizeof(*hm));
     if (hm == NULL)
         return NULL;
 
-    hm_init_with_options(hm, key_size, value_size, table_count, hash_func);
+    hm_init_with_options(hm, key_size, value_size, table_count, hash_func, compare_func);
     return hm;
 }
 
@@ -192,7 +194,8 @@ hm_init(struct hm* hm, hm_size key_size, hm_size value_size)
     return hm_init_with_options(
         hm, key_size, value_size,
         VH_HM_MIN_CAPACITY,
-        hash32_jenkins_oaat);
+        hash32_jenkins_oaat,
+        (hm_compare_func)memcmp);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -202,7 +205,8 @@ hm_init_with_options(
     hm_size key_size,
     hm_size value_size,
     hm_size table_count,
-    hash32_func hash_func)
+    hash32_func hash_func,
+    hm_compare_func compare_func)
 {
     assert(hm);
     assert(key_size > 0);
@@ -213,6 +217,7 @@ hm_init_with_options(
     hm->key_size = key_size;
     hm->value_size = value_size;
     hm->hash = hash_func;
+    hm->compare = compare_func;
     hm->slots_used = 0;
     hm->table_count = table_count;
     hm->storage = malloc_and_init_storage(hm->key_size, hm->value_size, hm->table_count);
@@ -242,7 +247,7 @@ hm_free(struct hm* hm)
 
 /* ------------------------------------------------------------------------- */
 int
-hm_insert(struct hm* hm, const void* key, const void* value)
+hm_insert_new(struct hm* hm, const void* key, const void* value)
 {
     hash32 hash;
     int pos, i, last_tombstone;
@@ -265,7 +270,7 @@ hm_insert(struct hm* hm, const void* key, const void* value)
          * original keys), then we can conclude this key was already inserted */
         if (SLOT(hm, pos) == hash)
         {
-            if (memcmp(KEY(hm, pos), key, (size_t)hm->key_size) == 0)
+            if (hm->compare(KEY(hm, pos), key, (size_t)hm->key_size) == 0)
                 return 0;
         }
         else
@@ -304,7 +309,7 @@ hm_insert(struct hm* hm, const void* key, const void* value)
 
 /* ------------------------------------------------------------------------- */
 void*
-hm_emplace(struct hm* hm, const void* key)
+hm_insert_or_get(struct hm* hm, const void* key, const void* value)
 {
     hash32 hash;
     int pos, i, last_tombstone;
@@ -327,8 +332,8 @@ hm_emplace(struct hm* hm, const void* key)
          * original keys), then we can conclude this key was already inserted */
         if (SLOT(hm, pos) == hash)
         {
-            if (memcmp(KEY(hm, pos), key, (size_t)hm->key_size) == 0)
-                return NULL;
+            if (hm->compare(KEY(hm, pos), key, (size_t)hm->key_size) == 0)
+                return VALUE(hm, pos);
         }
         else
             if (SLOT(hm, pos) == VH_HM_SLOT_RIP)
@@ -356,6 +361,8 @@ hm_emplace(struct hm* hm, const void* key)
     /* Store hash, key and value */
     SLOT(hm, pos) = hash;
     memcpy(KEY(hm, pos), key, (size_t)hm->key_size);
+    if (value)  /* value may be NULL, and memcpy() with a NULL source is undefined, even if len is 0 */
+        memcpy(VALUE(hm, pos), value, (size_t)hm->value_size);
 
     hm->slots_used++;
 
@@ -374,7 +381,7 @@ hm_erase(struct hm* hm, const void* key)
     {
         if (SLOT(hm, pos) == hash)
         {
-            if (memcmp(KEY(hm, pos), key, (size_t)hm->key_size) == 0)
+            if (hm->compare(KEY(hm, pos), key, (size_t)hm->key_size) == 0)
                 break;
         }
         else
@@ -409,7 +416,7 @@ hm_find(const struct hm* hm, const void* key)
     {
         if (SLOT(hm, pos) == hash)
         {
-            if (memcmp(KEY(hm, pos), key, (size_t)hm->key_size) == 0)
+            if (hm->compare(KEY(hm, pos), key, (size_t)hm->key_size) == 0)
                 break;
         }
         else
@@ -439,7 +446,7 @@ hm_exists(const struct hm* hm, const void* key)
     {
         if (SLOT(hm, pos) == hash)
         {
-            if (memcmp(KEY(hm, pos), key, (size_t)hm->key_size) == 0)
+            if (hm->compare(KEY(hm, pos), key, (size_t)hm->key_size) == 0)
                 return 1;
         }
         else
