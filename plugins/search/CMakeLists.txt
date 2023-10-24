@@ -88,6 +88,7 @@ if (VODHOUND_${PLUGIN_NAME})
     if (${PLUGIN_NAME}_CLI)
         add_executable (${PROJECT_NAME}_cli
             "src/ast.c"
+            "src/dfa.c"
             "src/match.c"
             "src/nfa.c"
             "src/parser.c"
@@ -95,6 +96,7 @@ if (VODHOUND_${PLUGIN_NAME})
             "src/scanner.lex"
 
             "include/${PROJECT_NAME}/ast.h"
+            "include/${PROJECT_NAME}/dfa.h"
             "include/${PROJECT_NAME}/match.h"
             "include/${PROJECT_NAME}/nfa.h"
             "include/${PROJECT_NAME}/parser.h"

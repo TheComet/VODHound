@@ -271,8 +271,8 @@ mem_threadlocal_deinit(void)
     {
         HM_FOR_EACH(&g_report, void*, report_info_t, key, info)
 
-            fprintf(stderr, "  un-freed memory at %p, size %p\n", (void*)info->location, (void*)info->size);
-            mem_mutated_string_and_hex_dump((void*)info->location, info->size);
+            fprintf(stderr, "  un-freed memory at %p, size %p\n", info->location, (void*)(uintptr_t)info->size);
+            mem_mutated_string_and_hex_dump(info->location, info->size);
 
 #   if defined(VH_MEM_BACKTRACE)
             fprintf(stderr, "  Backtrace to where malloc() was called:\n");
@@ -292,10 +292,10 @@ mem_threadlocal_deinit(void)
 
     /* overall report */
     leaks = (g_allocations > d_deallocations ? g_allocations - d_deallocations : d_deallocations - g_allocations);
-    fprintf(stderr, "allocations   : %" PRIu64 "\n", g_allocations);
-    fprintf(stderr, "deallocations : %" PRIu64 "\n", d_deallocations);
+    fprintf(stderr, "allocations   : %" PRIu32 "\n", g_allocations);
+    fprintf(stderr, "deallocations : %" PRIu32 "\n", d_deallocations);
     fprintf(stderr, "memory leaks  : %" PRIu64 "\n", leaks);
-    fprintf(stderr, "peak memory usage: %" PRIu64 " bytes\n", g_bytes_in_use_peak);
+    fprintf(stderr, "peak memory usage: %" PRIu32 " bytes\n", g_bytes_in_use_peak);
     fprintf(stderr, "=========================================\n");
 
     ++g_allocations; /* this is the single allocation still held by the report hashmap */

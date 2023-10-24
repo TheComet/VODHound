@@ -1,4 +1,5 @@
 #include "search/ast.h"
+#include "search/dfa.h"
 #include "search/nfa.h"
 #include "search/parser.h"
 
@@ -11,7 +12,9 @@ int main(int argc, char** argv)
     struct parser parser;
     union ast_node* ast = NULL;
     struct nfa_graph nfa;
+    struct dfa_graph dfa;
     int nfa_result = -1;
+    int dfa_result = -1;
 
     if (argc < 2)
     {
@@ -36,7 +39,14 @@ int main(int argc, char** argv)
     if (nfa_result == 0)
     {
         nfa_export_dot(&nfa, "nfa.dot");
+        dfa_result = dfa_compile(&dfa, &nfa);
         nfa_deinit(&nfa);
+    }
+
+    if (dfa_result == 0)
+    {
+        dfa_export_dot(&dfa, "dfa.dot");
+        dfa_deinit(&dfa);
     }
 
     vh_deinit();

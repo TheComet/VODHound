@@ -12,7 +12,7 @@
 
 #if defined(_WIN32)
 #   include <malloc.h>
-static inline int mem_size(void* p) { return (int)_msize(p); }
+static inline int mem_allocated_size(void* p) { return (int)_msize(p); }
 #elif defined(__APPLE__)
 #   include <malloc/malloc.h>
 #   define mem_allocated_size  malloc_size

@@ -25,7 +25,7 @@ typedef int32_t vec_idx;
 
 struct vec
 {
-    uint8_t* data;            /* pointer to the contiguous section of memory */
+    uint8_t* data;          /* pointer to the contiguous section of memory */
     vec_size capacity;      /* how many elements actually fit into the allocated space */
     vec_size count;         /* number of elements inserted */
     vec_size element_size;  /* how large one element is in bytes */
