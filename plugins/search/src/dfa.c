@@ -26,7 +26,7 @@ match_hm_compare(const void* a, const void* b, int size)
 }
 
 static void
-print_transition_table(const struct hm* tf, const struct nfa_graph* nfa)
+print_transition_table(const struct hm* tt, const struct nfa_graph* nfa)
 {
     char buf[19];  /* 64-bit hex = 16 chars + "0x" + null */
     struct vec columns;
@@ -39,7 +39,7 @@ print_transition_table(const struct hm* tf, const struct nfa_graph* nfa)
     vec_init(&col_widths, sizeof(int));
 
     row_count = 0;
-    HM_FOR_EACH(tf, struct match, struct vec, match, entry)
+    HM_FOR_EACH(tt, struct match, struct vec, match, entry)
         struct vec* rows = vec_emplace(&columns);
         struct str* title = vec_emplace(&col_titles);
         int* col_width = vec_emplace(&col_widths);
@@ -117,19 +117,19 @@ dfa_compile(struct dfa_graph* dfa, struct nfa_graph* nfa)
     struct vec transitions;
     struct vec nfa_prev;
     struct btree visited;
-    struct hm tf;
+    struct hm nfa_tt;
     struct vec template_tf_entry;
     int n;
     const int term = -1;
 
-    if (hm_init_with_options(&tf, sizeof(struct match), sizeof(struct vec), VH_HM_MIN_CAPACITY, match_hm_hash, match_hm_compare) < 0)
+    if (hm_init_with_options(&nfa_tt, sizeof(struct match), sizeof(struct vec), VH_HM_MIN_CAPACITY, match_hm_hash, match_hm_compare) < 0)
         goto hm_init_failed;
 
     vec_init(&template_tf_entry, sizeof(struct vec));
     for (n = 0; n != nfa->node_count; ++n)
     {
         VEC_FOR_EACH(&nfa->nodes[n].next, int, next)
-            struct vec* tf_entry = hm_insert_or_get(&tf, &nfa->nodes[*next].match, &template_tf_entry);
+            struct vec* tf_entry = hm_insert_or_get(&nfa_tt, &nfa->nodes[*next].match, &template_tf_entry);
             while (vec_count(tf_entry) < n + 1)
             {
                 struct vec* states = vec_emplace(tf_entry);
@@ -139,7 +139,7 @@ dfa_compile(struct dfa_graph* dfa, struct nfa_graph* nfa)
             vec_push(states, next);
         VEC_END_EACH
 
-        HM_FOR_EACH(&tf, struct match, struct vec, match, entry)
+        HM_FOR_EACH(&nfa_tt, struct match, struct vec, match, entry)
             while (vec_count(entry) < n + 1)
             {
                 struct vec* states = vec_emplace(entry);
@@ -147,17 +147,17 @@ dfa_compile(struct dfa_graph* dfa, struct nfa_graph* nfa)
             }
         HM_END_EACH
     }
-    print_transition_table(&tf, nfa);
+    print_transition_table(&nfa_tt, nfa);
 
 compile_failed:
-    HM_FOR_EACH(&tf, struct match, struct vec, match, entry)
+    HM_FOR_EACH(&nfa_tt, struct match, struct vec, match, entry)
         VEC_FOR_EACH(entry, struct vec, states)
             vec_deinit(states);
         VEC_END_EACH
         vec_deinit(entry);
     HM_END_EACH
 hm_init_failed:
-    hm_deinit(&tf);
+    hm_deinit(&nfa_tt);
 
     return -1;
 }
