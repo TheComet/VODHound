@@ -15,8 +15,6 @@
  * otherwise there would be no way to tell the difference between an empty and
  * a full ring buffer.
  */
-#pragma once
-
 #include "vh/rb.h"
 #include "vh/mem.h"
 

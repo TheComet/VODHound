@@ -11,17 +11,17 @@
 #define BACKTRACE_OMIT_COUNT 2
 
 #if defined(VH_MEM_DEBUGGING)
-static VH_THREADLOCAL uintptr_t g_allocations = 0;
-static VH_THREADLOCAL uintptr_t d_deallocations = 0;
-static VH_THREADLOCAL uintptr_t g_ignore_hm_malloc = 0;
-VH_THREADLOCAL uintptr_t g_bytes_in_use = 0;
-VH_THREADLOCAL uintptr_t g_bytes_in_use_peak = 0;
+static VH_THREADLOCAL mem_size g_allocations = 0;
+static VH_THREADLOCAL mem_size d_deallocations = 0;
+static VH_THREADLOCAL mem_size g_ignore_hm_malloc = 0;
+VH_THREADLOCAL mem_size g_bytes_in_use = 0;
+VH_THREADLOCAL mem_size g_bytes_in_use_peak = 0;
 static VH_THREADLOCAL struct hm g_report;
 
 typedef struct report_info_t
 {
     void* location;
-    uintptr_t size;
+    mem_size size;
 #   if defined(VH_MEM_BACKTRACE)
     int backtrace_size;
     char** backtrace;
@@ -58,7 +58,7 @@ mem_threadlocal_init(void)
 
 /* ------------------------------------------------------------------------- */
 void*
-mem_alloc(int size)
+mem_alloc(mem_size size)
 {
     void* p = NULL;
     report_info_t info = {0};
@@ -87,7 +87,7 @@ mem_alloc(int size)
             info.size = size;
 
             /* if (enabled, generate a backtrace so we know where memory leaks
-            * occurred */
+             * occurred */
 #   if defined(VH_MEM_BACKTRACE)
             if (!(info.backtrace = backtrace_get(&info.backtrace_size)))
                 fprintf(stderr, "[memory] WARNING: Failed to generate backtrace\n");
@@ -119,7 +119,7 @@ mem_alloc(int size)
 
 /* ------------------------------------------------------------------------- */
 void*
-mem_realloc(void* p, int new_size)
+mem_realloc(void* p, mem_size new_size)
 {
     void* old_p = p;
     p = realloc(p, new_size);
@@ -255,7 +255,7 @@ mem_free(void* p)
 }
 
 /* ------------------------------------------------------------------------- */
-uintptr_t
+mem_size
 mem_threadlocal_deinit(void)
 {
     uintptr_t leaks;
@@ -307,14 +307,14 @@ mem_threadlocal_deinit(void)
 }
 
 /* ------------------------------------------------------------------------- */
-uintptr_t
+mem_size
 mem_get_num_allocs(void)
 {
     return hm_count(&g_report);
 }
 
 /* ------------------------------------------------------------------------- */
-uintptr_t
+mem_size
 mem_get_memory_usage(void)
 {
     return g_bytes_in_use;
@@ -331,10 +331,10 @@ uintptr_t mem_get_memory_usage(void)   { return 0; }
 
 /* ------------------------------------------------------------------------- */
 void
-mem_mutated_string_and_hex_dump(const void* data, uintptr_t length_in_bytes)
+mem_mutated_string_and_hex_dump(const void* data, mem_size length_in_bytes)
 {
     char* dump;
-    uintptr_t i;
+    mem_idx i;
 
     /* allocate and copy data into new buffer */
     if (!(dump = malloc(length_in_bytes + 1)))
@@ -346,14 +346,14 @@ mem_mutated_string_and_hex_dump(const void* data, uintptr_t length_in_bytes)
     dump[length_in_bytes] = '\0';
 
     /* mutate null terminators into dots */
-    for (i = 0; i != length_in_bytes; ++i)
+    for (i = 0; i != (mem_idx)length_in_bytes; ++i)
         if (dump[i] == '\0')  /* valgrind will complain about conditional jump depending on uninitialized value here -- that's ok */
             dump[i] = '.';
 
     /* dump */
     fprintf(stderr, "  mutated string dump: %s\n", dump);
     fprintf(stderr, "  hex dump: ");
-    for (i = 0; i != length_in_bytes; ++i)
+    for (i = 0; i != (mem_idx)length_in_bytes; ++i)
         fprintf(stderr, " %02x", (unsigned char)dump[i]);
     fprintf(stderr, "\n");
 

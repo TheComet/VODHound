@@ -1336,12 +1336,14 @@ struct db_interface db_sqlite = {
     open_and_prepare,
     close_db,
 
-    transaction_begin,
-    transaction_commit,
-    transaction_rollback,
-    transaction_begin_nested,
-    transaction_commit_nested,
-    transaction_rollback_nested,
+    {
+        transaction_begin,
+        transaction_commit,
+        transaction_rollback,
+        transaction_begin_nested,
+        transaction_commit_nested,
+        transaction_rollback_nested,
+    },
 
 #define X(group, stmt) group##_##stmt,
     STMT_LIST
@@ -1367,7 +1369,7 @@ static struct sqlite3_mem_methods vh_mem_sqlite = {
     mem_alloc,
     mem_free,
     mem_realloc,
-    mem_size,
+    mem_allocated_size,
     vh_mem_roundup,
     vh_mem_init,
     vh_mem_deinit,

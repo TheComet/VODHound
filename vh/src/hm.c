@@ -5,9 +5,9 @@
 
 #define IS_POWER_OF_2(x) (((x) & ((x)-1)) == 0)
 
-#define SLOT(hm, pos)  (*(hash32*)(hm->storage + sizeof(hash32) * (hm_size)pos))
-#define KEY(hm, pos)   (void*)       (hm->storage + sizeof(hash32) * hm->table_count + hm->key_size * (hm_size)pos)
-#define VALUE(hm, pos) (void*)       (hm->storage + sizeof(hash32) * hm->table_count + hm->key_size * hm->table_count + hm->value_size * (hm_size)pos)
+#define SLOT(hm, pos)  (*(hash32*)(hm->storage + (hm_idx)sizeof(hash32) * (hm_idx)pos))
+#define KEY(hm, pos)   (void*)       (hm->storage + (hm_idx)sizeof(hash32) * (hm_idx)hm->table_count + (hm_idx)hm->key_size * (hm_idx)pos)
+#define VALUE(hm, pos) (void*)       (hm->storage + (hm_idx)sizeof(hash32) * (hm_idx)hm->table_count + (hm_idx)hm->key_size * (hm_idx)hm->table_count + (hm_idx)hm->value_size * (hm_idx)pos)
 
 #if defined(VH_HASHMAP_STATS)
 #   include <stdio.h>
@@ -114,7 +114,7 @@ malloc_and_init_storage(hm_size key_size, hm_size value_size, hm_size table_coun
     assert(IS_POWER_OF_2(table_count));
 
     /* Store the hashes, keys and values in one contiguous chunk of memory */
-    storage = mem_alloc((int)(sizeof(hash32) + key_size + value_size) * (int)table_count);
+    storage = mem_alloc((mem_size)(sizeof(hash32) + key_size + value_size) * table_count);
     if (storage == NULL)
         return NULL;
 

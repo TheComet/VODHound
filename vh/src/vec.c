@@ -104,17 +104,6 @@ vec_compact(struct vec* vec)
 }
 
 /* ------------------------------------------------------------------------- */
-void*
-vec_take(struct vec* vec)
-{
-    void* data = vec->data;
-    vec->data = NULL;
-    vec->capacity = 0;
-    vec->count = 0;
-    return data;
-}
-
-/* ------------------------------------------------------------------------- */
 void
 vec_clear_compact(struct vec* vec)
 {

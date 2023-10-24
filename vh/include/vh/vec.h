@@ -79,9 +79,6 @@ vec_clear(struct vec* vec);
 VH_PUBLIC_API void
 vec_compact(struct vec* vec);
 
-VH_PUBLIC_API void*
-vec_take(struct vec* vec);
-
 VH_PUBLIC_API void
 vec_clear_compact(struct vec* vec);
 

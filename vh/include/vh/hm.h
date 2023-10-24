@@ -136,14 +136,14 @@ hm_exists(const struct hm* hm, const void* key);
 #define HM_FOR_EACH(hm, key_t, value_t, key, value) { \
     key_t* key; \
     value_t* value; \
-    hash32 pos_##value; \
+    hm_idx pos_##value; \
     for (pos_##value = 0; \
-        pos_##value != (hm)->table_count && \
-            ((key = (key_t*)((uint8_t*)(hm)->storage + (sizeof(hash32) + (hm)->key_size) * pos_##value + sizeof(hash32))) || 1) && \
-            ((value = (value_t*)((uint8_t*)(hm)->storage + (sizeof(hash32) + (hm)->key_size) * (hm)->table_count + (hm)->value_size * pos_##value)) || 1); \
+        pos_##value != (hm_idx)(hm)->table_count && \
+            ((key = (key_t*)((hm)->storage + (hm_idx)sizeof(hash32) * (hm_idx)(hm)->table_count + (hm_idx)(hm)->key_size * pos_##value)) || 1) && \
+            ((value = (value_t*)((hm)->storage + (hm_idx)sizeof(hash32) * (hm_idx)(hm)->table_count + (hm_idx)(hm)->key_size * (hm_idx)(hm)->table_count + (hm_idx)(hm)->value_size * pos_##value)) || 1); \
         ++pos_##value) \
     { \
-        hash32 slot_##value = *(hash32*)((uint8_t*)(hm)->storage + (sizeof(hash32) + (hm)->key_size) * pos_##value); \
+        hash32 slot_##value = *(hash32*)((hm)->storage + (hm_idx)sizeof(hash32) * pos_##value); \
         if (slot_##value == VH_HM_SLOT_UNUSED || slot_##value == VH_HM_SLOT_RIP || slot_##value == VH_HM_SLOT_INVALID) \
             continue; \
         { \
