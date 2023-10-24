@@ -565,23 +565,20 @@ nfa_export_dot(const struct nfa_graph* nfa, const char* file_name)
         goto open_file_failed;
 
     fprintf(fp, "digraph {\n");
-    fprintf(fp, "start;\n");
+    fprintf(fp, "start [shape=\"point\", label=\"\", width=\"0.25\"];\n");
+    fprintf(fp, "accept [shape=\"doublecircle\", label=\"\", width=\"0.4\"];\n");
 
     for (n = 1; n < nfa->node_count; ++n)
-    {
-        fprintf(fp, "n%d [shape=\"record\"", n);
-
-        if (nfa->nodes[n].match.flags & MATCH_ACCEPT)
-            fprintf(fp, ", color=\"red\"");
-        else
-            fprintf(fp, ", color=\"black\"");
-
-        fprintf(fp, ", label=\"%d\"", n);
-        fprintf(fp, "];\n");
-    }
+        //if (!(nfa->nodes[n].match.flags & MATCH_ACCEPT))
+            fprintf(fp, "n%d [shape=\"record\", label=\"%d\"];\n", n, n);
 
     for (n = 0; n != nfa->node_count; ++n)
+    {
+        if (nfa->nodes[n].match.flags & MATCH_ACCEPT)
+            fprintf(fp, "n%d -> accept;\n", n);
+
         VEC_FOR_EACH(&nfa->nodes[n].next, int, e)
+
             if (n == 0)
                 fprintf(fp, "start -> n%d [", *e);
             else
@@ -600,6 +597,7 @@ nfa_export_dot(const struct nfa_graph* nfa, const char* file_name)
                 fprintf(fp, ".");
             fprintf(fp, "\"];\n");
         VEC_END_EACH
+    }
 
     fprintf(fp, "}\n");
     fclose(fp);
