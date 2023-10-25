@@ -594,7 +594,7 @@ nfa_export_dot(const struct nfa_graph* nfa, const char* file_name)
                 fprintf(fp, ", %d", nfa->nodes[*e].match.fighter_status);
             }
             if (match_is_wildcard(&nfa->nodes[*e].match))
-                fprintf(fp, ".");
+                fprintf(fp, "(.)");
             fprintf(fp, "\"];\n");
         VEC_END_EACH
     }

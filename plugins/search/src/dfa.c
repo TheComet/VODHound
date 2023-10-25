@@ -86,8 +86,16 @@ print_nfa(const struct table* tt, const struct vec* tf)
             goto calc_text_failed;
 
         str_init(title);
-        if (str_fmt(title, "0x%" PRIx64, match->fighter_motion) < 0)
-            goto calc_text_failed;
+        if (match_is_wildcard(match))
+        {
+            if (cstr_set(title, ".") < 0)
+                goto calc_text_failed;
+        }
+        else
+        {
+            if (str_fmt(title, "0x%" PRIx64, match->fighter_motion) < 0)
+                goto calc_text_failed;
+        }
 
         *col_width = 0;
         if (*col_width < title->len)
@@ -210,8 +218,16 @@ print_dfa(const struct table* tt, const struct vec* tf)
             goto calc_text_failed;
 
         str_init(title);
-        if (str_fmt(title, "0x%" PRIx64, match->fighter_motion) < 0)
-            goto calc_text_failed;
+        if (match_is_wildcard(match))
+        {
+            if (cstr_set(title, ".") < 0)
+                goto calc_text_failed;
+        }
+        else
+        {
+            if (str_fmt(title, "0x%" PRIx64, match->fighter_motion) < 0)
+                goto calc_text_failed;
+        }
 
         *col_width = 0;
         if (*col_width < title->len)
@@ -301,6 +317,20 @@ table_init_failed:
     return;
 }
 
+static int
+dfa_state_is_accept(const struct dfa_table* dfa, int state)
+{
+    int r, c;
+    for (r = 0; r != dfa->tt.rows; ++r)
+        for (c = 0; c != dfa->tt.cols; ++c)
+        {
+            const int* next = table_get(&dfa->tt, r, c);
+            if (*next < 0 && -*next == state)
+                return 1;
+        }
+    return 0;
+}
+
 static void
 dfa_remove_duplicates(struct dfa_table* dfa)
 {
@@ -308,6 +338,7 @@ dfa_remove_duplicates(struct dfa_table* dfa)
     for (r1 = 0; r1 < dfa->tt.rows; ++r1)
         for (r2 = r1 + 1; r2 < dfa->tt.rows; ++r2)
         {
+            int is_accept1, is_accept2;
             for (c = 0; c != dfa->tt.cols; ++c)
             {
                 int* cell1 = table_get(&dfa->tt, r1, c);
@@ -316,7 +347,16 @@ dfa_remove_duplicates(struct dfa_table* dfa)
                     goto skip_row;
             }
 
-            /* Replace all references to r2 with r1 */
+            /*
+             * Have to additionally make sure that r1 and r2 are either both
+             * accept conditions, or neither. It is invalid to merge states
+             * only one of them is an accept condition.
+             */
+            if (dfa_state_is_accept(dfa, r1) != dfa_state_is_accept(dfa, r2))
+                goto skip_row;
+
+            /* Replace all references to r2 with r1, and decrement all references
+             * above r2, since r2 is removed. */
             for (r = 0; r != dfa->tt.rows; ++r)
                 for (c = 0; c != dfa->tt.cols; ++c)
                 {
@@ -325,6 +365,17 @@ dfa_remove_duplicates(struct dfa_table* dfa)
                         *cell = r1;
                     if (*cell == -r2)
                         *cell = -r1;
+
+                    if (*cell < 0)
+                    {
+                        if (*cell < -r2)
+                            (*cell)++;
+                    }
+                    else
+                    {
+                        if (*cell > r2)
+                            (*cell)--;
+                    }
                 }
 
             table_remove_row(&dfa->tt, r2);
@@ -512,6 +563,12 @@ dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
             VEC_END_EACH
         }
 
+    /*
+     * Currently produces incorrect results for:
+     *   "((grab->.?->dthrow)|utilt->sh->nair->.0,2)+"
+     */
+    fprintf(stderr, "DFA (duplicates):\n");
+    print_dfa(&dfa->tt, &dfa->tf);
     dfa_remove_duplicates(dfa);
 
     fprintf(stderr, "DFA:\n");
@@ -548,20 +605,6 @@ dfa_deinit(struct dfa_table* dfa)
 {
     table_deinit(&dfa->tt);
     vec_deinit(&dfa->tf);
-}
-
-static int
-dfa_state_is_accept(const struct dfa_table* dfa, int state)
-{
-    int r, c;
-    for (r = 0; r != dfa->tt.rows; ++r)
-        for (c = 0; c != dfa->tt.cols; ++c)
-        {
-            const int* next = table_get(&dfa->tt, r, c);
-            if (*next < 0 && -*next == state)
-                return 1;
-        }
-    return 0;
 }
 
 int
@@ -607,7 +650,7 @@ dfa_export_dot(const struct dfa_table* dfa, const char* file_name)
                 fprintf(fp, ", %d", match->fighter_status);
             }
             if (match_is_wildcard(match))
-                fprintf(fp, ".");
+                fprintf(fp, "(.)");
             fprintf(fp, "\"];\n");
         }
 

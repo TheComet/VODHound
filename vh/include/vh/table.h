@@ -57,13 +57,14 @@ static inline void
 table_remove_row(struct table* table, int row)
 {
     int row_size = table->cols * table->element_size;
+    int table_size = row_size * table->rows;
     int offset = (row * table->cols) * table->element_size;
     if (row < table->rows - 1)
     {
         memmove(
             (void*)((char*)table->data + offset),
             (const void*)((char*)table->data + offset + row_size),
-            row_size);
+            table_size - offset - row_size);
     }
 
     table->rows--;
