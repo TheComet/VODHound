@@ -563,10 +563,6 @@ dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
             VEC_END_EACH
         }
 
-    /*
-     * Currently produces incorrect results for:
-     *   "((grab->.?->dthrow)|utilt->sh->nair->.0,2)+"
-     */
     fprintf(stderr, "DFA (duplicates):\n");
     print_dfa(&dfa->tt, &dfa->tf);
     dfa_remove_duplicates(dfa);
