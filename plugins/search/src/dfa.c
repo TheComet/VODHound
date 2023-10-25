@@ -106,7 +106,7 @@ states_hm_compare(const void* a, const void* b, int size)
 }
 
 static void
-print_transition_table(const struct table* tt, const struct vec* tf)
+print_transition_table(const struct table* tt, const struct vec* tf, const struct hm* dfa_unique_states)
 {
     char buf[12];  /* -2147483648 */
     struct table tt_str;
@@ -176,7 +176,29 @@ print_transition_table(const struct table* tt, const struct vec* tf)
     fprintf(stderr, "\n");
     for (r = 0; r != tt_str.rows; ++r)
     {
-        fprintf(stderr, "%*s%d ", 5, "", r);
+        if (dfa_unique_states)
+        {
+            HM_FOR_EACH(dfa_unique_states, struct vec, int, states, row)
+                if (*row == r)
+                {
+                    char buf2[32]; buf2[0] = 0;
+                    int i;
+                    for (i = 0; i != vec_count(states); ++i)
+                    {
+                        if (i) strcat(buf2, ",");
+                        sprintf(buf, "%d", *(int*)vec_get(states, i));
+                        strcat(buf2, buf);
+                    }
+                    fprintf(stderr, " %*s ", 5, buf2);
+                    goto found;
+                }
+            HM_END_EACH
+            fprintf(stderr, " %*s ", 5, "");
+        found : ;
+        }
+        else
+            fprintf(stderr, "%*s%d ", 5, "", r);
+
         for (c = 0; c != tt_str.cols; ++c)
         {
             int w = *(int*)vec_get(&col_widths, c);
@@ -287,7 +309,7 @@ dfa_compile(struct dfa_graph* dfa, struct nfa_graph* nfa)
         VEC_END_EACH
 
     fprintf(stderr, "NFA:\n");
-    print_transition_table(&nfa_tt, &tf);
+    print_transition_table(&nfa_tt, &tf, NULL);
     fprintf(stderr, "\n");
 
     /*
@@ -346,7 +368,7 @@ dfa_compile(struct dfa_graph* dfa, struct nfa_graph* nfa)
     }
 
     fprintf(stderr, "DFA:\n");
-    print_transition_table(&dfa_tt, &tf);
+    print_transition_table(&dfa_tt, &tf, NULL /*&dfa_unique_states*/);
 
 build_dfa_table_failed:
     for (r = 0; r != dfa_tt.rows; ++r)
