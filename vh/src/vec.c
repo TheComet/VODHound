@@ -51,6 +51,22 @@ vec_init(struct vec* vec, const vec_size element_size)
 }
 
 /* ------------------------------------------------------------------------- */
+int
+vec_init_copy(struct vec* vec, const struct vec* src)
+{
+    assert(src);
+
+    vec->element_size = src->element_size;
+    vec->count = src->count;
+    vec->capacity = src->count;  /* Use count here instead of capacity */
+    vec->data = malloc(vec->capacity * vec->element_size);
+    if (vec->data == NULL)
+        return -1;
+    memcpy(vec->data, src->data, src->count * src->element_size);
+    return 0;
+}
+
+/* ------------------------------------------------------------------------- */
 void
 vec_deinit(struct vec* vec)
 {

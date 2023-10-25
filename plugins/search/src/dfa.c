@@ -73,11 +73,17 @@ match_hm_hash(const void* data, int len)
 }
 
 static int
-match_hm_compare(const void* a, const void* b, int size)
+match_hm_compare(const void* adata, const void* bdata, int size)
 {
     (void)size;
     /* Inversion, because hashmap expects this to behavle like memcmp() */
-    return !match_equal(a, b);
+    uint8_t ignore_flags = MATCH_ACCEPT;
+    const struct match* a = adata;
+    const struct match* b = bdata;
+    return !(
+        a->fighter_motion == b->fighter_motion &&
+        a->fighter_status == b->fighter_status &&
+        (a->flags & ~ignore_flags) == (b->flags & ~ignore_flags));
 }
 
 static hash32
@@ -106,12 +112,13 @@ states_hm_compare(const void* a, const void* b, int size)
 }
 
 static void
-print_transition_table(const struct table* tt, const struct vec* tf, const struct hm* dfa_unique_states)
+print_nfa(const struct table* tt, const struct vec* tf)
 {
     char buf[12];  /* -2147483648 */
     struct table tt_str;
     struct vec col_titles;
     struct vec col_widths;
+    struct vec row_indices;
     int c, r;
 
     if (table_init(&tt_str, tt->rows, tt->cols, sizeof(struct str)) < 0)
@@ -122,6 +129,7 @@ print_transition_table(const struct table* tt, const struct vec* tf, const struc
 
     vec_init(&col_titles, sizeof(struct str));
     vec_init(&col_widths, sizeof(int));
+    vec_init(&row_indices, sizeof(int));
 
     for (c = 0; c != tt->cols; ++c)
     {
@@ -146,7 +154,7 @@ print_transition_table(const struct table* tt, const struct vec* tf, const struc
             str_init(s);
 
             VEC_FOR_EACH(cell, int, next)
-                sprintf(buf, "%d", *next);
+                sprintf(buf, "%d", *next < 0 ? -*next : *next);
                 if (cstr_join(s, ",", buf) < 0)
                     goto calc_text_failed;
             VEC_END_EACH
@@ -155,6 +163,23 @@ print_transition_table(const struct table* tt, const struct vec* tf, const struc
                 *col_width = s->len;
         }
     }
+
+    for (r = 0; r != tt->rows; ++r)
+        if (vec_push(&row_indices, &r) < 0)
+            goto calc_text_failed;
+    for (r = 0; r != tt->rows; ++r)
+        for (c = 0; c != tt->cols; ++c)
+        {
+            struct vec* cell = table_get(tt, r, c);
+            VEC_FOR_EACH(cell, int, next)
+                if (*next < 0)
+                {
+                    int* row_idx = vec_get(&row_indices, -*next);
+                    if (*row_idx > 0)
+                        *row_idx = -*row_idx;
+                }
+            VEC_END_EACH
+        }
 
     fprintf(stderr, " State ");
     for (c = 0; c != vec_count(&col_titles); ++c)
@@ -176,28 +201,14 @@ print_transition_table(const struct table* tt, const struct vec* tf, const struc
     fprintf(stderr, "\n");
     for (r = 0; r != tt_str.rows; ++r)
     {
-        if (dfa_unique_states)
+        int* row_idx = vec_get(&row_indices, r);
+        if (*row_idx < 0)
         {
-            HM_FOR_EACH(dfa_unique_states, struct vec, int, states, row)
-                if (*row == r)
-                {
-                    char buf2[32]; buf2[0] = 0;
-                    int i;
-                    for (i = 0; i != vec_count(states); ++i)
-                    {
-                        if (i) strcat(buf2, ",");
-                        sprintf(buf, "%d", *(int*)vec_get(states, i));
-                        strcat(buf2, buf);
-                    }
-                    fprintf(stderr, " %*s ", 5, buf2);
-                    goto found;
-                }
-            HM_END_EACH
-            fprintf(stderr, " %*s ", 5, "");
-        found : ;
+            sprintf(buf, "%d", -*row_idx);
+            fprintf(stderr, " %*s*%s ", (int)(4 - strlen(buf)), "", buf);
         }
         else
-            fprintf(stderr, "%*s%d ", 5, "", r);
+            fprintf(stderr, " %*d ", 5, *row_idx);
 
         for (c = 0; c != tt_str.cols; ++c)
         {
@@ -209,6 +220,127 @@ print_transition_table(const struct table* tt, const struct vec* tf, const struc
      }
 
 calc_text_failed:
+    vec_deinit(&row_indices);
+    VEC_FOR_EACH(&col_titles, struct str, title)
+        str_deinit(title);
+    VEC_END_EACH
+    vec_deinit(&col_titles);
+    vec_deinit(&col_widths);
+
+    for (c = 0; c != tt_str.cols; ++c)
+        for (r = 0; r != tt_str.rows; ++r)
+            str_deinit(table_get(&tt_str, r, c));
+    table_deinit(&tt_str);
+table_init_failed:
+    return;
+}
+
+static void
+print_dfa(const struct table* tt, const struct vec* tf)
+{
+    char buf[12];  /* -2147483648 */
+    struct table tt_str;
+    struct vec col_titles;
+    struct vec col_widths;
+    struct vec row_indices;
+    int c, r;
+
+    if (table_init(&tt_str, tt->rows, tt->cols, sizeof(struct str)) < 0)
+        goto table_init_failed;
+    for (r = 0; r != tt_str.rows; ++r)
+        for (c = 0; c != tt_str.cols; ++c)
+            str_init(table_get(&tt_str, r, c));
+
+    vec_init(&col_titles, sizeof(struct str));
+    vec_init(&col_widths, sizeof(int));
+    vec_init(&row_indices, sizeof(int));
+
+    for (c = 0; c != tt->cols; ++c)
+    {
+        struct match* match = vec_get(tf, c);
+        struct str* title = vec_emplace(&col_titles);
+        int* col_width = vec_emplace(&col_widths);
+        if (title == NULL || col_width == NULL)
+            goto calc_text_failed;
+
+        str_init(title);
+        if (str_fmt(title, "0x%" PRIx64, match->fighter_motion) < 0)
+            goto calc_text_failed;
+
+        *col_width = 0;
+        if (*col_width < title->len)
+            *col_width = title->len;
+
+        for (r = 0; r != tt->rows; ++r)
+        {
+            int* cell = table_get(tt, r, c);
+            struct str* s = table_get(&tt_str, r, c);
+            str_init(s);
+
+            if (*cell != 0)
+                if (str_fmt(s, "%d", *cell < 0 ? -*cell : *cell) < 0)
+                    goto calc_text_failed;
+
+            if (*col_width < s->len)
+                *col_width = s->len;
+        }
+    }
+
+    for (r = 0; r != tt->rows; ++r)
+        if (vec_push(&row_indices, &r) < 0)
+            goto calc_text_failed;
+    for (r = 0; r != tt->rows; ++r)
+        for (c = 0; c != tt->cols; ++c)
+        {
+            int* next= table_get(tt, r, c);
+            if (*next < 0)
+            {
+                int* row_idx = vec_get(&row_indices, -*next);
+                if (*row_idx > 0)
+                    *row_idx = -*row_idx;
+            }
+        }
+
+    fprintf(stderr, " State ");
+    for (c = 0; c != vec_count(&col_titles); ++c)
+    {
+        int w = *(int*)vec_get(&col_widths, c);
+        struct str* s = vec_get(&col_titles, c);
+        fprintf(stderr, "| %*s%.*s ", w - s->len, "", s->len, s->data);
+    }
+    fprintf(stderr, "\n");
+    fprintf(stderr, "-------");
+    for (c = 0; c != vec_count(&col_titles); ++c)
+    {
+        int w = *(int*)vec_get(&col_widths, c);
+        fprintf(stderr, "+-");
+        for (r = 0; r != w; ++r)
+            fprintf(stderr, "-");
+        fprintf(stderr, "-");
+    }
+    fprintf(stderr, "\n");
+    for (r = 0; r != tt_str.rows; ++r)
+    {
+        int* row_idx = vec_get(&row_indices, r);
+        if (*row_idx < 0)
+        {
+            sprintf(buf, "%d", -*row_idx);
+            fprintf(stderr, " %*s*%s ", (int)(4 - strlen(buf)), "", buf);
+        }
+        else
+            fprintf(stderr, " %*d ", 5, *row_idx);
+
+        for (c = 0; c != tt_str.cols; ++c)
+        {
+            int w = *(int*)vec_get(&col_widths, c);
+            struct str* s = table_get(&tt_str, r, c);
+            fprintf(stderr, "| %*s%.*s ", w - s->len, "", s->len, s->data);
+        }
+        fprintf(stderr, "\n");
+    }
+
+calc_text_failed:
+    vec_deinit(&row_indices);
     VEC_FOR_EACH(&col_titles, struct str, title)
         str_deinit(title);
     VEC_END_EACH
@@ -250,6 +382,7 @@ dfa_compile(struct dfa_graph* dfa, struct nfa_graph* nfa)
     struct hm nfa_unique_tf;
     struct table nfa_tt;
     struct table dfa_tt;
+    struct table dfa_tt_final;
     struct hm dfa_unique_states;
     int n, r, c;
     const int term = -1;
@@ -303,13 +436,14 @@ dfa_compile(struct dfa_graph* dfa, struct nfa_graph* nfa)
     for (r = 0; r != nfa->node_count; ++r)
         VEC_FOR_EACH(&nfa->nodes[r].next, int, next)
             int* col = hm_find(&nfa_unique_tf, &nfa->nodes[*next].match);
+            int next_state = (nfa->nodes[*next].match.flags & MATCH_ACCEPT) ? -*next : *next;
             struct vec* cell = table_get(&nfa_tt, r, *col);
-            if (vec_push(cell, next) < 0)
+            if (vec_push(cell, &next_state) < 0)
                 goto build_nfa_table_failed;
         VEC_END_EACH
 
     fprintf(stderr, "NFA:\n");
-    print_transition_table(&nfa_tt, &tf, NULL);
+    print_nfa(&nfa_tt, &tf);
     fprintf(stderr, "\n");
 
     /*
@@ -355,10 +489,18 @@ dfa_compile(struct dfa_graph* dfa, struct nfa_graph* nfa)
                         goto build_dfa_table_failed;
                     for (n = 0; n != dfa_tt.cols; ++n)
                         vec_init(table_get(&dfa_tt, dfa_tt.rows - 1, n), sizeof(int));
-                    dfa_state = table_get(&dfa_tt, r, c);
 
-                    if (dfa_calc_tfs_for_row(&dfa_tt, dfa_state, &nfa_tt) < 0)
-                        goto build_dfa_table_failed;
+                    /* For each cell in the new row, calculate transitions using data from NFA */
+                    dfa_state = table_get(&dfa_tt, r, c);  /* Adding a row may invalidate the pointer, get it again */
+                    for (n = 0; n != dfa_tt.cols; ++n)
+                    {
+                        VEC_FOR_EACH(dfa_state, int, nfa_state)
+                            struct vec* nfa_cell = table_get(&nfa_tt, *nfa_state < 0 ? -*nfa_state : *nfa_state, n);
+                            struct vec* dfa_cell = table_get(&dfa_tt, dfa_tt.rows - 1, n);
+                            if (vec_push_vec(dfa_cell, nfa_cell) < 0)
+                                goto build_dfa_table_failed;
+                        VEC_END_EACH
+                    }
                 } break;
 
                 case 0: break;
@@ -366,10 +508,53 @@ dfa_compile(struct dfa_graph* dfa, struct nfa_graph* nfa)
             }
         }
     }
+    //print_nfa(&dfa_tt, &tf, &dfa_unique_states);
+
+    if (table_init(&dfa_tt_final, dfa_tt.rows, dfa_tt.cols, sizeof(int)) < 0)
+        goto init_final_dfa_table_failed;
+    for (r = 0; r != dfa_tt.rows; ++r)
+        for (c = 0; c != dfa_tt.cols; ++c)
+        {
+            int* dfa_final_state = table_get(&dfa_tt_final, r, c);
+            struct vec* dfa_state = table_get(&dfa_tt, r, c);
+            if (vec_count(dfa_state) == 0)
+            {
+                /* 
+                 * Normally, a DFA will have a "trap state" to transition to
+                 * in case where is no matching input word. In our case, we
+                 * want to stop execution when this happens. Since state 0
+                 * cannot be re-visited under normal operation, transitioning
+                 * back to state 0 can be interpreted as halting the machine.
+                 * 
+                 * The reason we cannot use negative numbers is because
+                 * those are already used to indicate an accept state.
+                 */
+                *dfa_final_state = 0;
+                continue;
+            }
+            int* dfa_row = hm_find(&dfa_unique_states, dfa_state);
+            assert(dfa_row != NULL);
+
+            /* 
+             * If any of the NFA states in this DFA state are marked as an
+             * accept condition, then mark the DFA state as an accept condition
+             * as well.
+             */
+            *dfa_final_state = *dfa_row;
+            VEC_FOR_EACH(dfa_state, int, nfa_state)
+                if (*nfa_state < 0)
+                {
+                    *dfa_final_state = -*dfa_row;
+                    break;
+                }
+            VEC_END_EACH
+        }
 
     fprintf(stderr, "DFA:\n");
-    print_transition_table(&dfa_tt, &tf, NULL /*&dfa_unique_states*/);
+    print_dfa(&dfa_tt_final, &tf);
 
+    table_deinit(&dfa_tt_final);
+init_final_dfa_table_failed:
 build_dfa_table_failed:
     for (r = 0; r != dfa_tt.rows; ++r)
         for (c = 0; c != dfa_tt.cols; ++c)

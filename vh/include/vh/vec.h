@@ -51,6 +51,9 @@ vec_alloc(const vec_size element_size);
 VH_PUBLIC_API void
 vec_init(struct vec* vec, const vec_size element_size);
 
+VH_PUBLIC_API int
+vec_init_copy(struct vec* vec, const struct vec* src);
+
 VH_PUBLIC_API void
 vec_deinit(struct vec* vec);
 
