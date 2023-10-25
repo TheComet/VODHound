@@ -9,60 +9,6 @@
 #include <stdio.h>
 #include <inttypes.h>
 
-struct table
-{
-    void* data;
-    int rows;
-    int cols;
-    int element_size;
-    int capacity;
-};
-
-static int
-table_init(struct table* table, int rows, int cols, unsigned int element_size)
-{
-    table->rows = rows;
-    table->cols = cols;
-    table->element_size = element_size;
-    table->capacity = rows * cols * element_size;
-    table->data = mem_alloc(table->capacity);
-    if (table->data == NULL)
-        return -1;
-    return 0;
-}
-
-static void
-table_deinit(struct table* table)
-{
-    mem_free(table->data);
-}
-
-static int
-table_add_row(struct table* table)
-{
-    int row_size = table->cols * table->element_size;
-    int table_size = table->rows * table->cols * table->element_size;
-    while (table_size + row_size > table->capacity)
-    {
-        void* new_data = mem_realloc(table->data, table_size * 2);
-        if (new_data == NULL)
-            return -1;
-        table->data = new_data;
-        table->capacity = table_size * 2;
-    }
-
-    table->rows++;
-
-    return 0;
-}
-
-static void*
-table_get(const struct table* table, int row, int col)
-{
-    int offset = (row * table->cols + col) * table->element_size;
-    return (void*)((char*)table->data + offset);
-}
-
 static hash32
 match_hm_hash(const void* data, int len)
 {
@@ -355,37 +301,46 @@ table_init_failed:
     return;
 }
 
-static int
-dfa_calc_tfs_for_row(struct table* dfa_tt, const struct vec* dfa_state, const struct table* nfa_tt)
+static void
+dfa_remove_duplicates(struct dfa_table* dfa)
 {
-    int c;
-    int r = dfa_tt->rows - 1;
+    int r1, r2, c, r;
+    for (r1 = 0; r1 < dfa->tt.rows; ++r1)
+        for (r2 = r1 + 1; r2 < dfa->tt.rows; ++r2)
+        {
+            for (c = 0; c != dfa->tt.cols; ++c)
+            {
+                int* cell1 = table_get(&dfa->tt, r1, c);
+                int* cell2 = table_get(&dfa->tt, r2, c);
+                if (*cell1 != *cell2)
+                    goto skip_row;
+            }
 
-    for (c = 0; c != dfa_tt->cols; ++c)
-    {
-        VEC_FOR_EACH(dfa_state, int, nfa_state)
-            struct vec* nfa_cell = table_get(nfa_tt, *nfa_state, c);
-            struct vec* dfa_cell = table_get(dfa_tt, r, c);
-            vec_push_vec(dfa_cell, nfa_cell);
-        VEC_END_EACH
-    }
+            /* Replace all references to r2 with r1 */
+            for (r = 0; r != dfa->tt.rows; ++r)
+                for (c = 0; c != dfa->tt.cols; ++c)
+                {
+                    int* cell = table_get(&dfa->tt, r, c);
+                    if (*cell == r2)
+                        *cell = r1;
+                    if (*cell == -r2)
+                        *cell = -r1;
+                }
 
-    return 0;
+            table_remove_row(&dfa->tt, r2);
+        skip_row:;
+        }
 }
 
 int
-dfa_compile(struct dfa_graph* dfa, struct nfa_graph* nfa)
+dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
 {
-    struct vec dfa_nodes;
-    struct vec tf;
-    struct btree visited;
     struct hm nfa_unique_tf;
-    struct table nfa_tt;
-    struct table dfa_tt;
-    struct table dfa_tt_final;
     struct hm dfa_unique_states;
+    struct table nfa_tt;
+    struct table dfa_tt_intermediate;
     int n, r, c;
-    const int term = -1;
+    int success = -1;
 
     /*
      * Purpose of this hashmap is to create a set of unique transition functions,
@@ -395,6 +350,10 @@ dfa_compile(struct dfa_graph* dfa, struct nfa_graph* nfa)
      *
      * Since each column of the table is associated with a unique matcher, the
      * matchers are stored in a separate vector "tf", indexed by column.
+     * 
+     * The hash and compare functions will ignore the MATCH_ACCEPT bit. The
+     * information for whether a state is an accept condition is encoded into the
+     * transitions as negative indices.
      */
     if (hm_init_with_options(&nfa_unique_tf,
          sizeof(struct match),
@@ -407,14 +366,14 @@ dfa_compile(struct dfa_graph* dfa, struct nfa_graph* nfa)
     }
 
     /* Skip node 0, as it merely acts as a container for all start states */
-    vec_init(&tf, sizeof(struct match));
+    vec_init(&dfa->tf, sizeof(struct match));
     for (n = 1; n != nfa->node_count; ++n)
     {
         int col = hm_count(&nfa_unique_tf);
         switch (hm_insert_new(&nfa_unique_tf, &nfa->nodes[n].match, &col))
         {
             case 1:
-                if (vec_push(&tf, &nfa->nodes[n].match) < 0)
+                if (vec_push(&dfa->tf, &nfa->nodes[n].match) < 0)
                     goto build_tfs_failed;
                 break;
             case 0 : break;
@@ -433,6 +392,11 @@ dfa_compile(struct dfa_graph* dfa, struct nfa_graph* nfa)
         for (c = 0; c != nfa_tt.cols; ++c)
             vec_init(table_get(&nfa_tt, r, c), sizeof(int));
 
+    /*
+     * Insert transitions. It is necessary to somehow keep track of which states
+     * are accept conditions. This is achieved by making the target state a
+     * negative integer.
+     */
     for (r = 0; r != nfa->node_count; ++r)
         VEC_FOR_EACH(&nfa->nodes[r].next, int, next)
             int* col = hm_find(&nfa_unique_tf, &nfa->nodes[*next].match);
@@ -443,7 +407,7 @@ dfa_compile(struct dfa_graph* dfa, struct nfa_graph* nfa)
         VEC_END_EACH
 
     fprintf(stderr, "NFA:\n");
-    print_nfa(&nfa_tt, &tf);
+    print_nfa(&nfa_tt, &dfa->tf);
     fprintf(stderr, "\n");
 
     /*
@@ -459,44 +423,44 @@ dfa_compile(struct dfa_graph* dfa, struct nfa_graph* nfa)
     {
         goto init_dfa_unique_states_failed;
     }
-    if (table_init(&dfa_tt, 1, nfa_tt.cols, sizeof(struct vec)) < 0)
+    if (table_init(&dfa_tt_intermediate, 1, nfa_tt.cols, sizeof(struct vec)) < 0)
         goto init_dfa_table_failed;
-    for (c = 0; c != dfa_tt.cols; ++c)
-        vec_init(table_get(&dfa_tt, 0, c), sizeof(int));
+    for (c = 0; c != dfa_tt_intermediate.cols; ++c)
+        vec_init(table_get(&dfa_tt_intermediate, 0, c), sizeof(int));
 
+    /* Initial row in DFA is simply the first row from the NFA table */
     for (c = 0; c != nfa_tt.cols; ++c)
     {
         struct vec* nfa_cell = table_get(&nfa_tt, 0, c);
-        struct vec* dfa_cell = table_get(&dfa_tt, 0, c);
+        struct vec* dfa_cell = table_get(&dfa_tt_intermediate, 0, c);
         if (vec_push_vec(dfa_cell, nfa_cell) < 0)
             goto build_dfa_table_failed;
     }
 
-    for (r = 0; r != dfa_tt.rows; ++r)
-    {
-        for (c = 0; c != dfa_tt.cols; ++c)
+    for (r = 0; r != dfa_tt_intermediate.rows; ++r)
+        for (c = 0; c != dfa_tt_intermediate.cols; ++c)
         {
             /* Go through current row and see if any sets of NFA states form
              * a new DFA state. If yes, we append a new row to the table with
              * that new state and initialize all cells. */
-            struct vec* dfa_state = table_get(&dfa_tt, r, c);
+            struct vec* dfa_state = table_get(&dfa_tt_intermediate, r, c);
             if (vec_count(dfa_state) == 0)
                 continue;
-            switch (hm_insert_new(&dfa_unique_states, dfa_state, &dfa_tt.rows))
+            switch (hm_insert_new(&dfa_unique_states, dfa_state, &dfa_tt_intermediate.rows))
             {
                 case 1: {
-                    if (table_add_row(&dfa_tt) < 0)
+                    if (table_add_row(&dfa_tt_intermediate) < 0)
                         goto build_dfa_table_failed;
-                    for (n = 0; n != dfa_tt.cols; ++n)
-                        vec_init(table_get(&dfa_tt, dfa_tt.rows - 1, n), sizeof(int));
+                    for (n = 0; n != dfa_tt_intermediate.cols; ++n)
+                        vec_init(table_get(&dfa_tt_intermediate, dfa_tt_intermediate.rows - 1, n), sizeof(int));
 
                     /* For each cell in the new row, calculate transitions using data from NFA */
-                    dfa_state = table_get(&dfa_tt, r, c);  /* Adding a row may invalidate the pointer, get it again */
-                    for (n = 0; n != dfa_tt.cols; ++n)
+                    dfa_state = table_get(&dfa_tt_intermediate, r, c);  /* Adding a row may invalidate the pointer, get it again */
+                    for (n = 0; n != dfa_tt_intermediate.cols; ++n)
                     {
                         VEC_FOR_EACH(dfa_state, int, nfa_state)
                             struct vec* nfa_cell = table_get(&nfa_tt, *nfa_state < 0 ? -*nfa_state : *nfa_state, n);
-                            struct vec* dfa_cell = table_get(&dfa_tt, dfa_tt.rows - 1, n);
+                            struct vec* dfa_cell = table_get(&dfa_tt_intermediate, dfa_tt_intermediate.rows - 1, n);
                             if (vec_push_vec(dfa_cell, nfa_cell) < 0)
                                 goto build_dfa_table_failed;
                         VEC_END_EACH
@@ -507,24 +471,22 @@ dfa_compile(struct dfa_graph* dfa, struct nfa_graph* nfa)
                 case -1: goto build_dfa_table_failed;
             }
         }
-    }
-    //print_nfa(&dfa_tt, &tf, &dfa_unique_states);
 
-    if (table_init(&dfa_tt_final, dfa_tt.rows, dfa_tt.cols, sizeof(int)) < 0)
+    if (table_init(&dfa->tt, dfa_tt_intermediate.rows, dfa_tt_intermediate.cols, sizeof(int)) < 0)
         goto init_final_dfa_table_failed;
-    for (r = 0; r != dfa_tt.rows; ++r)
-        for (c = 0; c != dfa_tt.cols; ++c)
+    for (r = 0; r != dfa_tt_intermediate.rows; ++r)
+        for (c = 0; c != dfa_tt_intermediate.cols; ++c)
         {
-            int* dfa_final_state = table_get(&dfa_tt_final, r, c);
-            struct vec* dfa_state = table_get(&dfa_tt, r, c);
+            int* dfa_final_state = table_get(&dfa->tt, r, c);
+            struct vec* dfa_state = table_get(&dfa_tt_intermediate, r, c);
             if (vec_count(dfa_state) == 0)
             {
                 /* 
-                 * Normally, a DFA will have a "trap state" to transition to
-                 * in case where is no matching input word. In our case, we
-                 * want to stop execution when this happens. Since state 0
-                 * cannot be re-visited under normal operation, transitioning
-                 * back to state 0 can be interpreted as halting the machine.
+                 * Normally, a DFA will have a "trap state" in cases where
+                 * there is no matching input word. In our case, we want to
+                 * stop execution when this happens. Since state 0 cannot be
+                 * re-visited under normal operation, transitioning back to
+                 * state 0 can be interpreted as halting the machine.
                  * 
                  * The reason we cannot use negative numbers is because
                  * those are already used to indicate an accept state.
@@ -550,16 +512,20 @@ dfa_compile(struct dfa_graph* dfa, struct nfa_graph* nfa)
             VEC_END_EACH
         }
 
-    fprintf(stderr, "DFA:\n");
-    print_dfa(&dfa_tt_final, &tf);
+    dfa_remove_duplicates(dfa);
 
-    table_deinit(&dfa_tt_final);
+    fprintf(stderr, "DFA:\n");
+    print_dfa(&dfa->tt, &dfa->tf);
+
+    /* Success - This causes dfa->tf to not be freed */
+    success = 0;
+
 init_final_dfa_table_failed:
 build_dfa_table_failed:
-    for (r = 0; r != dfa_tt.rows; ++r)
-        for (c = 0; c != dfa_tt.cols; ++c)
-            vec_deinit(table_get(&dfa_tt, r, c));
-    table_deinit(&dfa_tt);
+    for (r = 0; r != dfa_tt_intermediate.rows; ++r)
+        for (c = 0; c != dfa_tt_intermediate.cols; ++c)
+            vec_deinit(table_get(&dfa_tt_intermediate, r, c));
+    table_deinit(&dfa_tt_intermediate);
 init_dfa_table_failed:
     hm_deinit(&dfa_unique_states);
 init_dfa_unique_states_failed:
@@ -570,21 +536,85 @@ build_nfa_table_failed:
     table_deinit(&nfa_tt);
 init_nfa_table_failed:
 build_tfs_failed:
-    vec_deinit(&tf);
+    if (success < 0)  /* If function succeeds, ownership of tf is transferred out of the function*/
+        vec_deinit(&dfa->tf);
     hm_deinit(&nfa_unique_tf);
 init_nfa_unique_tf_failed:
-    return -1;
+    return success;
 }
 
 void
-dfa_deinit(struct dfa_graph* dfa)
+dfa_deinit(struct dfa_table* dfa)
 {
-    mem_free(dfa->nodes);
-    mem_free(dfa->transitions);
+    table_deinit(&dfa->tt);
+    vec_deinit(&dfa->tf);
+}
+
+static int
+dfa_state_is_accept(const struct dfa_table* dfa, int state)
+{
+    int r, c;
+    for (r = 0; r != dfa->tt.rows; ++r)
+        for (c = 0; c != dfa->tt.cols; ++c)
+        {
+            const int* next = table_get(&dfa->tt, r, c);
+            if (*next < 0 && -*next == state)
+                return 1;
+        }
+    return 0;
 }
 
 int
-dfa_export_dot(const struct dfa_graph* dfa, const char* file_name)
+dfa_export_dot(const struct dfa_table* dfa, const char* file_name)
 {
+    int r, c;
+    FILE* fp = fopen(file_name, "w");
+    if (fp == NULL)
+        goto open_file_failed;
+
+    fprintf(fp, "digraph {\n");
+    fprintf(fp, "start [shape=\"point\", label=\"\", width=\"0.25\"];\n");
+
+    for (r = 1; r < dfa->tt.rows; ++r)
+    {
+        fprintf(fp, "n%d [label=\"%d\"", r, r);
+        if (dfa_state_is_accept(dfa, r))
+            fprintf(fp, ", shape=\"doublecircle\"");
+        fprintf(fp, "];\n");
+    }
+
+    for (r = 0; r != dfa->tt.rows; ++r)
+        for (c = 0; c != dfa->tt.cols; ++c)
+        {
+            const int* next = table_get(&dfa->tt, r, c);
+            const struct match* match = vec_get(&dfa->tf, c);
+
+            if (*next == 0)
+                continue;
+
+            if (r == 0)
+                fprintf(fp, "start -> n%d [", *next < 0 ? -*next : *next);
+            else
+                fprintf(fp, "n%d -> n%d [", r, *next < 0 ? -*next : *next);
+
+            fprintf(fp, "label=\"");
+            if (match->flags & MATCH_MOTION)
+                fprintf(fp, "0x%" PRIx64, match->fighter_motion);
+            if (match->flags & MATCH_STATUS)
+            {
+                if (match->flags & MATCH_MOTION)
+                    fprintf(fp, ", ");
+                fprintf(fp, ", %d", match->fighter_status);
+            }
+            if (match_is_wildcard(match))
+                fprintf(fp, ".");
+            fprintf(fp, "\"];\n");
+        }
+
+    fprintf(fp, "}\n");
+    fclose(fp);
     return 0;
+
+open_file_failed:
+    return -1;
 }

@@ -566,17 +566,17 @@ nfa_export_dot(const struct nfa_graph* nfa, const char* file_name)
 
     fprintf(fp, "digraph {\n");
     fprintf(fp, "start [shape=\"point\", label=\"\", width=\"0.25\"];\n");
-    fprintf(fp, "accept [shape=\"doublecircle\", label=\"\", width=\"0.4\"];\n");
 
     for (n = 1; n < nfa->node_count; ++n)
-        //if (!(nfa->nodes[n].match.flags & MATCH_ACCEPT))
-            fprintf(fp, "n%d [shape=\"record\", label=\"%d\"];\n", n, n);
+    {
+        fprintf(fp, "n%d [label=\"%d\"", n, n);
+        if (nfa->nodes[n].match.flags & MATCH_ACCEPT)
+            fprintf(fp, ", shape=\"doublecircle\"");
+        fprintf(fp, "];\n");
+    }
 
     for (n = 0; n != nfa->node_count; ++n)
     {
-        if (nfa->nodes[n].match.flags & MATCH_ACCEPT)
-            fprintf(fp, "n%d -> accept;\n", n);
-
         VEC_FOR_EACH(&nfa->nodes[n].next, int, e)
 
             if (n == 0)
@@ -587,7 +587,7 @@ nfa_export_dot(const struct nfa_graph* nfa, const char* file_name)
             fprintf(fp, "label=\"");
             if (nfa->nodes[*e].match.flags & MATCH_MOTION)
                 fprintf(fp, "0x%" PRIx64, nfa->nodes[*e].match.fighter_motion);
-            if ((nfa->nodes[*e].match.flags & MATCH_STATUS))
+            if (nfa->nodes[*e].match.flags & MATCH_STATUS)
             {
                 if (nfa->nodes[*e].match.flags & MATCH_MOTION)
                     fprintf(fp, ", ");

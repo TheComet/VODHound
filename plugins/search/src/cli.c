@@ -12,7 +12,7 @@ int main(int argc, char** argv)
     struct parser parser;
     union ast_node* ast = NULL;
     struct nfa_graph nfa;
-    struct dfa_graph dfa;
+    struct dfa_table dfa;
     int nfa_result = -1;
     int dfa_result = -1;
 

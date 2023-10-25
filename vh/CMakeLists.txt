@@ -86,6 +86,7 @@ add_library (vh ${VH_LIB_TYPE}
     "include/vh/plugin_loader.h"
     "include/vh/rb.h"
     "include/vh/str.h"
+    "include/vh/table.h"
     "include/vh/thread.h"
     "include/vh/utf8.h"
     "include/vh/vec.h"
