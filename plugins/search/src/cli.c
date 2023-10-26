@@ -7,6 +7,26 @@
 
 #include <stdio.h>
 
+static void
+run_on_test_data(const struct dfa_table* dfa)
+{
+    struct state states[9] = {
+        { 0xa },
+        { 0xb },
+        { 0xb },
+        { 0xa },
+        { 0xc },
+        { 0xc },
+        { 0xc },
+        { 0xc },
+        { 0xd }
+    };
+    struct frame_data fdata = { states };
+    struct range range = { 0, 9 };
+
+    dfa_run(dfa, &fdata, range);
+}
+
 int main(int argc, char** argv)
 {
     struct parser parser;
@@ -47,6 +67,7 @@ int main(int argc, char** argv)
     if (dfa_result == 0)
     {
         dfa_export_dot(&dfa, "dfa.dot");
+        run_on_test_data(&dfa);
         dfa_deinit(&dfa);
     }
 

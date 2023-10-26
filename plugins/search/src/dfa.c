@@ -657,3 +657,71 @@ dfa_export_dot(const struct dfa_table* dfa, const char* file_name)
 open_file_failed:
     return -1;
 }
+
+static int
+do_match(const struct match* match, struct state s)
+{
+    int match = 0;
+
+    if (match->flags & MATCH_MOTION)
+        match += (fdata->motion[idx] == match->fighter_motion);
+    if (match->flags & MATCH_STATUS)
+        match += (fdata->status[idx] == match->fighter_status);
+
+    return match;
+}
+
+static int
+lookup_next_state(const struct dfa_table* dfa, struct state s, int current_state)
+{
+    int c;
+    for (c = 0; c != dfa->tt.cols; ++c)
+    {
+        struct match* match = vec_get(&dfa->tf, c);
+        if (do_match(match, s))
+            return *(int*)table_get(&dfa->tt, current_state, c);
+    }
+    return 0;
+}
+
+static int
+dfa_run_single(const struct dfa_table* dfa, const struct frame_data* fdata, struct range r)
+{
+    int c;
+    int dfa_state;
+    int dfa_nstate;
+    int dfa_nnstate;
+    int idx;
+
+    idx = r.start;
+    dfa_state = 0;
+    while (1)
+    {
+        dfa_nstate = lookup_next_state(dfa, fdata->states[idx], dfa_state);
+
+        /* Abort condition */
+        if (dfa_nstate == 0)
+            return r.end;
+
+        /* Accept condition */
+        if (dfa_nstate < 0)
+        {
+            dfa_nstate = -dfa_nstate;
+            dfa_nnstate = lookup_next_state(dfa, fdata->states[idx + 1], dfa_nstate);
+            if (dfa_nnstate == 0)
+                return idx + 1;
+
+        }
+
+        dfa_state = dfa_nstate;
+        idx++;
+    }
+
+    return r.start;
+}
+
+struct range
+dfa_run(const struct dfa_table* dfa, const struct frame_data* fdata, struct range window)
+{
+
+}
