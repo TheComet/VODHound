@@ -6,6 +6,7 @@
 #include "vh/init.h"
 
 #include <stdio.h>
+#include <inttypes.h>
 
 static void
 run_on_test_data(const struct dfa_table* dfa)
@@ -24,7 +25,11 @@ run_on_test_data(const struct dfa_table* dfa)
     struct frame_data fdata = { states };
     struct range range = { 0, 9 };
 
-    dfa_run(dfa, &fdata, range);
+    range = dfa_run(dfa, &fdata, range);
+    fprintf(stderr, "matched:");
+    for (; range.start != range.end; ++range.start)
+        fprintf(stderr, " 0x%" PRIx64, states[range.start].motion);
+    fprintf(stderr, "\n");
 }
 
 int main(int argc, char** argv)
@@ -46,7 +51,8 @@ int main(int argc, char** argv)
     vh_init();
 
     parser_init(&parser);
-    ast = parser_parse(&parser, argv[1]);
+    //ast = parser_parse(&parser, argv[1]);
+    ast = parser_parse(&parser, "0xc+->0xd->0xe?");
     parser_deinit(&parser);
 
     if (ast)

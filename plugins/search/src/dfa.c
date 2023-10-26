@@ -401,7 +401,7 @@ dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
      *
      * Since each column of the table is associated with a unique matcher, the
      * matchers are stored in a separate vector "tf", indexed by column.
-     * 
+     *
      * The hash and compare functions will ignore the MATCH_ACCEPT bit. The
      * information for whether a state is an accept condition is encoded into the
      * transitions as negative indices.
@@ -532,13 +532,13 @@ dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
             struct vec* dfa_state = table_get(&dfa_tt_intermediate, r, c);
             if (vec_count(dfa_state) == 0)
             {
-                /* 
+                /*
                  * Normally, a DFA will have a "trap state" in cases where
                  * there is no matching input word. In our case, we want to
                  * stop execution when this happens. Since state 0 cannot be
                  * re-visited under normal operation, transitioning back to
                  * state 0 can be interpreted as halting the machine.
-                 * 
+                 *
                  * The reason we cannot use negative numbers is because
                  * those are already used to indicate an accept state.
                  */
@@ -548,7 +548,7 @@ dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
             int* dfa_row = hm_find(&dfa_unique_states, dfa_state);
             assert(dfa_row != NULL);
 
-            /* 
+            /*
              * If any of the NFA states in this DFA state are marked as an
              * accept condition, then mark the DFA state as an accept condition
              * as well.
@@ -661,14 +661,14 @@ open_file_failed:
 static int
 do_match(const struct match* match, struct state s)
 {
-    int match = 0;
+    int matches = 0;
 
     if (match->flags & MATCH_MOTION)
-        match += (fdata->motion[idx] == match->fighter_motion);
+        matches += (s.motion == match->fighter_motion);
     if (match->flags & MATCH_STATUS)
-        match += (fdata->status[idx] == match->fighter_status);
+        matches += (s.status == match->fighter_status);
 
-    return match;
+    return matches;
 }
 
 static int
@@ -687,41 +687,66 @@ lookup_next_state(const struct dfa_table* dfa, struct state s, int current_state
 static int
 dfa_run_single(const struct dfa_table* dfa, const struct frame_data* fdata, struct range r)
 {
-    int c;
-    int dfa_state;
-    int dfa_nstate;
-    int dfa_nnstate;
+    int current_state;
     int idx;
 
-    idx = r.start;
-    dfa_state = 0;
-    while (1)
+    current_state = 0;
+    for (idx = r.start; idx != r.end; idx++)
     {
-        dfa_nstate = lookup_next_state(dfa, fdata->states[idx], dfa_state);
+        current_state = lookup_next_state(dfa, fdata->states[idx], current_state < 0 ? -current_state : current_state);
 
-        /* Abort condition */
-        if (dfa_nstate == 0)
-            return r.end;
+        /*
+         * Transitioning to state 0 indicates the state machine has entered the
+         * "trap state", i.e. no match was found.
+         */
+        if (current_state == 0)
+            return r.start;
 
-        /* Accept condition */
-        if (dfa_nstate < 0)
+        /*
+         * Negative states indicate an accept condition.
+         * We want to match as much as possible, so if the state machine is
+         * able to continue, then continue.
+         */
+        if (current_state < 0)
         {
-            dfa_nstate = -dfa_nstate;
-            dfa_nnstate = lookup_next_state(dfa, fdata->states[idx + 1], dfa_nstate);
-            if (dfa_nnstate == 0)
+            int next_state;
+
+            /* Can't look ahead, so we're done (success) */
+            if (idx+1 >= r.end)
                 return idx + 1;
 
+            next_state = lookup_next_state(dfa, fdata->states[idx+1], current_state < 0 ? -current_state : current_state);
+            if (next_state == 0)
+                return idx + 1;
         }
-
-        dfa_state = dfa_nstate;
-        idx++;
     }
 
+    /*
+     * Negative states indicate the current state is an accept condition.
+     * Return the end of the matched range = last matched index + 1
+     */
+    if (current_state < 0)
+        return idx + 1;
+
+    /*
+     * State machine has not completed, which means we only have a
+     * partial match -> failure
+     */
     return r.start;
 }
 
 struct range
 dfa_run(const struct dfa_table* dfa, const struct frame_data* fdata, struct range window)
 {
+    for (; window.start != window.end; ++window.start)
+    {
+        int end = dfa_run_single(dfa, fdata, window);
+        if (end > window.start)
+        {
+            window.end = end;
+            break;
+        }
+    }
 
+    return window;
 }
