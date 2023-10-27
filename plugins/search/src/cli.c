@@ -11,7 +11,7 @@
 static void
 run_on_test_data(const struct dfa_table* dfa)
 {
-    struct state states[9] = {
+    union symbol symbols[9] = {
         { 0xa },
         { 0xb },
         { 0xb },
@@ -22,13 +22,37 @@ run_on_test_data(const struct dfa_table* dfa)
         { 0xc },
         { 0xd }
     };
-    struct frame_data fdata = { states };
+    struct frame_data fdata = { symbols };
     struct range range = { 0, 9 };
 
     range = dfa_run(dfa, &fdata, range);
-    fprintf(stderr, "matched:");
+    fprintf(stderr, "Interpreted match :");
     for (; range.start != range.end; ++range.start)
-        fprintf(stderr, " 0x%" PRIx64, states[range.start].motion);
+        fprintf(stderr, " 0x%" PRIx64, symbols[range.start].motion);
+    fprintf(stderr, "\n");
+}
+
+static void
+run_asm_on_test_data(const struct dfa_asm* assembly)
+{
+    union symbol symbols[9] = {
+        { 0xa },
+        { 0xb },
+        { 0xb },
+        { 0xa },
+        { 0xc },
+        { 0xc },
+        { 0xc },
+        { 0xc },
+        { 0xd }
+    };
+    struct frame_data fdata = { symbols };
+    struct range range = { 0, 9 };
+
+    range = dfa_asm_run(assembly, &fdata, range);
+    fprintf(stderr, "ASM match         :");
+    for (; range.start != range.end; ++range.start)
+        fprintf(stderr, " 0x%" PRIx64, symbols[range.start].motion);
     fprintf(stderr, "\n");
 }
 
@@ -38,8 +62,10 @@ int main(int argc, char** argv)
     union ast_node* ast = NULL;
     struct nfa_graph nfa;
     struct dfa_table dfa;
+    struct dfa_asm dfa_asm;
     int nfa_result = -1;
     int dfa_result = -1;
+    int asm_result = -1;
 
     if (argc < 2)
     {
@@ -52,7 +78,7 @@ int main(int argc, char** argv)
 
     parser_init(&parser);
     //ast = parser_parse(&parser, argv[1]);
-    ast = parser_parse(&parser, "0xc+->0xd->0xe?");
+    ast = parser_parse(&parser, ".*");
     parser_deinit(&parser);
 
     if (ast)
@@ -74,7 +100,14 @@ int main(int argc, char** argv)
     {
         dfa_export_dot(&dfa, "dfa.dot");
         run_on_test_data(&dfa);
+        asm_result = dfa_assemble(&dfa_asm, &dfa);
         dfa_deinit(&dfa);
+    }
+
+    if (asm_result == 0)
+    {
+        run_asm_on_test_data(&dfa_asm);
+        dfa_asm_deinit(&dfa_asm);
     }
 
     vh_deinit();

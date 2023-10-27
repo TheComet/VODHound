@@ -7,7 +7,7 @@ union ast_node;
 
 struct nfa_node
 {
-    struct match match;
+    struct matcher matcher;
     struct vec next;
 };
 

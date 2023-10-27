@@ -1,6 +1,6 @@
 #pragma once
 
-#include <stdint.h>
+#include "search/symbol.h"
 
 enum match_flags
 {
@@ -15,58 +15,57 @@ enum match_flags
     MATCH_CTX_FALLING  = 0x80
 };
 
-struct match
+struct matcher
 {
-    uint64_t fighter_motion;
-    uint16_t fighter_status;
-    uint8_t flags;
+    union symbol symbol;
+    union symbol mask;
+    char is_accept;
 };
 
 static inline int
-match_is_wildcard(const struct match* match)
+matches_wildcard(const struct matcher* m)
 {
-    return !(
-        (match->flags & MATCH_MOTION) ||
-        (match->flags & MATCH_STATUS)
-    );
+    return m->mask.u64 == 0;
+}
+static inline int
+matches_motion(const struct matcher* m)
+{
+    return m->mask.motion != 0;
+}
+static inline int
+matches_status(const struct matcher* m)
+{
+    return m->mask.status != 0;
 }
 
-static inline struct match
+static inline struct matcher
 match_none(void)
 {
-    struct match m;
-    m.fighter_motion = 0;
-    m.fighter_status = 0;
-    m.flags = 0;
+    struct matcher m;
+    m.mask.u64 = 0;
+    m.symbol.u64 = 0;
+    m.is_accept = 0;
     return m;
 }
 
-static inline struct match
+static inline struct matcher
 match_motion(uint64_t motion)
 {
-    struct match m;
-    m.fighter_motion = motion;
-    m.fighter_status = 0;
-    m.flags = MATCH_MOTION;
+    struct matcher m;
+    m.mask.u64 = 0;
+    m.symbol.u64 = 0;
+    m.mask.motion = 0xFFFFFFFFFF;
+    m.symbol.motion = motion;
+    m.is_accept = 0;
     return m;
 }
 
-static inline struct match
+static inline struct matcher
 match_wildcard(void)
 {
-    struct match m;
-    m.fighter_motion = 0;
-    m.fighter_status = 0;
-    m.flags = 0;
+    struct matcher m;
+    m.mask.u64 = 0;
+    m.symbol.u64 = 0;
+    m.is_accept = 0;
     return m;
-}
-
-static inline int
-match_equal(const struct match* a, const struct match* b)
-{
-    uint8_t ignore_flags = MATCH_ACCEPT;
-    return
-        a->fighter_motion == b->fighter_motion &&
-        a->fighter_status == b->fighter_status &&
-        (a->flags & ~ignore_flags) == (b->flags & ~ignore_flags);
 }

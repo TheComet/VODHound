@@ -12,10 +12,10 @@
 static hash32
 match_hm_hash(const void* data, int len)
 {
-    const uint8_t ignore_flags = MATCH_ACCEPT;
-    const struct match* match = data;
-    hash32 crc32 = match->fighter_motion & 0xFFFFFFFF;
-    return hash32_combine(crc32, (match->fighter_status << 16) | (match->flags & ~ignore_flags));
+    const struct matcher* m = data;
+    hash32 a = (hash32)((m->symbol.u64 & m->mask.u64) >> 32UL);
+    hash32 b = (hash32)((m->symbol.u64 & m->mask.u64) & 0xFFFFFFFF);
+    return hash32_combine(a, b);
 }
 
 static int
@@ -23,13 +23,9 @@ match_hm_compare(const void* adata, const void* bdata, int size)
 {
     (void)size;
     /* Inversion, because hashmap expects this to behavle like memcmp() */
-    uint8_t ignore_flags = MATCH_ACCEPT;
-    const struct match* a = adata;
-    const struct match* b = bdata;
-    return !(
-        a->fighter_motion == b->fighter_motion &&
-        a->fighter_status == b->fighter_status &&
-        (a->flags & ~ignore_flags) == (b->flags & ~ignore_flags));
+    const struct matcher* a = adata;
+    const struct matcher* b = bdata;
+    return !((a->symbol.u64 & a->mask.u64) == (b->symbol.u64 & b->mask.u64));
 }
 
 static hash32
@@ -79,21 +75,21 @@ print_nfa(const struct table* tt, const struct vec* tf)
 
     for (c = 0; c != tt->cols; ++c)
     {
-        struct match* match = vec_get(tf, c);
+        struct matcher* m = vec_get(tf, c);
         struct str* title = vec_emplace(&col_titles);
         int* col_width = vec_emplace(&col_widths);
         if (title == NULL || col_width == NULL)
             goto calc_text_failed;
 
         str_init(title);
-        if (match_is_wildcard(match))
+        if (matches_wildcard(m))
         {
             if (cstr_set(title, ".") < 0)
                 goto calc_text_failed;
         }
         else
         {
-            if (str_fmt(title, "0x%" PRIx64, match->fighter_motion) < 0)
+            if (str_fmt(title, "0x%" PRIx64, m->symbol.motion) < 0)
                 goto calc_text_failed;
         }
 
@@ -211,21 +207,21 @@ print_dfa(const struct table* tt, const struct vec* tf)
 
     for (c = 0; c != tt->cols; ++c)
     {
-        struct match* match = vec_get(tf, c);
+        struct matcher* m = vec_get(tf, c);
         struct str* title = vec_emplace(&col_titles);
         int* col_width = vec_emplace(&col_widths);
         if (title == NULL || col_width == NULL)
             goto calc_text_failed;
 
         str_init(title);
-        if (match_is_wildcard(match))
+        if (matches_wildcard(m))
         {
             if (cstr_set(title, ".") < 0)
                 goto calc_text_failed;
         }
         else
         {
-            if (str_fmt(title, "0x%" PRIx64, match->fighter_motion) < 0)
+            if (str_fmt(title, "0x%" PRIx64, m->symbol.motion) < 0)
                 goto calc_text_failed;
         }
 
@@ -407,7 +403,7 @@ dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
      * transitions as negative indices.
      */
     if (hm_init_with_options(&nfa_unique_tf,
-         sizeof(struct match),
+         sizeof(struct matcher),
          sizeof(int),
          VH_HM_MIN_CAPACITY,
          match_hm_hash,
@@ -417,14 +413,14 @@ dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
     }
 
     /* Skip node 0, as it merely acts as a container for all start states */
-    vec_init(&dfa->tf, sizeof(struct match));
+    vec_init(&dfa->tf, sizeof(struct matcher));
     for (n = 1; n != nfa->node_count; ++n)
     {
         int col = hm_count(&nfa_unique_tf);
-        switch (hm_insert_new(&nfa_unique_tf, &nfa->nodes[n].match, &col))
+        switch (hm_insert_new(&nfa_unique_tf, &nfa->nodes[n].matcher, &col))
         {
             case 1:
-                if (vec_push(&dfa->tf, &nfa->nodes[n].match) < 0)
+                if (vec_push(&dfa->tf, &nfa->nodes[n].matcher) < 0)
                     goto build_tfs_failed;
                 break;
             case 0 : break;
@@ -450,8 +446,8 @@ dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
      */
     for (r = 0; r != nfa->node_count; ++r)
         VEC_FOR_EACH(&nfa->nodes[r].next, int, next)
-            int* col = hm_find(&nfa_unique_tf, &nfa->nodes[*next].match);
-            int next_state = (nfa->nodes[*next].match.flags & MATCH_ACCEPT) ? -*next : *next;
+            int* col = hm_find(&nfa_unique_tf, &nfa->nodes[*next].matcher);
+            int next_state = nfa->nodes[*next].matcher.is_accept ? -*next : *next;
             struct vec* cell = table_get(&nfa_tt, r, *col);
             if (vec_push(cell, &next_state) < 0)
                 goto build_nfa_table_failed;
@@ -626,7 +622,7 @@ dfa_export_dot(const struct dfa_table* dfa, const char* file_name)
         for (c = 0; c != dfa->tt.cols; ++c)
         {
             const int* next = table_get(&dfa->tt, r, c);
-            const struct match* match = vec_get(&dfa->tf, c);
+            const struct matcher* m = vec_get(&dfa->tf, c);
 
             if (*next == 0)
                 continue;
@@ -637,15 +633,15 @@ dfa_export_dot(const struct dfa_table* dfa, const char* file_name)
                 fprintf(fp, "n%d -> n%d [", r, *next < 0 ? -*next : *next);
 
             fprintf(fp, "label=\"");
-            if (match->flags & MATCH_MOTION)
-                fprintf(fp, "0x%" PRIx64, match->fighter_motion);
-            if (match->flags & MATCH_STATUS)
+            if (matches_motion(m))
+                fprintf(fp, "0x%" PRIx64, (uint64_t)m->symbol.motion);
+            if (matches_status(m))
             {
-                if (match->flags & MATCH_MOTION)
+                if (matches_motion(m))
                     fprintf(fp, ", ");
-                fprintf(fp, ", %d", match->fighter_status);
+                fprintf(fp, ", %d", m->symbol.status);
             }
-            if (match_is_wildcard(match))
+            if (matches_wildcard(m))
                 fprintf(fp, "(.)");
             fprintf(fp, "\"];\n");
         }
@@ -659,27 +655,20 @@ open_file_failed:
 }
 
 static int
-do_match(const struct match* match, struct state s)
+do_match(const struct matcher* m, union symbol s)
 {
-    int matches = 0;
-
-    if (match->flags & MATCH_MOTION)
-        matches += (s.motion == match->fighter_motion);
-    if (match->flags & MATCH_STATUS)
-        matches += (s.status == match->fighter_status);
-
-    return matches;
+    return (m->symbol.u64 & m->mask.u64) == (s.u64 & m->mask.u64);
 }
 
 static int
-lookup_next_state(const struct dfa_table* dfa, struct state s, int current_state)
+lookup_next_state(const struct dfa_table* dfa, union symbol s, int state)
 {
     int c;
     for (c = 0; c != dfa->tt.cols; ++c)
     {
-        struct match* match = vec_get(&dfa->tf, c);
-        if (do_match(match, s))
-            return *(int*)table_get(&dfa->tt, current_state, c);
+        struct matcher* m = vec_get(&dfa->tf, c);
+        if (do_match(m, s))
+            return *(int*)table_get(&dfa->tt, state, c);
     }
     return 0;
 }
@@ -687,19 +676,19 @@ lookup_next_state(const struct dfa_table* dfa, struct state s, int current_state
 static int
 dfa_run_single(const struct dfa_table* dfa, const struct frame_data* fdata, struct range r)
 {
-    int current_state;
+    int state;
     int idx;
 
-    current_state = 0;
+    state = 0;
     for (idx = r.start; idx != r.end; idx++)
     {
-        current_state = lookup_next_state(dfa, fdata->states[idx], current_state < 0 ? -current_state : current_state);
+        state = lookup_next_state(dfa, fdata->symbols[idx], state < 0 ? -state : state);
 
         /*
          * Transitioning to state 0 indicates the state machine has entered the
          * "trap state", i.e. no match was found.
          */
-        if (current_state == 0)
+        if (state == 0)
             return r.start;
 
         /*
@@ -707,7 +696,7 @@ dfa_run_single(const struct dfa_table* dfa, const struct frame_data* fdata, stru
          * We want to match as much as possible, so if the state machine is
          * able to continue, then continue.
          */
-        if (current_state < 0)
+        if (state < 0)
         {
             int next_state;
 
@@ -715,7 +704,7 @@ dfa_run_single(const struct dfa_table* dfa, const struct frame_data* fdata, stru
             if (idx+1 >= r.end)
                 return idx + 1;
 
-            next_state = lookup_next_state(dfa, fdata->states[idx+1], current_state < 0 ? -current_state : current_state);
+            next_state = lookup_next_state(dfa, fdata->symbols[idx+1], state < 0 ? -state : state);
             if (next_state == 0)
                 return idx + 1;
         }
@@ -725,7 +714,7 @@ dfa_run_single(const struct dfa_table* dfa, const struct frame_data* fdata, stru
      * Negative states indicate the current state is an accept condition.
      * Return the end of the matched range = last matched index + 1
      */
-    if (current_state < 0)
+    if (state < 0)
         return idx + 1;
 
     /*
@@ -741,6 +730,261 @@ dfa_run(const struct dfa_table* dfa, const struct frame_data* fdata, struct rang
     for (; window.start != window.end; ++window.start)
     {
         int end = dfa_run_single(dfa, fdata, window);
+        if (end > window.start)
+        {
+            window.end = end;
+            break;
+        }
+    }
+
+    return window;
+}
+
+#include <unistd.h>
+#include <stdarg.h>
+#include <sys/mman.h>
+
+static int
+get_page_size(void)
+{
+    return sysconf(_SC_PAGESIZE);
+}
+
+static int
+write_asm(struct vec* bytes, int n, ...)
+{
+    va_list va;
+    va_start(va, n);
+    while (n--)
+    {
+        uint8_t* byte = vec_emplace(bytes);
+        if (byte == NULL)
+            return -1;
+        *byte = (uint8_t)va_arg(va, int);
+    }
+    return 0;
+}
+static int
+write_asm_u64(struct vec* bytes, uint64_t value)
+{
+    int i = 8;
+    while (i--)
+    {
+        uint8_t* byte = vec_emplace(bytes);
+        if (byte == NULL)
+            return -1;
+        *byte = value & 0xFF;
+        value >>= 8;
+    }
+    return 0;
+}
+static void
+patch_asm_u32(struct vec* bytes, vec_size offset, uint32_t value)
+{
+    vec_size i;
+    for (i = 0; i != 4; ++i)
+    {
+        *(uint8_t*)vec_get(bytes, offset + i) = value & 0xFF;
+        value >>= 8;
+    }
+}
+static int
+write_asm_u32(struct vec* bytes, uint32_t value)
+{
+    int i = 4;
+    while (i--)
+    {
+        uint8_t* byte = vec_emplace(bytes);
+        if (byte == NULL)
+            return -1;
+        *byte = value & 0xFF;
+        value >>= 8;
+    }
+    return 0;
+}
+
+static uint8_t RAX(void) { return 0; }   static uint8_t EAX(void) { return 0; }
+static uint8_t RCX(void) { return 1; }   static uint8_t ECX(void) { return 1; }
+static uint8_t RDX(void) { return 2; }   static uint8_t EDX(void) { return 2; }
+static uint8_t RBX(void) { return 3; }   static uint8_t EBX(void) { return 3; }
+static uint8_t RSP(void) { return 4; }   static uint8_t ESP(void) { return 4; }
+static uint8_t RBP(void) { return 5; }   static uint8_t EBP(void) { return 5; }
+static uint8_t RSI(void) { return 6; }   static uint8_t ESI(void) { return 6; }
+static uint8_t RDI(void) { return 7; }   static uint8_t EDI(void) { return 7; }
+
+static uint8_t SCALE4(void) { return 2; }
+
+/* movabs */
+static int MOV_r64_i64(struct vec* bytes, uint8_t reg, uint64_t value)
+    { return write_asm(bytes, 2, 0x48, 0xb8 | reg) || write_asm_u64(bytes, value); }
+/* mov: 0100 1000 1000 1001 11xx xyyy, xxx=from, yyy=to*/
+static int MOV_r64_r64(struct vec* bytes, uint8_t dst, uint8_t src)
+    { return write_asm(bytes, 3, 0x48, 0x89, 0xC0 | (src << 3) | dst); }
+static int MOV_r32_r32(struct vec* bytes, uint8_t dst, uint8_t src)
+    { return write_asm(bytes, 2, 0x89, 0xC0 | (src << 3) | dst); }
+/* 1000 1011 0xxx 0100 ssyy yzzz, xxx=dst, yyy=offset, zzz=base, ss=scale */
+static int MOV_r32_ptr_r64_base_offset_scale(struct vec* bytes, uint8_t dst, uint8_t base, uint8_t offset, uint8_t scale)
+    { return write_asm(bytes, 3, 0x8B, 0x04 | (dst << 4), (scale << 6) | (offset << 3) | base); }
+static int AND_r64_r64(struct vec* bytes, uint8_t dst, uint8_t src)
+    { return write_asm(bytes, 3, 0x48, 0x21, 0xC0 | (src << 3) | dst); }
+static int AND_r64_i32_sign_extend(struct vec* bytes, uint8_t reg, uint32_t value)
+    { return write_asm(bytes, 3, 0x48, 0x81, 0xE0 | reg) || write_asm_u32(bytes, value); }
+static int AND_r32_i32(struct vec* bytes, uint8_t reg, uint32_t value)
+    { return write_asm(bytes, 2, 0x81, 0xE0 | reg) || write_asm_u32(bytes, value); }
+static int CMP_r64_r64(struct vec* bytes, uint8_t dst, uint8_t src)
+    { return write_asm(bytes, 3, 0x48, 0x39, 0xC0 | (src << 3) | dst); }
+static int CMP_r32_i32(struct vec* bytes, uint8_t reg, uint32_t value)
+    { return write_asm(bytes, 2, 0x81, 0xF8 | reg) || write_asm_u32(bytes, value); }
+static int XOR_r32_r32(struct vec* bytes, uint8_t dst, uint8_t src)
+    { return write_asm(bytes, 2, 0x31, 0xC0 | (src << 3) | dst); }
+static int JE_rel8(struct vec* bytes, int8_t offset)
+    { return write_asm(bytes, 2, 0x74, (uint8_t)(offset - 2)); }
+static int JE_rel32(struct vec* bytes, int32_t dst)
+    { return write_asm(bytes, 2, 0x0F, 0x84) || write_asm_u32(bytes, (uint32_t)(dst - 6)); }
+static void JE_rel32_patch(struct vec* bytes, int32_t offset, int32_t dst)
+    { patch_asm_u32(bytes, offset + 2, (uint32_t)(dst - 6)); }
+/* 0100 1000 1000 1101 00xx x101, xxx=to */
+static int LEA_r64_RSP_plus_i32(struct vec* bytes, uint8_t reg, uint32_t offset)
+    { return write_asm(bytes, 3, 0x48, 0x8D, 0x05 | (reg << 3)) || write_asm_u32(bytes, offset); }
+static int RET(struct vec* bytes)
+    { return write_asm(bytes, 1, 0xC3); }
+
+int
+dfa_assemble(struct dfa_asm* assembly, const struct dfa_table* dfa)
+{
+    int r, c;
+    int page_size = get_page_size();
+    struct vec b;
+    struct vec jump_offsets;
+
+    vec_init(&b, sizeof(uint8_t));
+    vec_init(&jump_offsets, sizeof(vec_size));
+
+    if (vec_reserve(&b, page_size) < 0)
+        goto push_failed;
+
+    for (c = 0; c != dfa->tt.cols; ++c)
+    {
+        const struct matcher* m = vec_get(&dfa->tf, c);
+
+        /* if (matcher->symbol.u64 & matcher->mask.u64) == (input_symbol & matcher->mask.u64) */
+        MOV_r64_i64(&b, RAX(), m->mask.u64);
+        MOV_r64_i64(&b, RDX(), m->symbol.u64);
+        AND_r64_r64(&b, RAX(), RSI());
+        CMP_r64_r64(&b, RAX(), RDX());
+        vec_push(&jump_offsets, &vec_count(&b));  /* Don't know destination address of jump yet */
+        JE_rel32(&b, 0);
+    }
+
+    /* Return 0 if nothing matched */
+    XOR_r32_r32(&b, EAX(), EAX());
+    RET(&b);
+
+    for (c = 0; c != dfa->tt.cols; ++c)
+    {
+        /* Patch in jump addresses from earlier */
+        vec_size target = vec_count(&b);
+        vec_size offset = *(vec_size*)vec_get(&jump_offsets, c);
+        JE_rel32_patch(&b, offset, target - offset);
+
+        /* next_state = lookup_table[current_state] */
+        XOR_r32_r32(&b, EAX(), EAX());
+        MOV_r32_r32(&b, EDI(), EDI());  /* Clear upper 32 bits or RDI */
+        LEA_r64_RSP_plus_i32(&b, RAX(), 4);
+        MOV_r32_ptr_r64_base_offset_scale(&b, EAX(), RAX(), RDI(), SCALE4());
+        RET(&b);
+
+        /* Lookup table data */
+        for (r = 0; r != dfa->tt.rows; ++r)
+            write_asm_u32(&b, (uint32_t)*(int*)table_get(&dfa->tt, r, c));
+    }
+
+    FILE* fp = fopen("dump.bin", "w");
+    fwrite(vec_data(&b), vec_count(&b), 1, fp);
+    fclose(fp);
+
+    while (page_size < vec_count(&b))
+        page_size *= 2;
+
+    void* mem = mmap(NULL, page_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    memcpy(mem, vec_data(&b), vec_count(&b));
+    mprotect(mem, page_size, PROT_READ | PROT_EXEC);
+
+    vec_deinit(&jump_offsets);
+    vec_deinit(&b);
+    assembly->next_state = (dfa_asm_func)mem;
+    assembly->size = page_size;
+    return 0;
+
+push_failed:
+    vec_deinit(&jump_offsets);
+    vec_deinit(&b);
+    return -1;
+}
+
+void
+dfa_asm_deinit(struct dfa_asm* assembly)
+{
+    munmap((void*)assembly->next_state, assembly->size);
+}
+
+static int
+dfa_asm_run_single(const struct dfa_asm* assembly, const struct frame_data* fdata, struct range r)
+{
+    int state;
+    int idx;
+
+    state = 0;
+    for (idx = r.start; idx != r.end; idx++)
+    {
+        state = assembly->next_state(state < 0 ? -state : state, fdata->symbols[idx].u64);
+
+        /*
+         * Transitioning to state 0 indicates the state machine has entered the
+         * "trap state", i.e. no match was found.
+         */
+        if (state == 0)
+            return r.start;
+
+        /*
+         * Negative states indicate an accept condition.
+         * We want to match as much as possible, so if the state machine is
+         * able to continue, then continue.
+         */
+        if (state < 0)
+        {
+            int next_state;
+
+            /* Can't look ahead, so we're done (success) */
+            if (idx+1 >= r.end)
+                return idx + 1;
+
+            next_state = assembly->next_state(state < 0 ? -state : state, fdata->symbols[idx+1].u64);
+            if (next_state == 0)
+                return idx + 1;
+        }
+    }
+
+    /*
+     * Negative states indicate the current state is an accept condition.
+     * Return the end of the matched range = last matched index + 1
+     */
+    if (state < 0)
+        return idx + 1;
+
+    /*
+     * State machine has not completed, which means we only have a
+     * partial match -> failure
+     */
+    return r.start;
+}
+
+struct range
+dfa_asm_run(const struct dfa_asm* assembly, const struct frame_data* fdata, struct range window)
+{
+    for (; window.start != window.end; ++window.start)
+    {
+        int end = dfa_asm_run_single(assembly, fdata, window);
         if (end > window.start)
         {
             window.end = end;

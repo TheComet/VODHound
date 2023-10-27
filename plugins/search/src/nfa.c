@@ -66,7 +66,7 @@ node_duplicate(int node_idx, struct vec* nodes, struct hm* index_map)
     vec_init(&new_node->next, sizeof(int));
     if (vec_push_vec(&new_node->next, &node->next) < 0)
         return -1;
-    new_node->match = node->match;
+    new_node->matcher = node->matcher;
 
     VEC_FOR_EACH(&node->next, int, conn)
         if (node_duplicate(*conn, nodes, index_map) < 0)
@@ -420,7 +420,7 @@ nfa_compile_recurse(const union ast_node* ast_node, struct vec* nodes, struct ve
 
             if ((node = vec_emplace(nodes)) == NULL) return -1;
             vec_init(&node->next, sizeof(int));
-            node->match = match_wildcard();
+            node->matcher = match_wildcard();
         } break;
 
         case AST_LABEL: {
@@ -454,7 +454,7 @@ nfa_compile_recurse(const union ast_node* ast_node, struct vec* nodes, struct ve
 
             if ((node = vec_emplace(nodes)) == NULL) return -1;
             vec_init(&node->next, sizeof(int));
-            node->match = match_motion(motion);
+            node->matcher = match_motion(motion);
         } break;
 
         case AST_CONTEXT_QUALIFIER: {
@@ -489,7 +489,7 @@ nfa_compile(struct nfa_graph* nfa, const union ast_node* ast)
     if (entry_node == NULL)
         goto out;
     vec_init(&entry_node->next, sizeof(int));
-    entry_node->match = match_none();
+    entry_node->matcher = match_none();
 
     if (nfa_compile_recurse(ast, &nodes, &fragment_stack, &qualifier_stack) != 0)
         goto out;
@@ -527,7 +527,7 @@ nfa_compile(struct nfa_graph* nfa, const union ast_node* ast)
      */
     VEC_FOR_EACH(&final_fragment->out, int, out_node)
         struct nfa_node* node = vec_get(&nodes, *out_node);
-        node->match.flags |= MATCH_ACCEPT;
+        node->matcher.is_accept = 1;
     VEC_END_EACH
 
     nfa->node_count = vec_count(&nodes);
@@ -570,7 +570,7 @@ nfa_export_dot(const struct nfa_graph* nfa, const char* file_name)
     for (n = 1; n < nfa->node_count; ++n)
     {
         fprintf(fp, "n%d [label=\"%d\"", n, n);
-        if (nfa->nodes[n].match.flags & MATCH_ACCEPT)
+        if (nfa->nodes[n].matcher.is_accept)
             fprintf(fp, ", shape=\"doublecircle\"");
         fprintf(fp, "];\n");
     }
@@ -585,15 +585,15 @@ nfa_export_dot(const struct nfa_graph* nfa, const char* file_name)
                 fprintf(fp, "n%d -> n%d [", n, *e);
 
             fprintf(fp, "label=\"");
-            if (nfa->nodes[*e].match.flags & MATCH_MOTION)
-                fprintf(fp, "0x%" PRIx64, nfa->nodes[*e].match.fighter_motion);
-            if (nfa->nodes[*e].match.flags & MATCH_STATUS)
+            if (matches_motion(&nfa->nodes[*e].matcher))
+                fprintf(fp, "0x%" PRIx64, nfa->nodes[*e].matcher.symbol.motion);
+            if (matches_status(&nfa->nodes[*e].matcher))
             {
-                if (nfa->nodes[*e].match.flags & MATCH_MOTION)
+                if (matches_motion(&nfa->nodes[*e].matcher))
                     fprintf(fp, ", ");
-                fprintf(fp, ", %d", nfa->nodes[*e].match.fighter_status);
+                fprintf(fp, ", %d", nfa->nodes[*e].matcher.symbol.status);
             }
-            if (match_is_wildcard(&nfa->nodes[*e].match))
+            if (matches_wildcard(&nfa->nodes[*e].matcher))
                 fprintf(fp, "(.)");
             fprintf(fp, "\"];\n");
         VEC_END_EACH

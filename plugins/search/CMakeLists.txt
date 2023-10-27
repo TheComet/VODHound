@@ -20,6 +20,7 @@ vodhound_add_plugin (${PROJECT_NAME}
         "include/${PROJECT_NAME}/match.h"
         "include/${PROJECT_NAME}/nfa.h"
         "include/${PROJECT_NAME}/parser.h"
+        "include/${PROJECT_NAME}/symbol.h"
     INCLUDES
         "include"
         "${PROJECT_BINARY_DIR}/include"
@@ -101,6 +102,7 @@ if (VODHOUND_${PLUGIN_NAME})
             "include/${PROJECT_NAME}/match.h"
             "include/${PROJECT_NAME}/nfa.h"
             "include/${PROJECT_NAME}/parser.h"
+            "include/${PROJECT_NAME}/symbol.h"
 
             ${BISON_${PROJECT_NAME}-parser_OUTPUTS}
             ${FLEX_${PROJECT_NAME}-scanner_OUTPUTS}
