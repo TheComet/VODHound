@@ -6,7 +6,8 @@ union symbol
 {
     struct {
         /* hash40 value, 5 bytes */
-        uint64_t motion          : 40;
+        unsigned motionl          : 32;
+        unsigned motionh          : 8;
         /* Status enum - largest value seen is 651 (?) from kirby -> 10 bits = 1024 values */
         unsigned status          : 10;
         /* Various flags that cannot be detected from regex alone */

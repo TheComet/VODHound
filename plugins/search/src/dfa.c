@@ -89,7 +89,7 @@ print_nfa(const struct table* tt, const struct vec* tf)
         }
         else
         {
-            if (str_fmt(title, "0x%" PRIx64, m->symbol.motion) < 0)
+            if (str_fmt(title, "0x%" PRIx64, ((uint64_t)m->symbol.motionh << 32) | ((uint64_t)m->symbol.motionl)) < 0)
                 goto calc_text_failed;
         }
 
@@ -221,7 +221,7 @@ print_dfa(const struct table* tt, const struct vec* tf)
         }
         else
         {
-            if (str_fmt(title, "0x%" PRIx64, m->symbol.motion) < 0)
+            if (str_fmt(title, "0x%" PRIx64, ((uint64_t)m->symbol.motionh << 32) | ((uint64_t)m->symbol.motionl)) < 0)
                 goto calc_text_failed;
         }
 
@@ -375,6 +375,7 @@ dfa_remove_duplicates(struct dfa_table* dfa)
                 }
 
             table_remove_row(&dfa->tt, r2);
+            r2--;
         skip_row:;
         }
 }
@@ -634,7 +635,7 @@ dfa_export_dot(const struct dfa_table* dfa, const char* file_name)
 
             fprintf(fp, "label=\"");
             if (matches_motion(m))
-                fprintf(fp, "0x%" PRIx64, (uint64_t)m->symbol.motion);
+                fprintf(fp, "0x%" PRIx64, ((uint64_t)m->symbol.motionh << 32) | ((uint64_t)m->symbol.motionl));
             if (matches_status(m))
             {
                 if (matches_motion(m))

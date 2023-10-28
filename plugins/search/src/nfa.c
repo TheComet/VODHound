@@ -578,22 +578,22 @@ nfa_export_dot(const struct nfa_graph* nfa, const char* file_name)
     for (n = 0; n != nfa->node_count; ++n)
     {
         VEC_FOR_EACH(&nfa->nodes[n].next, int, e)
-
+            const struct matcher* m = &nfa->nodes[*e].matcher;
             if (n == 0)
                 fprintf(fp, "start -> n%d [", *e);
             else
                 fprintf(fp, "n%d -> n%d [", n, *e);
 
             fprintf(fp, "label=\"");
-            if (matches_motion(&nfa->nodes[*e].matcher))
-                fprintf(fp, "0x%" PRIx64, nfa->nodes[*e].matcher.symbol.motion);
-            if (matches_status(&nfa->nodes[*e].matcher))
+            if (matches_motion(m))
+                fprintf(fp, "0x%" PRIx64, ((uint64_t)m->symbol.motionh << 32) | ((uint64_t)m->symbol.motionl));
+            if (matches_status(m))
             {
-                if (matches_motion(&nfa->nodes[*e].matcher))
+                if (matches_motion(m))
                     fprintf(fp, ", ");
-                fprintf(fp, ", %d", nfa->nodes[*e].matcher.symbol.status);
+                fprintf(fp, ", %d", m->symbol.status);
             }
-            if (matches_wildcard(&nfa->nodes[*e].matcher))
+            if (matches_wildcard(m))
                 fprintf(fp, "(.)");
             fprintf(fp, "\"];\n");
         VEC_END_EACH

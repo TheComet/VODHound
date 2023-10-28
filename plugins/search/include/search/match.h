@@ -30,7 +30,7 @@ matches_wildcard(const struct matcher* m)
 static inline int
 matches_motion(const struct matcher* m)
 {
-    return m->mask.motion != 0;
+    return m->mask.motionl != 0;
 }
 static inline int
 matches_status(const struct matcher* m)
@@ -54,8 +54,10 @@ match_motion(uint64_t motion)
     struct matcher m;
     m.mask.u64 = 0;
     m.symbol.u64 = 0;
-    m.mask.motion = 0xFFFFFFFFFF;
-    m.symbol.motion = motion;
+    m.mask.motionl = 0xFFFFFFFF;
+    m.mask.motionh = 0xFF;
+    m.symbol.motionl = motion & 0xFFFFFFFF;
+    m.symbol.motionh = motion >> 32;
     m.is_accept = 0;
     return m;
 }

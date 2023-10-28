@@ -28,7 +28,7 @@ run_on_test_data(const struct dfa_table* dfa)
     range = dfa_run(dfa, &fdata, range);
     fprintf(stderr, "Interpreted match :");
     for (; range.start != range.end; ++range.start)
-        fprintf(stderr, " 0x%" PRIx64, symbols[range.start].motion);
+        fprintf(stderr, " 0x%" PRIx64, ((uint64_t)symbols[range.start].motionh << 32) | ((uint64_t)symbols[range.start].motionl));
     fprintf(stderr, "\n");
 }
 
@@ -52,7 +52,7 @@ run_asm_on_test_data(const struct dfa_asm* assembly)
     range = dfa_asm_run(assembly, &fdata, range);
     fprintf(stderr, "ASM match         :");
     for (; range.start != range.end; ++range.start)
-        fprintf(stderr, " 0x%" PRIx64, symbols[range.start].motion);
+        fprintf(stderr, " 0x%" PRIx64, ((uint64_t)symbols[range.start].motionh << 32) | ((uint64_t)symbols[range.start].motionl));
     fprintf(stderr, "\n");
 }
 
@@ -77,8 +77,7 @@ int main(int argc, char** argv)
     vh_init();
 
     parser_init(&parser);
-    //ast = parser_parse(&parser, argv[1]);
-    ast = parser_parse(&parser, "0xa");
+    ast = parser_parse(&parser, argv[1]);
     parser_deinit(&parser);
 
     if (ast)
