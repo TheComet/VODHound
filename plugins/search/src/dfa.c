@@ -459,6 +459,20 @@ dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
     fprintf(stderr, "\n");
 
     /*
+     * DFA cannot handle wildcards as-is, because it would require generating
+     * states for all possible negative matches. Consider: "a->.?->c", rewritten
+     * "(a->c) | (a->.->c)". If the input sequence is "acc", then depending on
+     * the order, this could either match "ac" or "acc".
+     *
+     * To deal with this, if a state has an outgoing wildcard transition, then
+     * we insert explicit transitions of all of the outer outgoing transitions
+     * in parallel with the wildcard. In other words: "(a->c) | (a->c->c) | (a->.->c)".
+     * 
+     * This way, when evaluating the DFA, states that
+     */
+
+
+    /*
      * Unlike the NFA transition table, the DFA table's states are sets of
      * NFA states. These are tracked in this hashmap.
      */
