@@ -740,14 +740,54 @@ dfa_run(const struct dfa_table* dfa, const struct frame_data* fdata, struct rang
     return window;
 }
 
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+#else
 #include <unistd.h>
 #include <stdarg.h>
 #include <sys/mman.h>
+#endif
 
 static int
 get_page_size(void)
 {
+#if defined(_WIN32)
+    SYSTEM_INFO info;
+    GetSystemInfo(&info);
+    return info.dwPageSize;
+#else
     return sysconf(_SC_PAGESIZE);
+#endif
+}
+static void*
+alloc_page_rw(int size)
+{
+#if defined(_WIN32)
+    return VirtualAlloc(NULL, size, MEM_COMMIT, PAGE_READWRITE);
+#else
+    return mmap(NULL, page_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+#endif
+}
+static void
+protect_rx(void* addr, int size)
+{
+#if defined(_WIN32)
+    DWORD old_protect;
+    BOOL result = VirtualProtect(addr, size, PAGE_EXECUTE_READ, &old_protect);
+#else
+    mprotect(addr, size, PROT_READ | PROT_EXEC);
+#endif
+}
+static void
+free_page(void* addr, int size)
+{
+#if defined(_WIN32)
+    (void)size;
+    VirtualFree(addr, 0, MEM_RELEASE);
+#else
+    munmap(addr, size);
+#endif
 }
 
 static int
@@ -848,6 +888,10 @@ static int LEA_r64_RSP_plus_i32(struct vec* bytes, uint8_t reg, uint32_t offset)
     { return write_asm(bytes, 3, 0x48, 0x8D, 0x05 | (reg << 3)) || write_asm_u32(bytes, offset); }
 static int RET(struct vec* bytes)
     { return write_asm(bytes, 1, 0xC3); }
+static int PUSH_r64(struct vec* bytes, uint8_t reg)
+    { return write_asm(bytes, 1, 0x50 | reg); }
+static int POP_r64(struct vec* bytes, uint8_t reg)
+    { return write_asm(bytes, 1, 0x58 | reg); }
 
 int
 dfa_assemble(struct dfa_asm* assembly, const struct dfa_table* dfa)
@@ -863,21 +907,44 @@ dfa_assemble(struct dfa_asm* assembly, const struct dfa_table* dfa)
     if (vec_reserve(&b, page_size) < 0)
         goto push_failed;
 
+    /*
+     * Linux (System V AMD64 ABI):
+     *   Integer args : RDI, RSI, RDX, RCX, R8, R9
+     *   Volatile     :
+     *
+     * Windows:
+     *   Integer args : RCX, RDX, R8, R9
+     *   Volatile     : RAX, RCX, RDX, R8-R11, XMM0-XMM5
+     */
+#if defined(_MSC_VER)
+    PUSH_r64(&b, RBX());
+#endif
+
     for (c = 0; c != dfa->tt.cols; ++c)
     {
         const struct matcher* m = vec_get(&dfa->tf, c);
 
         /* if (matcher->symbol.u64 & matcher->mask.u64) == (input_symbol & matcher->mask.u64) */
+#if defined(_MSC_VER)
+        MOV_r64_i64(&b, RAX(), m->mask.u64);
+        MOV_r64_i64(&b, RBX(), m->symbol.u64);
+        AND_r64_r64(&b, RAX(), RDX());
+        CMP_r64_r64(&b, RAX(), RBX());
+#else
         MOV_r64_i64(&b, RAX(), m->mask.u64);
         MOV_r64_i64(&b, RDX(), m->symbol.u64);
         AND_r64_r64(&b, RAX(), RSI());
         CMP_r64_r64(&b, RAX(), RDX());
+#endif
         vec_push(&jump_offsets, &vec_count(&b));  /* Don't know destination address of jump yet */
         JE_rel32(&b, 0);
     }
 
     /* Return 0 if nothing matched */
     XOR_r32_r32(&b, EAX(), EAX());
+#if defined(_MSC_VER)
+    POP_r64(&b, RBX());
+#endif
     RET(&b);
 
     for (c = 0; c != dfa->tt.cols; ++c)
@@ -888,10 +955,13 @@ dfa_assemble(struct dfa_asm* assembly, const struct dfa_table* dfa)
         JE_rel32_patch(&b, offset, target - offset);
 
         /* next_state = lookup_table[current_state] */
+#if defined(_MSC_VER)
+        POP_r64(&b, RBX());
+#endif
         XOR_r32_r32(&b, EAX(), EAX());
-        MOV_r32_r32(&b, EDI(), EDI());  /* Clear upper 32 bits or RDI */
+        MOV_r32_r32(&b, ECX(), ECX());  /* Clear upper 32 bits or RDI */
         LEA_r64_RSP_plus_i32(&b, RAX(), 4);
-        MOV_r32_ptr_r64_base_offset_scale(&b, EAX(), RAX(), RDI(), SCALE4());
+        MOV_r32_ptr_r64_base_offset_scale(&b, EAX(), RAX(), RCX(), SCALE4());
         RET(&b);
 
         /* Lookup table data */
@@ -906,9 +976,9 @@ dfa_assemble(struct dfa_asm* assembly, const struct dfa_table* dfa)
     while (page_size < vec_count(&b))
         page_size *= 2;
 
-    void* mem = mmap(NULL, page_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    void* mem = alloc_page_rw(page_size);
     memcpy(mem, vec_data(&b), vec_count(&b));
-    mprotect(mem, page_size, PROT_READ | PROT_EXEC);
+    protect_rx(mem, page_size);
 
     vec_deinit(&jump_offsets);
     vec_deinit(&b);
@@ -925,7 +995,7 @@ push_failed:
 void
 dfa_asm_deinit(struct dfa_asm* assembly)
 {
-    munmap((void*)assembly->next_state, assembly->size);
+    free_page((void*)assembly->next_state, assembly->size);
 }
 
 static int

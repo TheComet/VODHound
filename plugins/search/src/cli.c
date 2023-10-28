@@ -78,7 +78,7 @@ int main(int argc, char** argv)
 
     parser_init(&parser);
     //ast = parser_parse(&parser, argv[1]);
-    ast = parser_parse(&parser, ".*");
+    ast = parser_parse(&parser, "0xa");
     parser_deinit(&parser);
 
     if (ast)
