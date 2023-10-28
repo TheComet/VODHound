@@ -7,6 +7,7 @@ project ("search"
 include (VODHoundPlugin)
 vodhound_add_plugin (${PROJECT_NAME}
     SOURCES
+        "src/asm_x86_64.c"
         "src/ast.c"
         "src/dfa.c"
         "src/nfa.c"
@@ -15,10 +16,13 @@ vodhound_add_plugin (${PROJECT_NAME}
         "src/parser.y"
         "src/scanner.lex"
     HEADERS
+        "include/${PROJECT_NAME}/asm.h"
         "include/${PROJECT_NAME}/ast.h"
         "include/${PROJECT_NAME}/dfa.h"
+        "include/${PROJECT_NAME}/frame_data.h"
         "include/${PROJECT_NAME}/match.h"
         "include/${PROJECT_NAME}/nfa.h"
+        "include/${PROJECT_NAME}/range.h"
         "include/${PROJECT_NAME}/parser.h"
         "include/${PROJECT_NAME}/symbol.h"
     INCLUDES
@@ -89,6 +93,7 @@ if (VODHOUND_${PLUGIN_NAME})
 
     if (${PLUGIN_NAME}_CLI)
         add_executable (${PROJECT_NAME}_cli
+            "src/asm_x86_64.c"
             "src/ast.c"
             "src/dfa.c"
             "src/match.c"
@@ -97,10 +102,13 @@ if (VODHOUND_${PLUGIN_NAME})
             "src/parser.y"
             "src/scanner.lex"
 
+            "include/${PROJECT_NAME}/asm.h"
             "include/${PROJECT_NAME}/ast.h"
             "include/${PROJECT_NAME}/dfa.h"
+            "include/${PROJECT_NAME}/frame_data.h"
             "include/${PROJECT_NAME}/match.h"
             "include/${PROJECT_NAME}/nfa.h"
+            "include/${PROJECT_NAME}/range.h"
             "include/${PROJECT_NAME}/parser.h"
             "include/${PROJECT_NAME}/symbol.h"
 

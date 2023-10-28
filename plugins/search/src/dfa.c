@@ -1,10 +1,9 @@
 #include "search/dfa.h"
+#include "search/frame_data.h"
 #include "search/nfa.h"
 
-#include "vh/btree.h"
 #include "vh/str.h"
 #include "vh/hm.h"
-#include "vh/mem.h"
 
 #include <stdio.h>
 #include <inttypes.h>
@@ -388,6 +387,7 @@ dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
     struct table nfa_tt;
     struct table dfa_tt_intermediate;
     int n, r, c;
+    int has_wildcard = 0;
     int success = -1;
 
     /*
@@ -430,6 +430,36 @@ dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
     }
 
     /*
+     * Put the wildcard matcher (if it exists) at the end of the table. This
+     * will cause the wildcard to be evaluated/executed last.
+     */
+    HM_FOR_EACH(&nfa_unique_tf, struct matcher, int, matcher1, col1)
+        if (matches_wildcard(matcher1))
+            HM_FOR_EACH(&nfa_unique_tf, struct matcher, int, matcher2, col2)
+                if (*col2 == hm_count(&nfa_unique_tf) - 1)
+                {
+                    struct matcher tmp_matcher;
+
+                    /* swap values in hashmap */
+                    int tmp = *col1;
+                    *col1 = *col2;
+                    *col2 = tmp;
+
+                    /* swap entries in transition function vector */
+                    matcher1 = vec_get(&dfa->tf, *col1);
+                    matcher2 = vec_get(&dfa->tf, *col2);
+                    tmp_matcher = *matcher1;
+                    *matcher1 = *matcher2;
+                    *matcher2 = tmp_matcher;
+
+                    has_wildcard = 1;
+                    goto wildcard_swapped_to_end;
+                }
+            HM_END_EACH
+    HM_END_EACH
+wildcard_swapped_to_end:;
+
+    /*
      * The transition table stores a list of states per cell. In this case,
      * each state is identified by an integer, which is an index into nfa->nodes,
      * or equivalently, a row index of the table.
@@ -467,10 +497,25 @@ dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
      * To deal with this, if a state has an outgoing wildcard transition, then
      * we insert explicit transitions of all of the outer outgoing transitions
      * in parallel with the wildcard. In other words: "(a->c) | (a->c->c) | (a->.->c)".
-     * 
-     * This way, when evaluating the DFA, states that
+     *
+     * This way, when evaluating the DFA, as long as the wildcard is processed
+     * last, it will prefer transitioning through known symbols.
      */
-
+    if (has_wildcard)
+        for (r = 0; r != nfa_tt.rows; ++r)
+        {
+            struct vec* wildcard_next_states = table_get(&nfa_tt, r, nfa_tt.cols - 1);
+            for (c = 0; c < nfa_tt.cols - 1; ++c)
+            {
+                struct vec* next_states = table_get(&nfa_tt, r, c);
+                if (vec_count(next_states) > 0)
+                    if (vec_push_vec(next_states, wildcard_next_states) < 0)
+                        goto build_nfa_table_failed;
+            }
+        }
+    fprintf(stderr, "NFA (wildcards):\n");
+    print_nfa(&nfa_tt, &dfa->tf);
+    fprintf(stderr, "\n");
 
     /*
      * Unlike the NFA transition table, the DFA table's states are sets of
@@ -745,331 +790,6 @@ dfa_run(const struct dfa_table* dfa, const struct frame_data* fdata, struct rang
     for (; window.start != window.end; ++window.start)
     {
         int end = dfa_run_single(dfa, fdata, window);
-        if (end > window.start)
-        {
-            window.end = end;
-            break;
-        }
-    }
-
-    return window;
-}
-
-#if defined(_WIN32)
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
-#else
-#include <unistd.h>
-#include <stdarg.h>
-#include <sys/mman.h>
-#endif
-
-static int
-get_page_size(void)
-{
-#if defined(_WIN32)
-    SYSTEM_INFO info;
-    GetSystemInfo(&info);
-    return info.dwPageSize;
-#else
-    return sysconf(_SC_PAGESIZE);
-#endif
-}
-static void*
-alloc_page_rw(int size)
-{
-#if defined(_WIN32)
-    return VirtualAlloc(NULL, size, MEM_COMMIT, PAGE_READWRITE);
-#else
-    return mmap(NULL, page_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-#endif
-}
-static void
-protect_rx(void* addr, int size)
-{
-#if defined(_WIN32)
-    DWORD old_protect;
-    BOOL result = VirtualProtect(addr, size, PAGE_EXECUTE_READ, &old_protect);
-#else
-    mprotect(addr, size, PROT_READ | PROT_EXEC);
-#endif
-}
-static void
-free_page(void* addr, int size)
-{
-#if defined(_WIN32)
-    (void)size;
-    VirtualFree(addr, 0, MEM_RELEASE);
-#else
-    munmap(addr, size);
-#endif
-}
-
-static int
-write_asm(struct vec* bytes, int n, ...)
-{
-    va_list va;
-    va_start(va, n);
-    while (n--)
-    {
-        uint8_t* byte = vec_emplace(bytes);
-        if (byte == NULL)
-            return -1;
-        *byte = (uint8_t)va_arg(va, int);
-    }
-    return 0;
-}
-static int
-write_asm_u64(struct vec* bytes, uint64_t value)
-{
-    int i = 8;
-    while (i--)
-    {
-        uint8_t* byte = vec_emplace(bytes);
-        if (byte == NULL)
-            return -1;
-        *byte = value & 0xFF;
-        value >>= 8;
-    }
-    return 0;
-}
-static void
-patch_asm_u32(struct vec* bytes, vec_size offset, uint32_t value)
-{
-    vec_size i;
-    for (i = 0; i != 4; ++i)
-    {
-        *(uint8_t*)vec_get(bytes, offset + i) = value & 0xFF;
-        value >>= 8;
-    }
-}
-static int
-write_asm_u32(struct vec* bytes, uint32_t value)
-{
-    int i = 4;
-    while (i--)
-    {
-        uint8_t* byte = vec_emplace(bytes);
-        if (byte == NULL)
-            return -1;
-        *byte = value & 0xFF;
-        value >>= 8;
-    }
-    return 0;
-}
-
-static uint8_t RAX(void) { return 0; }   static uint8_t EAX(void) { return 0; }
-static uint8_t RCX(void) { return 1; }   static uint8_t ECX(void) { return 1; }
-static uint8_t RDX(void) { return 2; }   static uint8_t EDX(void) { return 2; }
-static uint8_t RBX(void) { return 3; }   static uint8_t EBX(void) { return 3; }
-static uint8_t RSP(void) { return 4; }   static uint8_t ESP(void) { return 4; }
-static uint8_t RBP(void) { return 5; }   static uint8_t EBP(void) { return 5; }
-static uint8_t RSI(void) { return 6; }   static uint8_t ESI(void) { return 6; }
-static uint8_t RDI(void) { return 7; }   static uint8_t EDI(void) { return 7; }
-
-static uint8_t SCALE4(void) { return 2; }
-
-/* movabs */
-static int MOV_r64_i64(struct vec* bytes, uint8_t reg, uint64_t value)
-    { return write_asm(bytes, 2, 0x48, 0xb8 | reg) || write_asm_u64(bytes, value); }
-/* mov: 0100 1000 1000 1001 11xx xyyy, xxx=from, yyy=to*/
-static int MOV_r64_r64(struct vec* bytes, uint8_t dst, uint8_t src)
-    { return write_asm(bytes, 3, 0x48, 0x89, 0xC0 | (src << 3) | dst); }
-static int MOV_r32_r32(struct vec* bytes, uint8_t dst, uint8_t src)
-    { return write_asm(bytes, 2, 0x89, 0xC0 | (src << 3) | dst); }
-/* 1000 1011 0xxx 0100 ssyy yzzz, xxx=dst, yyy=offset, zzz=base, ss=scale */
-static int MOV_r32_ptr_r64_base_offset_scale(struct vec* bytes, uint8_t dst, uint8_t base, uint8_t offset, uint8_t scale)
-    { return write_asm(bytes, 3, 0x8B, 0x04 | (dst << 4), (scale << 6) | (offset << 3) | base); }
-static int AND_r64_r64(struct vec* bytes, uint8_t dst, uint8_t src)
-    { return write_asm(bytes, 3, 0x48, 0x21, 0xC0 | (src << 3) | dst); }
-static int AND_r64_i32_sign_extend(struct vec* bytes, uint8_t reg, uint32_t value)
-    { return write_asm(bytes, 3, 0x48, 0x81, 0xE0 | reg) || write_asm_u32(bytes, value); }
-static int AND_r32_i32(struct vec* bytes, uint8_t reg, uint32_t value)
-    { return write_asm(bytes, 2, 0x81, 0xE0 | reg) || write_asm_u32(bytes, value); }
-static int CMP_r64_r64(struct vec* bytes, uint8_t dst, uint8_t src)
-    { return write_asm(bytes, 3, 0x48, 0x39, 0xC0 | (src << 3) | dst); }
-static int CMP_r32_i32(struct vec* bytes, uint8_t reg, uint32_t value)
-    { return write_asm(bytes, 2, 0x81, 0xF8 | reg) || write_asm_u32(bytes, value); }
-static int XOR_r32_r32(struct vec* bytes, uint8_t dst, uint8_t src)
-    { return write_asm(bytes, 2, 0x31, 0xC0 | (src << 3) | dst); }
-static int JE_rel8(struct vec* bytes, int8_t offset)
-    { return write_asm(bytes, 2, 0x74, (uint8_t)(offset - 2)); }
-static int JE_rel32(struct vec* bytes, int32_t dst)
-    { return write_asm(bytes, 2, 0x0F, 0x84) || write_asm_u32(bytes, (uint32_t)(dst - 6)); }
-static void JE_rel32_patch(struct vec* bytes, int32_t offset, int32_t dst)
-    { patch_asm_u32(bytes, offset + 2, (uint32_t)(dst - 6)); }
-/* 0100 1000 1000 1101 00xx x101, xxx=to */
-static int LEA_r64_RSP_plus_i32(struct vec* bytes, uint8_t reg, uint32_t offset)
-    { return write_asm(bytes, 3, 0x48, 0x8D, 0x05 | (reg << 3)) || write_asm_u32(bytes, offset); }
-static int RET(struct vec* bytes)
-    { return write_asm(bytes, 1, 0xC3); }
-static int PUSH_r64(struct vec* bytes, uint8_t reg)
-    { return write_asm(bytes, 1, 0x50 | reg); }
-static int POP_r64(struct vec* bytes, uint8_t reg)
-    { return write_asm(bytes, 1, 0x58 | reg); }
-
-int
-dfa_assemble(struct dfa_asm* assembly, const struct dfa_table* dfa)
-{
-    int r, c;
-    int page_size = get_page_size();
-    struct vec b;
-    struct vec jump_offsets;
-
-    vec_init(&b, sizeof(uint8_t));
-    vec_init(&jump_offsets, sizeof(vec_size));
-
-    if (vec_reserve(&b, page_size) < 0)
-        goto push_failed;
-
-    /*
-     * Linux (System V AMD64 ABI):
-     *   Integer args : RDI, RSI, RDX, RCX, R8, R9
-     *   Volatile     :
-     *
-     * Windows:
-     *   Integer args : RCX, RDX, R8, R9
-     *   Volatile     : RAX, RCX, RDX, R8-R11, XMM0-XMM5
-     */
-#if defined(_MSC_VER)
-    PUSH_r64(&b, RBX());
-#endif
-
-    for (c = 0; c != dfa->tt.cols; ++c)
-    {
-        const struct matcher* m = vec_get(&dfa->tf, c);
-
-        /* if (matcher->symbol.u64 & matcher->mask.u64) == (input_symbol & matcher->mask.u64) */
-#if defined(_MSC_VER)
-        MOV_r64_i64(&b, RAX(), m->mask.u64);
-        MOV_r64_i64(&b, RBX(), m->symbol.u64);
-        AND_r64_r64(&b, RAX(), RDX());
-        CMP_r64_r64(&b, RAX(), RBX());
-#else
-        MOV_r64_i64(&b, RAX(), m->mask.u64);
-        MOV_r64_i64(&b, RDX(), m->symbol.u64);
-        AND_r64_r64(&b, RAX(), RSI());
-        CMP_r64_r64(&b, RAX(), RDX());
-#endif
-        vec_push(&jump_offsets, &vec_count(&b));  /* Don't know destination address of jump yet */
-        JE_rel32(&b, 0);
-    }
-
-    /* Return 0 if nothing matched */
-    XOR_r32_r32(&b, EAX(), EAX());
-#if defined(_MSC_VER)
-    POP_r64(&b, RBX());
-#endif
-    RET(&b);
-
-    for (c = 0; c != dfa->tt.cols; ++c)
-    {
-        /* Patch in jump addresses from earlier */
-        vec_size target = vec_count(&b);
-        vec_size offset = *(vec_size*)vec_get(&jump_offsets, c);
-        JE_rel32_patch(&b, offset, target - offset);
-
-        /* next_state = lookup_table[current_state] */
-#if defined(_MSC_VER)
-        POP_r64(&b, RBX());
-#endif
-        XOR_r32_r32(&b, EAX(), EAX());
-        MOV_r32_r32(&b, ECX(), ECX());  /* Clear upper 32 bits or RDI */
-        LEA_r64_RSP_plus_i32(&b, RAX(), 4);
-        MOV_r32_ptr_r64_base_offset_scale(&b, EAX(), RAX(), RCX(), SCALE4());
-        RET(&b);
-
-        /* Lookup table data */
-        for (r = 0; r != dfa->tt.rows; ++r)
-            write_asm_u32(&b, (uint32_t)*(int*)table_get(&dfa->tt, r, c));
-    }
-
-    FILE* fp = fopen("dump.bin", "w");
-    fwrite(vec_data(&b), vec_count(&b), 1, fp);
-    fclose(fp);
-
-    while (page_size < vec_count(&b))
-        page_size *= 2;
-
-    void* mem = alloc_page_rw(page_size);
-    memcpy(mem, vec_data(&b), vec_count(&b));
-    protect_rx(mem, page_size);
-
-    vec_deinit(&jump_offsets);
-    vec_deinit(&b);
-    assembly->next_state = (dfa_asm_func)mem;
-    assembly->size = page_size;
-    return 0;
-
-push_failed:
-    vec_deinit(&jump_offsets);
-    vec_deinit(&b);
-    return -1;
-}
-
-void
-dfa_asm_deinit(struct dfa_asm* assembly)
-{
-    free_page((void*)assembly->next_state, assembly->size);
-}
-
-static int
-dfa_asm_run_single(const struct dfa_asm* assembly, const struct frame_data* fdata, struct range r)
-{
-    int state;
-    int idx;
-
-    state = 0;
-    for (idx = r.start; idx != r.end; idx++)
-    {
-        state = assembly->next_state(state < 0 ? -state : state, fdata->symbols[idx].u64);
-
-        /*
-         * Transitioning to state 0 indicates the state machine has entered the
-         * "trap state", i.e. no match was found.
-         */
-        if (state == 0)
-            return r.start;
-
-        /*
-         * Negative states indicate an accept condition.
-         * We want to match as much as possible, so if the state machine is
-         * able to continue, then continue.
-         */
-        if (state < 0)
-        {
-            int next_state;
-
-            /* Can't look ahead, so we're done (success) */
-            if (idx+1 >= r.end)
-                return idx + 1;
-
-            next_state = assembly->next_state(state < 0 ? -state : state, fdata->symbols[idx+1].u64);
-            if (next_state == 0)
-                return idx + 1;
-        }
-    }
-
-    /*
-     * Negative states indicate the current state is an accept condition.
-     * Return the end of the matched range = last matched index + 1
-     */
-    if (state < 0)
-        return idx + 1;
-
-    /*
-     * State machine has not completed, which means we only have a
-     * partial match -> failure
-     */
-    return r.start;
-}
-
-struct range
-dfa_asm_run(const struct dfa_asm* assembly, const struct frame_data* fdata, struct range window)
-{
-    for (; window.start != window.end; ++window.start)
-    {
-        int end = dfa_asm_run_single(assembly, fdata, window);
         if (end > window.start)
         {
             window.end = end;

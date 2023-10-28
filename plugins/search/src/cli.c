@@ -1,7 +1,10 @@
+#include "search/asm.h"
 #include "search/ast.h"
 #include "search/dfa.h"
+#include "search/frame_data.h"
 #include "search/nfa.h"
 #include "search/parser.h"
+#include "search/range.h"
 
 #include "vh/init.h"
 
@@ -11,7 +14,7 @@
 static void
 run_on_test_data(const struct dfa_table* dfa)
 {
-    union symbol symbols[9] = {
+    union symbol symbols[11] = {
         { 0xa },
         { 0xb },
         { 0xb },
@@ -20,10 +23,12 @@ run_on_test_data(const struct dfa_table* dfa)
         { 0xc },
         { 0xc },
         { 0xc },
-        { 0xd }
+        { 0xd },
+        { 0xe },
+        { 0xf },
     };
     struct frame_data fdata = { symbols };
-    struct range range = { 0, 9 };
+    struct range range = { 0, 11 };
 
     range = dfa_run(dfa, &fdata, range);
     fprintf(stderr, "Interpreted match :");
@@ -33,9 +38,9 @@ run_on_test_data(const struct dfa_table* dfa)
 }
 
 static void
-run_asm_on_test_data(const struct dfa_asm* assembly)
+run_asm_on_test_data(const struct asm_dfa* assembly)
 {
-    union symbol symbols[9] = {
+    union symbol symbols[11] = {
         { 0xa },
         { 0xb },
         { 0xb },
@@ -44,12 +49,14 @@ run_asm_on_test_data(const struct dfa_asm* assembly)
         { 0xc },
         { 0xc },
         { 0xc },
-        { 0xd }
+        { 0xd },
+        { 0xe },
+        { 0xf },
     };
     struct frame_data fdata = { symbols };
-    struct range range = { 0, 9 };
+    struct range range = { 0, 11 };
 
-    range = dfa_asm_run(assembly, &fdata, range);
+    range = asm_run(assembly, &fdata, range);
     fprintf(stderr, "ASM match         :");
     for (; range.start != range.end; ++range.start)
         fprintf(stderr, " 0x%" PRIx64, ((uint64_t)symbols[range.start].motionh << 32) | ((uint64_t)symbols[range.start].motionl));
@@ -62,7 +69,7 @@ int main(int argc, char** argv)
     union ast_node* ast = NULL;
     struct nfa_graph nfa;
     struct dfa_table dfa;
-    struct dfa_asm dfa_asm;
+    struct asm_dfa asm_dfa;
     int nfa_result = -1;
     int dfa_result = -1;
     int asm_result = -1;
@@ -78,7 +85,7 @@ int main(int argc, char** argv)
 
     parser_init(&parser);
     ast = parser_parse(&parser, argv[1]);
-    parser_deinit(&parser);
+    //ast = parser_parse(&parser, argv[1]);
 
     if (ast)
     {
@@ -99,14 +106,14 @@ int main(int argc, char** argv)
     {
         dfa_export_dot(&dfa, "dfa.dot");
         run_on_test_data(&dfa);
-        asm_result = dfa_assemble(&dfa_asm, &dfa);
+        asm_result = asm_compile(&asm_dfa, &dfa);
         dfa_deinit(&dfa);
     }
 
     if (asm_result == 0)
     {
-        run_asm_on_test_data(&dfa_asm);
-        dfa_asm_deinit(&dfa_asm);
+        run_asm_on_test_data(&asm_dfa);
+        asm_deinit(&asm_dfa);
     }
 
     vh_deinit();
