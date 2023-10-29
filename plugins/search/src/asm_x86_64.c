@@ -248,7 +248,7 @@ assemble_transition_lookup_table(struct vec* code, const struct dfa_table* dfa, 
 int
 asm_compile(struct asm_dfa* assembly, const struct dfa_table* dfa)
 {
-    int r, c;
+    int c;
     int page_size = get_page_size();
     int have_wildcard = 0;
     struct vec code;
@@ -338,7 +338,7 @@ asm_compile(struct asm_dfa* assembly, const struct dfa_table* dfa)
     fwrite(vec_data(&code), vec_count(&code), 1, fp);
     fclose(fp);
 
-    while (page_size < vec_count(&code))
+    while (page_size < (int)vec_count(&code))
         page_size *= 2;
 
     void* mem = alloc_page_rw(page_size);
@@ -368,6 +368,7 @@ asm_run_single(const struct asm_dfa* assembly, const struct frame_data* fdata, s
 {
     int state;
     int idx;
+    int last_accept_idx = r.start;
 
     state = 0;
     for (idx = r.start; idx != r.end; idx++)
@@ -376,42 +377,26 @@ asm_run_single(const struct asm_dfa* assembly, const struct frame_data* fdata, s
 
         /*
          * Transitioning to state 0 indicates the state machine has entered the
-         * "trap state", i.e. no match was found.
+         * "trap state", i.e. no match was found for the current symbol. Stop
+         * execution.
          */
         if (state == 0)
-            return r.start;
+            break;
 
         /*
          * Negative states indicate an accept condition.
-         * We want to match as much as possible, so if the state machine is
-         * able to continue, then continue.
+         * We want to match as much as possible, so instead of returning
+         * immediately here, save this index as the last known accept condition.
          */
         if (state < 0)
-        {
-            int next_state;
-
-            /* Can't look ahead, so we're done (success) */
-            if (idx+1 >= r.end)
-                return idx + 1;
-
-            next_state = assembly->next_state(state < 0 ? -state : state, fdata->symbols[idx+1].u64);
-            if (next_state >= 0)
-                return idx + 1;
-        }
+            last_accept_idx = idx + 1;
     }
-
-    /*
-     * Negative states indicate the current state is an accept condition.
-     * Return the end of the matched range = last matched index + 1
-     */
-    if (state < 0)
-        return idx + 1;
 
     /*
      * State machine has not completed, which means we only have a
      * partial match -> failure
      */
-    return r.start;
+    return last_accept_idx;
 }
 
 struct range

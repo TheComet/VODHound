@@ -67,6 +67,16 @@ h40_to_symbol(const char* str)
     return s;
 }
 
+static union symbol
+h40_to_symbol(uint64_t h40)
+{
+    union symbol s;
+    s.u64 = 0;
+    s.motionl = h40 & 0xFFFFFFFF;
+    s.motionh = h40 >> 32UL;
+    return s;
+};
+
 TEST_F(NAME, one_symbol)
 {
     std::vector<union symbol> symbols;
@@ -74,6 +84,45 @@ TEST_F(NAME, one_symbol)
     run("nair", symbols);
     EXPECT_THAT(result.start, Eq(0));
     EXPECT_THAT(result.end, Eq(1));
+}
+
+TEST_F(NAME, conditional_wildcard_1)
+{
+    std::vector<union symbol> symbols;
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xb));
+    symbols.push_back(h40_to_symbol(0xb));
+
+    run("0xa->.?->0xb", symbols);
+    EXPECT_THAT(result.start, Eq(0));
+    EXPECT_THAT(result.end, Eq(3));
+}
+
+TEST_F(NAME, conditional_wildcard_2)
+{
+    std::vector<union symbol> symbols;
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xb));
+    symbols.push_back(h40_to_symbol(0xb));
+
+    run("0xa->.1,2->0xb", symbols);
+    EXPECT_THAT(result.start, Eq(0));
+    EXPECT_THAT(result.end, Eq(4));
+}
+
+TEST_F(NAME, conditional_wildcard_3)
+{
+    std::vector<union symbol> symbols;
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xb));
+    symbols.push_back(h40_to_symbol(0xb));
+
+    run("0xa->.0,2->0xb", symbols);
+    EXPECT_THAT(result.start, Eq(0));
+    EXPECT_THAT(result.end, Eq(4));
 }
 
 TEST_F(NAME, continue_execution_beyond_initial_accept_condition)
@@ -103,4 +152,22 @@ TEST_F(NAME, continue_execution_beyond_initial_accept_condition)
     run("(grab|utilt->.1,4)+", symbols);
     EXPECT_THAT(result.start, Eq(2));
     EXPECT_THAT(result.end, Eq(17));
+}
+
+TEST_F(NAME, return_to_last_accept_condition_if_continue_fails_to_match)
+{
+    std::vector<union symbol> symbols;
+    symbols.push_back(h40_to_symbol("fall"));
+    symbols.push_back(h40_to_symbol("land"));
+    symbols.push_back(h40_to_symbol("grab"));
+    symbols.push_back(h40_to_symbol("dthrow"));
+    symbols.push_back(h40_to_symbol("sh"));
+    symbols.push_back(h40_to_symbol("nair"));
+    symbols.push_back(h40_to_symbol("grab"));
+    symbols.push_back(h40_to_symbol("dthrow"));
+    symbols.push_back(h40_to_symbol("sh"));
+
+    run("(grab->.0,2->nair)+", symbols);
+    EXPECT_THAT(result.start, Eq(2));
+    EXPECT_THAT(result.end, Eq(6));
 }

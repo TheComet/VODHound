@@ -333,7 +333,6 @@ dfa_remove_duplicates(struct dfa_table* dfa)
     for (r1 = 0; r1 < dfa->tt.rows; ++r1)
         for (r2 = r1 + 1; r2 < dfa->tt.rows; ++r2)
         {
-            int is_accept1, is_accept2;
             for (c = 0; c != dfa->tt.cols; ++c)
             {
                 int* cell1 = table_get(&dfa->tt, r1, c);
@@ -495,11 +494,12 @@ wildcard_swapped_to_end:;
      * the order, this could either match "ac" or "acc".
      *
      * To deal with this, if a state has an outgoing wildcard transition, then
-     * we insert explicit transitions of all of the outer outgoing transitions
+     * we insert explicit transitions for all other possible state transitions
      * in parallel with the wildcard. In other words: "(a->c) | (a->c->c) | (a->.->c)".
      *
      * This way, when evaluating the DFA, as long as the wildcard is processed
-     * last, it will prefer transitioning through known symbols.
+     * last, it will prefer transitioning through known symbols before it falls
+     * back to matching the wildcard on an unknown symbol.
      */
     if (has_wildcard)
         for (r = 0; r != nfa_tt.rows; ++r)
@@ -508,9 +508,11 @@ wildcard_swapped_to_end:;
             for (c = 0; c < nfa_tt.cols - 1; ++c)
             {
                 struct vec* next_states = table_get(&nfa_tt, r, c);
-                if (vec_count(next_states) > 0)
-                    if (vec_push_vec(next_states, wildcard_next_states) < 0)
-                        goto build_nfa_table_failed;
+                VEC_FOR_EACH(wildcard_next_states, int, wildcard_next_state)
+                    if (vec_find(next_states, wildcard_next_state) == vec_count(next_states))
+                        if (vec_push(next_states, wildcard_next_state) < 0)
+                            goto build_nfa_table_failed;
+                VEC_END_EACH
             }
         }
     fprintf(stderr, "NFA (wildcards):\n");
@@ -741,6 +743,7 @@ dfa_run_single(const struct dfa_table* dfa, const struct frame_data* fdata, stru
 {
     int state;
     int idx;
+    int last_accept_idx = r.start;
 
     state = 0;
     for (idx = r.start; idx != r.end; idx++)
@@ -749,42 +752,26 @@ dfa_run_single(const struct dfa_table* dfa, const struct frame_data* fdata, stru
 
         /*
          * Transitioning to state 0 indicates the state machine has entered the
-         * "trap state", i.e. no match was found.
+         * "trap state", i.e. no match was found for the current symbol. Stop
+         * execution.
          */
         if (state == 0)
-            return r.start;
+            break;
 
         /*
          * Negative states indicate an accept condition.
-         * We want to match as much as possible, so if the state machine is
-         * able to continue, then continue.
+         * We want to match as much as possible, so instead of returning
+         * immediately here, save this index as the last known accept condition.
          */
         if (state < 0)
-        {
-            int next_state;
-
-            /* Can't look ahead, so we're done (success) */
-            if (idx+1 >= r.end)
-                return idx + 1;
-
-            next_state = lookup_next_state(dfa, fdata->symbols[idx+1], state < 0 ? -state : state);
-            if (next_state >= 0)
-                return idx + 1;
-        }
+            last_accept_idx = idx + 1;
     }
-
-    /*
-     * Negative states indicate the current state is an accept condition.
-     * Return the end of the matched range = last matched index + 1
-     */
-    if (state < 0)
-        return idx + 1;
 
     /*
      * State machine has not completed, which means we only have a
      * partial match -> failure
      */
-    return r.start;
+    return last_accept_idx;
 }
 
 struct range
