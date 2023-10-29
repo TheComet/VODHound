@@ -44,7 +44,7 @@ static char* yytext_dup(const char* text);
 
 static char* yytext_dup(const char* text)
 {
-    int len = strlen(text);
+    int len = (int)strlen(text);
     char* dup = mem_alloc(len + 1);
     if (dup == NULL)
         return NULL;

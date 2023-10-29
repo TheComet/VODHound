@@ -121,21 +121,6 @@ run_asm_on_test_data(const struct asm_dfa* assembly)
 
 #include <time.h>
 
-static uint64_t tick(void)
-{
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec * 1000000000 + ts.tv_nsec;
-}
-
-static void tock(uint64_t last)
-{
-    uint64_t now = tick();
-    uint64_t diff = now - last;
-    int u = diff / 1000;
-    fprintf(stderr, "Took: %dus\n", u);
-}
-
 int main(int argc, char** argv)
 {
     struct parser parser;
@@ -180,20 +165,14 @@ int main(int argc, char** argv)
     if (dfa_result == 0)
     {
         dfa_export_dot(&dfa, "dfa.dot");
-        uint64_t t = tick();
         run_on_test_data(&dfa);
-        tock(t);
         asm_result = asm_compile(&asm_dfa, &dfa);
         dfa_deinit(&dfa);
-
-
     }
 
     if (asm_result == 0)
     {
-        uint64_t t = tick();
         run_asm_on_test_data(&asm_dfa);
-        tock(t);
         asm_deinit(&asm_dfa);
     }
 

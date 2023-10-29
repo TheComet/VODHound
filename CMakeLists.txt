@@ -42,6 +42,7 @@ if (NOT ZLIB_FOUND AND NOT TARGET ZLIB::ZLIB)
 endif ()
 
 if (VODHOUND_TESTS)
+    set (INSTALL_GTEST OFF CACHE INTERNAL "")
     add_subdirectory ("thirdparty/googletest")
     add_subdirectory ("tests")
 endif ()

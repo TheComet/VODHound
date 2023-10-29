@@ -5,6 +5,8 @@
 
 #include "vh/vec.h"
 
+#include <stdio.h>
+
 #if defined(_WIN32)
 #   define WIN32_LEAN_AND_MEAN
 #   include <Windows.h>
@@ -208,7 +210,7 @@ assemble_transition_lookup_table(struct vec* code, const struct dfa_table* dfa, 
      * will differ on Windows.
      */
 #if defined(_MSC_VER)
-    POP_r64(&b, RBX());
+    POP_r64(code, RBX());
 #endif
 
     if (dfa->tt.rows < 128)
@@ -270,7 +272,7 @@ asm_compile(struct asm_dfa* assembly, const struct dfa_table* dfa)
 
     /* RBX is not volatile on Windows, but we need 2 working registers. */
 #if defined(_MSC_VER)
-    PUSH_r64(&b, RBX());
+    PUSH_r64(&code, RBX());
 #endif
 
     for (c = 0; c != dfa->tt.cols; ++c)
@@ -295,10 +297,10 @@ asm_compile(struct asm_dfa* assembly, const struct dfa_table* dfa)
 
         /* if (matcher->symbol.u64 & matcher->mask.u64) == (input_symbol & matcher->mask.u64) */
 #if defined(_MSC_VER)
-        MOV_r64_i64(&b, RAX(), m->mask.u64);
-        MOV_r64_i64(&b, RBX(), m->symbol.u64);
-        AND_r64_r64(&b, RAX(), RDX());  /* RDX = 2nd function parameter (symbol) */
-        CMP_r64_r64(&b, RAX(), RBX());  /* Compare (RDX & mask) with symbol */
+        MOV_r64_i64(&code, RAX(), m->mask.u64);
+        MOV_r64_i64(&code, RBX(), m->symbol.u64);
+        AND_r64_r64(&code, RAX(), RDX());  /* RDX = 2nd function parameter (symbol) */
+        CMP_r64_r64(&code, RAX(), RBX());  /* Compare (RDX & mask) with symbol */
 #else
         MOV_r64_i64(&code, RAX(), m->mask.u64);
         MOV_r64_i64(&code, RDX(), m->symbol.u64);
@@ -316,7 +318,7 @@ asm_compile(struct asm_dfa* assembly, const struct dfa_table* dfa)
     if (have_wildcard == 0)
     {
 #if defined(_MSC_VER)
-        POP_r64(&b, RBX());
+        POP_r64(&code, RBX());
 #endif
         XOR_r32_r32(&code, EAX(), EAX());
         RET(&code);
