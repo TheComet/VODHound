@@ -102,6 +102,32 @@ TEST_F(NAME, conditional_wildcard_1)
 TEST_F(NAME, conditional_wildcard_2)
 {
     std::vector<union symbol> symbols;
+    symbols.push_back(h40_to_symbol(0x9));
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xb));
+    symbols.push_back(h40_to_symbol(0xb));
+
+    run("0xa->.?->0xb", symbols);
+    EXPECT_THAT(result.start, Eq(1));
+    EXPECT_THAT(result.end, Eq(4));
+}
+
+TEST_F(NAME, conditional_wildcard_3)
+{
+    std::vector<union symbol> symbols;
+    symbols.push_back(h40_to_symbol(0x9));
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xb));
+    symbols.push_back(h40_to_symbol(0xc));
+
+    run("0xa->.?->0xb", symbols);
+    EXPECT_THAT(result.start, Eq(1));
+    EXPECT_THAT(result.end, Eq(3));
+}
+
+TEST_F(NAME, conditional_wildcard_4)
+{
+    std::vector<union symbol> symbols;
     symbols.push_back(h40_to_symbol(0xa));
     symbols.push_back(h40_to_symbol(0xa));
     symbols.push_back(h40_to_symbol(0xb));
@@ -112,17 +138,34 @@ TEST_F(NAME, conditional_wildcard_2)
     EXPECT_THAT(result.end, Eq(4));
 }
 
-TEST_F(NAME, conditional_wildcard_3)
+TEST_F(NAME, conditional_wildcard_5)
 {
     std::vector<union symbol> symbols;
     symbols.push_back(h40_to_symbol(0xa));
     symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xb));
     symbols.push_back(h40_to_symbol(0xb));
     symbols.push_back(h40_to_symbol(0xb));
 
     run("0xa->.0,2->0xb", symbols);
     EXPECT_THAT(result.start, Eq(0));
     EXPECT_THAT(result.end, Eq(4));
+}
+
+TEST_F(NAME, repeating_wildcard_1)
+{
+    std::vector<union symbol> symbols;
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xb));
+    symbols.push_back(h40_to_symbol(0xb));
+    symbols.push_back(h40_to_symbol(0xb));
+
+    run("0xa->.*->0xb", symbols);
+    EXPECT_THAT(result.start, Eq(0));
+    EXPECT_THAT(result.end, Eq(6));
 }
 
 TEST_F(NAME, continue_execution_beyond_initial_accept_condition)
