@@ -4,6 +4,10 @@
 #include "vh/table.h"
 #include "vh/vec.h"
 
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
 struct frame_data;
 struct nfa_graph;
 
@@ -24,3 +28,7 @@ dfa_export_dot(const struct dfa_table* dfa, const char* file_name);
 
 struct range
 dfa_run(const struct dfa_table* dfa, const struct frame_data* fdata, struct range window);
+
+#if defined(__cplusplus)
+}
+#endif

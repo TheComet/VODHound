@@ -87,7 +87,7 @@ struct btree
  * btree_free() when no longer required.
  */
 VH_PUBLIC_API struct btree*
-btree_create(btree_size value_size);
+btree_alloc(btree_size value_size);
 
 /*!
  * @brief Initialises an existing btree object.
@@ -164,7 +164,7 @@ btree_set_existing(struct btree* btree, btree_key key, const void* value);
  * If the item does already exist, then this value is ignored.
  * @param[out] inserted_value Will be updated to point to either the newly
  * inserted value, or point to the existing value.
- * @return Returns 1 if the value already existed. Returns 0 if a new entry was
+ * @return Returns 0 if the value already existed. Returns 1 if a new entry was
  * made. Return -1 if not enough memory was available in the case of a reallocation.
  */
 VH_PUBLIC_API int
@@ -326,7 +326,7 @@ btree_compact(struct btree* btree);
  * @param[in] v The name to give the variable pointing to the current
  * item. Will be of type T*.
  */
-#define VH_BTREE_FOR_EACH(btree, T, k, v) {                                   \
+#define BTREE_FOR_EACH(btree, T, k, v) {                                   \
     btree_size idx_##k;                                                    \
     btree_key k;                                                           \
     T* v;                                                                     \
@@ -340,7 +340,7 @@ btree_compact(struct btree* btree);
 /*!
  * @brief Iterates over the specified btree's keys and opens a FOR_EACH scope.
  */
-#define VH_BTREE_KEYS_FOR_EACH(btree, k) {                                    \
+#define BTREE_KEYS_FOR_EACH(btree, k) {                                    \
     btree_size idx_##k;                                                    \
     btree_key k;                                                           \
     for(idx_##k = 0;                                                          \
@@ -350,7 +350,7 @@ btree_compact(struct btree* btree);
 /*!
  * @brief Closes a for each scope previously opened by BTREE_FOR_EACH.
  */
-#define VH_BTREE_END_EACH }}
+#define BTREE_END_EACH }}
 
 /*!
  * @brief Will erase the current item in a for loop from the btree. The current
@@ -361,7 +361,7 @@ btree_compact(struct btree* btree);
  * to the parameter passed to BTREE_FOR_EACH or BTREE_KEYS_FOR_EACH.
  * as in BTREE_FOR_EACH.
  */
-#define VH_BTREE_ERASE_CURRENT_ITEM_IN_FOR_LOOP(btree, k) do {                \
+#define BTREE_ERASE_CURRENT_ITEM_IN_FOR_LOOP(btree, k) do {                \
         btree_erase_index(btree, idx_##k);                                    \
         idx_##k--;                                                            \
     } while(0)

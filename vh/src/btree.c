@@ -75,7 +75,7 @@ btree_mem_realloc(struct btree* btree, btree_size new_capacity)
 
 /* ------------------------------------------------------------------------- */
 struct btree*
-btree_create(btree_size value_size)
+btree_alloc(btree_size value_size)
 {
     struct btree* btree = mem_alloc(sizeof *btree);
     if (btree == NULL)
@@ -281,7 +281,7 @@ btree_insert_or_get(struct btree* btree, btree_key key, const void* value, void*
     {
         /*memcpy(BTREE_VALUE(btree, insertion_index), *value, btree->value_size);*/
         *inserted_value = BTREE_VALUE(btree, insertion_index);
-        return 1;
+        return 0;
     }
 
     /* Move entries out of the way to make space for new entry */
@@ -294,7 +294,7 @@ btree_insert_or_get(struct btree* btree, btree_key key, const void* value, void*
     *inserted_value = BTREE_VALUE(btree, insertion_index);
     btree->count++;
 
-    return 0;
+    return 1;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -471,11 +471,11 @@ btree_erase(struct btree* btree, btree_key key)
 
     lower_bound = find_lower_bound(btree, key);
     if (lower_bound >= BTREE_KEY_END(btree) || *lower_bound != key)
-        return 1;
+        return 0;
 
     btree_erase_index(btree, BTREE_KEY_TO_IDX(btree, lower_bound));
 
-    return 0;
+    return 1;
 }
 
 /* ------------------------------------------------------------------------- */

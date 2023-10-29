@@ -3,6 +3,10 @@
 #include "search/range.h"
 #include <stdint.h>
 
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
 struct dfa_table;
 struct frame_data;
 
@@ -22,3 +26,7 @@ asm_deinit(struct asm_dfa* assembly);
 
 struct range
 asm_run(const struct asm_dfa* assembly, const struct frame_data* fdata, struct range window);
+
+#if defined(__cplusplus)
+}
+#endif

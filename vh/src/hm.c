@@ -144,7 +144,7 @@ resize_rehash(struct hm* hm, hm_size new_table_count)
     {
         if (SLOT(hm, i) == VH_HM_SLOT_UNUSED || SLOT(hm, i) == VH_HM_SLOT_RIP)
             continue;
-        if (hm_insert_new(&new_hm, KEY(hm, i), VALUE(hm, i)) != 0)
+        if (hm_insert_new(&new_hm, KEY(hm, i), VALUE(hm, i)) != 1)
         {
             mem_free(new_hm.storage);
             return -1;
@@ -161,7 +161,7 @@ resize_rehash(struct hm* hm, hm_size new_table_count)
 
 /* ------------------------------------------------------------------------- */
 struct hm*
-hm_create(hm_size key_size, hm_size value_size)
+hm_alloc(hm_size key_size, hm_size value_size)
 {
     return hm_create_with_options(
         key_size, value_size,

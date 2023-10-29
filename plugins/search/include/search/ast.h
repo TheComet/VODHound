@@ -1,5 +1,9 @@
 #pragma once
 
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
 #include <stdint.h>
 
 enum ast_type
@@ -99,3 +103,7 @@ void ast_destroy_single(union ast_node* node);
 void ast_destroy_recurse(union ast_node* node);
 
 int ast_export_dot(union ast_node* root, const char* file_name);
+
+#if defined(__cplusplus)
+}
+#endif

@@ -6,61 +6,134 @@
 #include "search/parser.h"
 #include "search/range.h"
 
+#include "vh/hash40.h"
 #include "vh/init.h"
 
 #include <stdio.h>
 #include <inttypes.h>
 
+union symbol symbols[10000];
+const struct frame_data fdata = { symbols };
+const struct range range = { 0, 10000 };
+
+static union symbol
+h40_to_symbol(const char* str)
+{
+    union symbol s;
+    uint64_t h40 = hash40_str(str);
+    s.u64 = 0;
+    s.motionl = h40 & 0xFFFFFFFF;
+    s.motionh = h40 >> 32UL;
+    return s;
+}
+
+static void
+init_symbols(void)
+{
+    int i;
+    for (i = 0; i != 7000; ++i)
+        symbols[i] = h40_to_symbol("wait");
+#if 0
+    symbols[i++] = h40_to_symbol("nair");
+    symbols[i++] = h40_to_symbol("land");
+    symbols[i++] = h40_to_symbol("grab");
+    symbols[i++] = h40_to_symbol("wait");
+    symbols[i++] = h40_to_symbol("pummel");
+    symbols[i++] = h40_to_symbol("pummel");
+    symbols[i++] = h40_to_symbol("dthrow");
+    symbols[i++] = h40_to_symbol("fh");
+    symbols[i++] = h40_to_symbol("uair");
+    symbols[i++] = h40_to_symbol("uair");
+    symbols[i++] = h40_to_symbol("land");
+    symbols[i++] = h40_to_symbol("fh");
+    symbols[i++] = h40_to_symbol("uair");
+    symbols[i++] = h40_to_symbol("uair");
+    symbols[i++] = h40_to_symbol("land");
+    symbols[i++] = h40_to_symbol("fh");
+    symbols[i++] = h40_to_symbol("uair");
+    symbols[i++] = h40_to_symbol("uair");
+    symbols[i++] = h40_to_symbol("land");
+    symbols[i++] = h40_to_symbol("fh");
+    symbols[i++] = h40_to_symbol("uair");
+    symbols[i++] = h40_to_symbol("uair");
+    symbols[i++] = h40_to_symbol("dj");
+    symbols[i++] = h40_to_symbol("uair");
+    symbols[i++] = h40_to_symbol("fair");
+    symbols[i++] = h40_to_symbol("qa1");
+#endif
+
+    for (; i < 8000; ++i)
+        symbols[i] = h40_to_symbol("wait");
+
+    symbols[i++] = h40_to_symbol("nair");
+    symbols[i++] = h40_to_symbol("land");
+    symbols[i++] = h40_to_symbol("grab");
+    symbols[i++] = h40_to_symbol("wait");
+    symbols[i++] = h40_to_symbol("pummel");
+    symbols[i++] = h40_to_symbol("pummel");
+    symbols[i++] = h40_to_symbol("dthrow");
+    symbols[i++] = h40_to_symbol("sh");
+    symbols[i++] = h40_to_symbol("nair");
+    symbols[i++] = h40_to_symbol("land");
+    symbols[i++] = h40_to_symbol("grab");
+    symbols[i++] = h40_to_symbol("dthrow");
+    symbols[i++] = h40_to_symbol("sh");
+    symbols[i++] = h40_to_symbol("nair");
+    symbols[i++] = h40_to_symbol("land");
+    symbols[i++] = h40_to_symbol("turn");
+    symbols[i++] = h40_to_symbol("utilt");
+    symbols[i++] = h40_to_symbol("sh");
+    symbols[i++] = h40_to_symbol("nair");
+    symbols[i++] = h40_to_symbol("land");
+    symbols[i++] = h40_to_symbol("utilt");
+    symbols[i++] = h40_to_symbol("sh");
+    symbols[i++] = h40_to_symbol("nair");
+    symbols[i++] = h40_to_symbol("land");
+    symbols[i++] = h40_to_symbol("utilt");
+    symbols[i++] = h40_to_symbol("fh");
+    symbols[i++] = h40_to_symbol("uair");
+    symbols[i++] = h40_to_symbol("dj");
+    symbols[i++] = h40_to_symbol("bair");
+
+    for (; i < 10000; ++i)
+        symbols[i] = h40_to_symbol("wait");
+}
+
 static void
 run_on_test_data(const struct dfa_table* dfa)
 {
-    union symbol symbols[11] = {
-        { 0xa },
-        { 0xb },
-        { 0xb },
-        { 0xa },
-        { 0xc },
-        { 0xc },
-        { 0xc },
-        { 0xc },
-        { 0xd },
-        { 0xe },
-        { 0xf },
-    };
-    struct frame_data fdata = { symbols };
-    struct range range = { 0, 11 };
-
-    range = dfa_run(dfa, &fdata, range);
-    fprintf(stderr, "Interpreted match :");
-    for (; range.start != range.end; ++range.start)
-        fprintf(stderr, " 0x%" PRIx64, ((uint64_t)symbols[range.start].motionh << 32) | ((uint64_t)symbols[range.start].motionl));
+    struct range found = dfa_run(dfa, &fdata, range);
+    fprintf(stderr, "Interpreted match (%d-%d) :", found.start, found.end);
+    for (; found.start != found.end; ++found.start)
+        fprintf(stderr, " 0x%" PRIx64, ((uint64_t)symbols[found.start].motionh << 32) | ((uint64_t)symbols[found.start].motionl));
     fprintf(stderr, "\n");
 }
 
 static void
 run_asm_on_test_data(const struct asm_dfa* assembly)
 {
-    union symbol symbols[11] = {
-        { 0xa },
-        { 0xb },
-        { 0xb },
-        { 0xa },
-        { 0xc },
-        { 0xc },
-        { 0xc },
-        { 0xc },
-        { 0xd },
-        { 0xe },
-        { 0xf },
-    };
-    struct frame_data fdata = { symbols };
-    struct range range = { 0, 11 };
-
-    range = asm_run(assembly, &fdata, range);
-    fprintf(stderr, "ASM match         :");
-    for (; range.start != range.end; ++range.start)
-        fprintf(stderr, " 0x%" PRIx64, ((uint64_t)symbols[range.start].motionh << 32) | ((uint64_t)symbols[range.start].motionl));
+    struct range found = asm_run(assembly, &fdata, range);
+    fprintf(stderr, "ASM match (%d-%d)         :", found.start, found.end);
+    for (; found.start != found.end; ++found.start)
+        fprintf(stderr, " 0x%" PRIx64, ((uint64_t)symbols[found.start].motionh << 32) | ((uint64_t)symbols[found.start].motionl));
     fprintf(stderr, "\n");
+}
+
+#include <time.h>
+
+static uint64_t tick(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000000000 + ts.tv_nsec;
+}
+
+static void tock(uint64_t last)
+{
+    uint64_t now = tick();
+    uint64_t diff = now - last;
+    int u = diff / 1000;
+    fprintf(stderr, "Took: %dus\n", u);
 }
 
 int main(int argc, char** argv)
@@ -82,9 +155,11 @@ int main(int argc, char** argv)
 
     vh_threadlocal_init();
     vh_init();
+    init_symbols();
 
     parser_init(&parser);
     ast = parser_parse(&parser, argv[1]);
+    parser_deinit(&parser);
     //ast = parser_parse(&parser, argv[1]);
 
     if (ast)
@@ -105,14 +180,20 @@ int main(int argc, char** argv)
     if (dfa_result == 0)
     {
         dfa_export_dot(&dfa, "dfa.dot");
+        uint64_t t = tick();
         run_on_test_data(&dfa);
+        tock(t);
         asm_result = asm_compile(&asm_dfa, &dfa);
         dfa_deinit(&dfa);
+
+
     }
 
     if (asm_result == 0)
     {
+        uint64_t t = tick();
         run_asm_on_test_data(&asm_dfa);
+        tock(t);
         asm_deinit(&asm_dfa);
     }
 

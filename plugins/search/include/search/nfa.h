@@ -3,6 +3,10 @@
 #include "search/match.h"
 #include "vh/vec.h"
 
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
 union ast_node;
 
 struct nfa_node
@@ -25,3 +29,7 @@ nfa_deinit(struct nfa_graph* nfa);
 
 int
 nfa_export_dot(const struct nfa_graph* nfa, const char* file_name);
+
+#if defined(__cplusplus)
+}
+#endif

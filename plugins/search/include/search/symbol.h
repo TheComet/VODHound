@@ -4,6 +4,7 @@
 
 union symbol
 {
+    uint64_t u64;
     struct {
         /* hash40 value, 5 bytes */
         unsigned motionl          : 32;
@@ -27,5 +28,4 @@ union symbol
         unsigned opp_buried      : 1;
         unsigned opp_phantom     : 1;
     };
-    uint64_t u64;
 };

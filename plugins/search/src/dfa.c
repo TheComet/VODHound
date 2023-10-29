@@ -568,14 +568,17 @@ wildcard_swapped_to_end:;
                         VEC_FOR_EACH(dfa_state, int, nfa_state)
                             struct vec* nfa_cell = table_get(&nfa_tt, *nfa_state < 0 ? -*nfa_state : *nfa_state, n);
                             struct vec* dfa_cell = table_get(&dfa_tt_intermediate, dfa_tt_intermediate.rows - 1, n);
-                            if (vec_push_vec(dfa_cell, nfa_cell) < 0)
-                                goto build_dfa_table_failed;
+                            VEC_FOR_EACH(nfa_cell, int, target_nfa_state)
+                                if (vec_find(dfa_cell, target_nfa_state) == vec_count(dfa_cell))
+                                    if (vec_push(dfa_cell, target_nfa_state) < 0)
+                                        goto build_dfa_table_failed;
+                            VEC_END_EACH
                         VEC_END_EACH
                     }
                 } break;
 
                 case 0: break;
-                case -1: goto build_dfa_table_failed;
+                default: goto build_dfa_table_failed;
             }
         }
 
@@ -765,7 +768,7 @@ dfa_run_single(const struct dfa_table* dfa, const struct frame_data* fdata, stru
                 return idx + 1;
 
             next_state = lookup_next_state(dfa, fdata->symbols[idx+1], state < 0 ? -state : state);
-            if (next_state == 0)
+            if (next_state >= 0)
                 return idx + 1;
         }
     }

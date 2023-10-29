@@ -393,7 +393,7 @@ asm_run_single(const struct asm_dfa* assembly, const struct frame_data* fdata, s
                 return idx + 1;
 
             next_state = assembly->next_state(state < 0 ? -state : state, fdata->symbols[idx+1].u64);
-            if (next_state == 0)
+            if (next_state >= 0)
                 return idx + 1;
         }
     }

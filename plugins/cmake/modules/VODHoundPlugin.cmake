@@ -12,6 +12,7 @@ function (vodhound_add_plugin NAME)
     set (oneValueArgs "")
     set (multiValueArgs
         SOURCES
+        TESTS
         HEADERS
         DEFINES
         INCLUDES
@@ -77,6 +78,36 @@ function (vodhound_add_plugin NAME)
             install (
                 FILES ${${TARGET_NAME}_DATA}
                 DESTINATION "${VODHOUND_INSTALL_DATADIR}/${TARGET_NAME}/")
+        endif ()
+        if (VODHOUND_TESTS AND ${PLUGIN_NAME}_TESTS)
+            enable_language (CXX)
+            configure_file (${PLUGIN_TEST_MAIN_TEMPLATE} "tests/main.cpp" COPYONLY)
+            add_executable (${TARGET_NAME}_tests
+                ${${PLUGIN_NAME}_SOURCES}
+                ${${PLUGIN_NAME}_HEADERS}
+                ${${PLUGIN_NAME}_TESTS}
+                "${PROJECT_BINARY_DIR}/tests/main.cpp")
+            target_include_directories (${TARGET_NAME}_tests
+                PRIVATE
+                    ${${PLUGIN_NAME}_INCLUDES})
+            target_compile_definitions (${TARGET_NAME}_tests
+                PRIVATE
+                    ${${PLUGIN_NAME}_DEFINES}
+                    PLUGIN_BUILDING
+                    "PLUGIN_VERSION=((${PROJECT_VERSION_MAJOR}<<24) | (${PROJECT_VERSION_MINOR}<<16) | (${PROJECT_VERSION_PATCH}<<8))"
+                    "PLUGIN_API=${PLUGIN_API}")
+            target_link_libraries (${TARGET_NAME}_tests
+                PRIVATE
+                    ${${PLUGIN_NAME}_LIBS}
+                    gmock)
+            set_target_properties (${TARGET_NAME}_tests
+                PROPERTIES
+                    MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>
+                    RUNTIME_OUTPUT_DIRECTORY ${VODHOUND_BUILD_BINDIR}
+                    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VODHOUND_BUILD_BINDIR}
+                    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VODHOUND_BUILD_BINDIR}
+                    INSTALL_RPATH ${VODHOUND_INSTALL_LIBDIR}
+                    VS_DEBUGGER_WORKING_DIRECTORY ${VODHOUND_BUILD_BINDIR})
         endif ()
         set_property (
             DIRECTORY "${PROJECT_SOURCE_DIR}"

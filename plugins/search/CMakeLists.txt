@@ -28,6 +28,11 @@ vodhound_add_plugin (${PROJECT_NAME}
     INCLUDES
         "include"
         "${PROJECT_BINARY_DIR}/include"
+    TESTS
+        "tests/test_ast.cpp"
+        "tests/test_eval.cpp"
+        "tests/test_dfa.cpp"
+        "tests/test_nfa.cpp"
     LIBS
         VODHound::vh
         IUP::iup)
@@ -76,6 +81,16 @@ if (VODHOUND_${PLUGIN_NAME})
     target_include_directories (${PROJECT_NAME}
         PRIVATE
             $<BUILD_INTERFACE:$<$<AND:$<PLATFORM_ID:Windows>,$<NOT:$<BOOL:${HAVE_UNISTD_H}>>>:${PROJECT_SOURCE_DIR}/include/win32_unistd>>)
+
+    if (VODHOUND_TESTS)
+        target_sources (${PROJECT_NAME}_tests
+            PRIVATE
+                ${BISON_${PROJECT_NAME}-parser_OUTPUTS}
+                ${FLEX_${PROJECT_NAME}-scanner_OUTPUTS})
+        target_include_directories (${PROJECT_NAME}_tests
+            PRIVATE
+                $<BUILD_INTERFACE:$<$<AND:$<PLATFORM_ID:Windows>,$<NOT:$<BOOL:${HAVE_UNISTD_H}>>>:${PROJECT_SOURCE_DIR}/include/win32_unistd>>)
+    endif ()
 
     ###########################################################################
     # Graph layout library

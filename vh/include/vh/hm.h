@@ -62,7 +62,7 @@ struct hm
  * @return If successful, returns HM_OK. If allocation fails, HM_OOM is returned.
  */
 VH_PUBLIC_API struct hm*
-hm_create(hm_size key_size, hm_size value_size);
+hm_alloc(hm_size key_size, hm_size value_size);
 
 VH_PUBLIC_API struct hm*
 hm_create_with_options(

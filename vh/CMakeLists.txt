@@ -214,7 +214,7 @@ set (MIGRATION_FILES
     "1-schema.down.sql"
     "1-schema.up.sql"
     "mappingInfo.json")
-    
+
 set (MIGRATION_FILES_IN)
 set (MIGRATION_FILES_OUT)
 foreach (file ${MIGRATION_FILES})
@@ -232,6 +232,22 @@ add_custom_target (vh_schema ALL DEPENDS ${MIGRATION_FILES_OUT})
 add_dependencies (vh vh_schema)
 
 target_sources (vh PRIVATE ${MIGRATION_FILES_IN})
+
+###############################################################################
+# Unit tests
+###############################################################################
+
+if (VODHOUND_TESTS)
+    target_sources (vodhound-tests PRIVATE
+        "tests/env_vh_init.cpp"
+        "tests/test_vh_btree.cpp"
+        "tests/test_vh_btree_as_set.cpp"
+        "tests/test_vh_mem.cpp"
+        "tests/test_vh_hm.cpp"
+        "tests/test_vh_rb.cpp"
+        "tests/test_vh_vec.cpp")
+    target_link_libraries (vodhound-tests PRIVATE vh)
+endif ()
 
 ###############################################################################
 # Install targets

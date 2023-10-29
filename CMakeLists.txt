@@ -24,6 +24,8 @@ set (VODHOUND_INSTALL_INCLUDEDIR "include")
 set (VODHOUND_INSTALL_CMAKEDIR "share/VODHound/cmake")
 set (VODHOUND_INSTALL_PLUGINDIR "share/VODHound/plugins")
 
+option (VODHOUND_TESTS "Compile unit tests" ON)
+
 # Configure IUP
 set (IUP_BUILD_BINDIR ${VODHOUND_BUILD_BINDIR} CACHE INTERNAL "")
 set (IUP_INSTALL_BINDIR ${VODHOUND_INSTALL_BINDIR} CACHE INTERNAL "")
@@ -37,6 +39,11 @@ if (NOT ZLIB_FOUND AND NOT TARGET ZLIB::ZLIB)
     # rfcommon is a shared library
     set (ZLIB_PIC ON CACHE INTERNAL "" FORCE)
     add_subdirectory ("thirdparty/zlib-1.2.11")
+endif ()
+
+if (VODHOUND_TESTS)
+    add_subdirectory ("thirdparty/googletest")
+    add_subdirectory ("tests")
 endif ()
 
 add_subdirectory ("thirdparty/sqlite-3.43.1")

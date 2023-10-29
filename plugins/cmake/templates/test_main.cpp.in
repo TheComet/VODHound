@@ -1,0 +1,14 @@
+#include "gmock/gmock.h"
+#include "vh/init.h"
+
+int
+main(int argc, char** argv)
+{
+    testing::InitGoogleMock(&argc, argv);
+    vh_threadlocal_init();
+    vh_init();
+    int result = RUN_ALL_TESTS();
+    vh_deinit();
+    vh_threadlocal_deinit();
+    return result;
+}

@@ -152,7 +152,7 @@ vec_steal_vector(struct vec* vec, struct vec* src_vec)
 {
     vec_deinit(vec);
     *vec = *src_vec;
-    src_vec->data = (void*)0;
+    src_vec->data = (uint8_t*)(void*)0;
     src_vec->count = 0;
     src_vec->capacity = 0;
 }
@@ -161,7 +161,7 @@ static void*
 vec_steal_data(struct vec* vec)
 {
     void* data = vec->data;
-    vec->data = (void*)0;
+    vec->data = (uint8_t*)(void*)0;
     vec->count = 0;
     vec->capacity = 0;
     return data;
