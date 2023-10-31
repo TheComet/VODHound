@@ -11,7 +11,6 @@ static VH_THREADLOCAL const char* g_col_set = "";
 static VH_THREADLOCAL const char* g_col_clr = "";
 
 static FILE* g_log = NULL;
-static FILE* g_net = NULL;
 
 /* ------------------------------------------------------------------------- */
 void

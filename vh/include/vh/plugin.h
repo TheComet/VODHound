@@ -8,7 +8,13 @@ C_BEGIN
 struct plugin_ctx;
 typedef struct Ihandle_ Ihandle;
 
-struct ui_interface
+struct ui_center_interface
+{
+    Ihandle* (*create)(struct plugin_ctx* plugin);
+    void (*destroy)(struct plugin_ctx* plugin, Ihandle* view);
+};
+
+struct ui_pane_interface
 {
     Ihandle* (*create)(struct plugin_ctx* plugin);
     void (*destroy)(struct plugin_ctx* plugin, Ihandle* view);
@@ -117,15 +123,16 @@ struct plugin_interface
 {
     uint32_t plugin_version;
     uint32_t vh_version;
-    struct plugin_ctx* (*create)(void);
-    void (*destroy)(struct plugin_ctx* plugin);
-    struct ui_interface* ui;
-    struct video_player_interface* video;
     const char* name;
     const char* category;
     const char* author;
     const char* contact;
     const char* description;
+    struct plugin_ctx* (*create)(void);
+    void (*destroy)(struct plugin_ctx* plugin);
+    struct ui_center_interface* ui_center;
+    struct ui_pane_interface* ui_pane;
+    struct video_player_interface* video;
 };
 
 C_END

@@ -28,7 +28,7 @@ struct db_interface
 
     struct {
         int (*add)(struct db* db, int fighter_id, struct str_view name);
-        const char* (*name)(struct db* db, int fighter_id);
+        int (*name)(struct db* db, int fighter_id, struct str* name);
     } fighter;
 
     struct {
@@ -103,7 +103,13 @@ struct db_interface
         int (*associate_event)(struct db* db, int game_id, int event_id);
         int (*associate_video)(struct db* db, int game_id, int video_id, int64_t frame_offset);
         int (*unassociate_video)(struct db* db, int game_id, int video_id);
-        int (*get_video)(struct db* db, int game_id, const char** file_name, const char** path_hint, int64_t* frame_offset);
+        int (*get_videos)(struct db* db, int game_id,
+            int (*on_video)(
+                const char* file_name,
+                const char* path_hint,
+                int64_t frame_offset,
+                void* user),
+            void* user);
         int (*add_player)(struct db* db, int person_id, int game_id, int slot, int team_id, int fighter_id, int costume, int is_loser_side);
     } game;
 

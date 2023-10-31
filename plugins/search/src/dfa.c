@@ -767,10 +767,6 @@ dfa_run_single(const struct dfa_table* dfa, const struct frame_data* fdata, stru
             last_accept_idx = idx + 1;
     }
 
-    /*
-     * State machine has not completed, which means we only have a
-     * partial match -> failure
-     */
     return last_accept_idx;
 }
 

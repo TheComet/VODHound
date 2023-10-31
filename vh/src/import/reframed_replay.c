@@ -65,8 +65,8 @@ import_reframed_replay(
     for (i = 0, entry_idx = 0; i != num_entries; ++i)
     {
         const void* type = mstream_read(&ms, 4);
-        int offset = mstream_read_lu32(&ms);
-        int size = mstream_read_lu32(&ms);
+        int offset = (int)mstream_read_lu32(&ms);
+        int size = (int)mstream_read_lu32(&ms);
         if (entry_idx < 3 &&
             (memcmp(type, "META", 4) == 0 || memcmp(type, "FDAT", 4) == 0 || memcmp(type, "VIDM", 4) == 0))
         {
@@ -77,7 +77,7 @@ import_reframed_replay(
         }
     }
 
-    num_entries = entry_idx;
+    num_entries = (uint8_t)entry_idx;
     game_id = -1;
     for (i = 0; i != num_entries; ++i)
         if (memcmp(entries[i].type, "META", 4) == 0)

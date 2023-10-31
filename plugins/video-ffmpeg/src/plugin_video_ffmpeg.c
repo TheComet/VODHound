@@ -53,7 +53,7 @@ static void ui_destroy(struct plugin_ctx* ctx, Ihandle* ui)
     IupDestroy(ui);
 }
 
-static struct ui_interface ui = {
+static struct ui_center_interface ui = {
     ui_create,
     ui_destroy
 };
@@ -114,10 +114,10 @@ static struct video_player_interface controls = {
 PLUGIN_API struct plugin_interface vh_plugin = {
     PLUGIN_VERSION,
     0,
-    create, destroy, &ui, &controls,
     "FFmpeg Video Player",
     "video driver",
     "TheComet",
     "@TheComet93",
-    "Decodes videos using FFmpeg libraries."
+    "Decodes videos using FFmpeg libraries.",
+    create, destroy, &ui, NULL, &controls
 };

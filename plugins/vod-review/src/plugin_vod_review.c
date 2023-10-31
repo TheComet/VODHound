@@ -54,10 +54,10 @@ static int try_load_video_driver_plugin(struct plugin_ctx* ctx)
     if (ctx->video_ctx == NULL)
         goto create_video_ctx_failed;
 
-    if (ctx->video_plugin.i->ui == NULL)
+    if (ctx->video_plugin.i->ui_center == NULL)
         goto plugin_has_no_ui_interface;
 
-    ctx->video_ui = ctx->video_plugin.i->ui->create(ctx->video_ctx);
+    ctx->video_ui = ctx->video_plugin.i->ui_center->create(ctx->video_ctx);
     if (ctx->video_ui == NULL)
         goto create_video_ui_failed;
 
@@ -76,7 +76,7 @@ static int try_load_video_driver_plugin(struct plugin_ctx* ctx)
     return 0;
 
     unsupported_video_ui       :
-    create_video_ui_failed     : ctx->video_plugin.i->ui->destroy(ctx->video_ctx, ctx->video_ui);
+    create_video_ui_failed     : ctx->video_plugin.i->ui_center->destroy(ctx->video_ctx, ctx->video_ui);
     plugin_has_no_ui_interface : ctx->video_plugin.i->destroy(ctx->video_ctx);
     create_video_ctx_failed    : return -1;
 }
@@ -132,7 +132,7 @@ destroy(struct plugin_ctx* ctx)
 {
     if (ctx->video_ui)
     {
-        ctx->video_plugin.i->ui->destroy(ctx->video_ctx, ctx->video_ui);
+        ctx->video_plugin.i->ui_center->destroy(ctx->video_ctx, ctx->video_ui);
         ctx->video_plugin.i->destroy(ctx->video_ctx);
         plugin_unload(&ctx->video_plugin);
     }
@@ -193,7 +193,7 @@ static void ui_destroy(struct plugin_ctx* ctx, Ihandle* ui)
     IupDestroy(ui);
 }
 
-static struct ui_interface ui = {
+static struct ui_center_interface ui = {
     ui_create,
     ui_destroy
 };
@@ -290,10 +290,10 @@ static struct video_player_interface controls = {
 PLUGIN_API struct plugin_interface vh_plugin = {
     PLUGIN_VERSION,
     0,
-    create, destroy, &ui, &controls,
     "VOD Review",
     "video",
     "TheComet",
     "@TheComet93",
-    "Tool for reviewing videos."
+    "Tool for reviewing videos.",
+    create, destroy, &ui, NULL, &controls
 };

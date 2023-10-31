@@ -2,7 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-static GLuint gl_load_shader_type(const char* code, GLint length, GLenum type, char** error)
+#include "vh/log.h"
+
+static GLuint gl_load_shader_type(const GLchar* code, GLenum type, char** error)
 {
     GLuint shader;
     GLint compiled;
@@ -18,7 +20,7 @@ static GLuint gl_load_shader_type(const char* code, GLint length, GLenum type, c
         return 0;
     }
 
-    glShaderSource(shader, 1, &code, &length);
+    glShaderSource(shader, 1, &code, NULL);
     glCompileShader(shader);
     glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
     if (!compiled)
@@ -38,7 +40,7 @@ static GLuint gl_load_shader_type(const char* code, GLint length, GLenum type, c
     return shader;
 }
 
-GLuint gl_load_shader(const char* vs, const char* fs, const char* attribute_bindings[], char** error)
+GLuint gl_load_shader(const GLchar* vs, const GLchar* fs, const char* attribute_bindings[], char** error)
 {
     int i;
     GLuint program;
@@ -55,14 +57,13 @@ GLuint gl_load_shader(const char* vs, const char* fs, const char* attribute_bind
         goto create_program_failed;
     }
 
-    int length;
-    GLuint vs_shader = gl_load_shader_type(vs, length, GL_VERTEX_SHADER, error);
+    GLuint vs_shader = gl_load_shader_type(vs, GL_VERTEX_SHADER, error);
     if (vs_shader == 0)
         goto load_vs_shader_failed;
     glAttachShader(program, vs_shader);
     glDeleteShader(vs_shader);
 
-    GLuint fs_shader = gl_load_shader_type(fs, length, GL_FRAGMENT_SHADER, error);
+    GLuint fs_shader = gl_load_shader_type(fs, GL_FRAGMENT_SHADER, error);
     if (fs_shader == 0)
         goto load_fs_shader_failed;
     glAttachShader(program, fs_shader);
