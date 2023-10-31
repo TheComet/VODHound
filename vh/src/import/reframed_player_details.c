@@ -4,6 +4,13 @@
 #include "json-c/json.h"
 
 int
+reframed_add_person_to_db(
+    struct db_interface* dbi, struct db* db,
+    int sponsor_id,
+    struct str_view name, struct str_view tag,
+    struct str_view social, struct str_view pronouns);
+
+int
 import_reframed_player_details(
         struct db_interface* dbi,
         struct db* db,
@@ -40,8 +47,15 @@ import_reframed_player_details(
                 if (sponsor_id < 0)
                     goto fail;
             }
-            if (dbi->person.add_or_get(db, sponsor_id, cstr_view(name), tag, cstr_view(social), cstr_view(pronouns)) < 0)
+            if (reframed_add_person_to_db(dbi, db,
+                sponsor_id,
+                cstr_view(name),
+                tag,
+                cstr_view(social ? social : ""),
+                cstr_view(pronouns ? pronouns : "")) < 0)
+            {
                 goto fail;
+            }
         }
     }
 

@@ -9,7 +9,7 @@ import_reframed_framedata_1_5(
         struct db* db,
         struct mstream* ms, int game_id)
 {
-    int frame_count = mstream_read_lu32(ms);
+    int frame_count = (int)mstream_read_lu32(ms);
     int fighter_count = mstream_read_u8(ms);
 
     for (int fighter_idx = 0; fighter_idx != fighter_count; ++fighter_idx)
@@ -38,7 +38,7 @@ import_reframed_framedata_1_5(
                 return -1;
 
             if (dbi->frame.add(db, game_id, fighter_idx, timestamp, frame,
-                    frames_left, posx, posy, damage, hitstun, shield, status,
+                    (int)frames_left, posx, posy, damage, hitstun, shield, status,
                     hit_status, motion, stocks, attack_connected, facing_left, opponent_in_hitlag) != 0)
                 return -1;
         }

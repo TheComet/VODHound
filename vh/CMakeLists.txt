@@ -108,6 +108,7 @@ add_library (vh ${VH_LIB_TYPE}
     "src/vec.c"
     "src/import/param_labels_csv.c"
     "src/import/reframed.c"
+    "src/import/reframed_add_person.c"
     "src/import/reframed_framedata.c"
     "src/import/reframed_framedata_1_5.c"
     "src/import/reframed_mapping_info.c"

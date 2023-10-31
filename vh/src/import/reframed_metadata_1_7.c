@@ -6,14 +6,18 @@
 #include <ctype.h>
 
 int
+reframed_add_person_to_db(
+    struct db_interface* dbi, struct db* db,
+    int sponsor_id,
+    struct str_view name, struct str_view tag,
+    struct str_view social, struct str_view pronouns);
+
+int
 import_reframed_metadata_1_7(
         struct db_interface* dbi,
         struct db* db,
         struct json_object* root)
 {
-    char* err_msg;
-    int ret;
-
     struct json_object* tournament = json_object_object_get(root, "tournament");
     struct json_object* tournament_name = json_object_object_get(tournament, "name");
     struct json_object* tournament_website = json_object_object_get(tournament, "website");
@@ -33,10 +37,10 @@ import_reframed_metadata_1_7(
 
     struct json_object* tournament_sponsors = json_object_object_get(tournament, "sponsors");
     if (tournament_sponsors && json_object_get_type(tournament_sponsors) == json_type_array)
-        for (int i = 0; i != json_object_array_length(tournament_sponsors); ++i)
+        for (int i = 0; i != (int)json_object_array_length(tournament_sponsors); ++i)
         {
             int sponsor_id = -1;
-            struct json_object* sponsor = json_object_array_get_idx(tournament_sponsors, i);
+            struct json_object* sponsor = json_object_array_get_idx(tournament_sponsors, (size_t)i);
             const char* name = json_object_get_string(json_object_object_get(sponsor, "name"));
             const char* website = json_object_get_string(json_object_object_get(sponsor, "website"));
             if (website == NULL)
@@ -55,21 +59,21 @@ import_reframed_metadata_1_7(
 
     struct json_object* tournament_organizers = json_object_object_get(tournament, "organizers");
     if (tournament_organizers && json_object_get_type(tournament_organizers) == json_type_array)
-        for (int i = 0; i != json_object_array_length(tournament_organizers); ++i)
+        for (int i = 0; i != (int)json_object_array_length(tournament_organizers); ++i)
         {
             int person_id = -1;
-            struct json_object* organizer = json_object_array_get_idx(tournament_organizers, i);
+            struct json_object* organizer = json_object_array_get_idx(tournament_organizers, (size_t)i);
             const char* name = json_object_get_string(json_object_object_get(organizer, "name"));
             const char* social = json_object_get_string(json_object_object_get(organizer, "social"));
             const char* pronouns = json_object_get_string(json_object_object_get(organizer, "pronouns"));
             if (name && *name)
             {
-                person_id = dbi->person.add_or_get(db,
-                        -1,
-                        cstr_view(name),
-                        cstr_view(name),
-                        cstr_view(social ? social : ""),
-                        cstr_view(pronouns ? pronouns : ""));
+                person_id = reframed_add_person_to_db(dbi, db,
+                    -1,  /* No sponsor */
+                    cstr_view(name),
+                    cstr_view(name),
+                    cstr_view(social ? social : ""),
+                    cstr_view(pronouns ? pronouns : ""));
                 if (person_id < 0)
                     return -1;
             }
@@ -81,21 +85,21 @@ import_reframed_metadata_1_7(
 
     struct json_object* tournament_commentators = json_object_object_get(root, "commentators");
     if (tournament_commentators && json_object_get_type(tournament_commentators) == json_type_array)
-        for (int i = 0; i != json_object_array_length(tournament_commentators); ++i)
+        for (int i = 0; i != (int)json_object_array_length(tournament_commentators); ++i)
         {
             int person_id = -1;
-            struct json_object* commentator = json_object_array_get_idx(tournament_commentators, i);
+            struct json_object* commentator = json_object_array_get_idx(tournament_commentators, (size_t)i);
             const char* name = json_object_get_string(json_object_object_get(commentator, "name"));
             const char* social = json_object_get_string(json_object_object_get(commentator, "social"));
             const char* pronouns = json_object_get_string(json_object_object_get(commentator, "pronouns"));
             if (name && *name)
             {
-                person_id = dbi->person.add_or_get(db,
-                        -1,
-                        cstr_view(name),
-                        cstr_view(name),
-                        cstr_view(social ? social : ""),
-                        cstr_view(pronouns ? pronouns : ""));
+                person_id = reframed_add_person_to_db(dbi, db,
+                    -1,  /* No sponsor */
+                    cstr_view(name),
+                    cstr_view(name),
+                    cstr_view(social ? social : ""),
+                    cstr_view(pronouns ? pronouns : ""));
                 if (person_id < 0)
                     return -1;
             }
@@ -189,8 +193,8 @@ import_reframed_metadata_1_7(
             return -1;
     }
 
-    uint64_t time_started = json_object_get_int64(json_object_object_get(game_info, "timestampstart"));
-    uint64_t time_ended = json_object_get_int64(json_object_object_get(game_info, "timestampend"));
+    uint64_t time_started = (uint64_t)json_object_get_int64(json_object_object_get(game_info, "timestampstart"));
+    uint64_t time_ended = (uint64_t)json_object_get_int64(json_object_object_get(game_info, "timestampend"));
     int stage_id = json_object_get_int(json_object_object_get(game_info, "stageid"));
     int winner = json_object_get_int(json_object_object_get(game_info, "winner"));
 
@@ -198,9 +202,9 @@ import_reframed_metadata_1_7(
     int winner_team_id = -1;
     if (player_info && json_object_get_type(player_info) != json_type_array)
         return -1;
-    for (int i = 0; i != json_object_array_length(player_info); ++i)
+    for (int i = 0; i != (int)json_object_array_length(player_info); ++i)
     {
-        struct json_object* player = json_object_array_get_idx(player_info, i);
+        struct json_object* player = json_object_array_get_idx(player_info, (size_t)i);
         const char* name = json_object_get_string(json_object_object_get(player, "name"));
         const char* tag = json_object_get_string(json_object_object_get(player, "tag"));
         const char* social = json_object_get_string(json_object_object_get(player, "social"));
@@ -219,12 +223,15 @@ import_reframed_metadata_1_7(
             name = tag;
         }
 
+        if (cstr_starts_with(cstr_view(tag), "Player "))
+            tag = name;
+
         int sponsor_id = -1;
         if (*sponsor)
             if ((sponsor_id = dbi->sponsor.add_or_get(db, cstr_view(sponsor), cstr_view(""), cstr_view(""))) < 0)
                 return -1;
 
-        int person_id = dbi->person.add_or_get(db,
+        int person_id = reframed_add_person_to_db(dbi, db,
             sponsor_id,
             cstr_view(name),
             cstr_view(tag),
@@ -263,19 +270,19 @@ import_reframed_metadata_1_7(
         if (dbi->game.associate_event(db, game_id, event_id) < 0)
             return -1;
 
-    for (int i = 0; i != json_object_array_length(player_info); ++i)
+    for (int i = 0; i != (int)json_object_array_length(player_info); ++i)
     {
-        struct json_object* player = json_object_array_get_idx(player_info, i);
+        struct json_object* player = json_object_array_get_idx(player_info, (size_t)i);
         const char* name = json_object_get_string(json_object_object_get(player, "name"));
         int is_loser_side = json_object_get_boolean(json_object_object_get(player, "loserside"));
         int fighter_id = json_object_get_int(json_object_object_get(player, "fighterid"));
         int costume = json_object_get_int(json_object_object_get(player, "costume"));
 
-        int person_id = dbi->person.get_id(db, cstr_view(name));
+        int person_id = dbi->person.get_id_from_name(db, cstr_view(name));
         if (person_id < 0)
             return -1;
 
-        int team_id = dbi->person.get_team_id(db, cstr_view(name));
+        int team_id = dbi->person.get_team_id_from_name(db, cstr_view(name));
         if (team_id < 0)
             return -1;
 

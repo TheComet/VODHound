@@ -28,7 +28,7 @@ struct db_interface
 
     struct {
         int (*add)(struct db* db, int fighter_id, struct str_view name);
-        int (*name)(struct db* db, int fighter_id, struct str* name);
+        int (*get_name)(struct db* db, int fighter_id, struct str* name);
     } fighter;
 
     struct {
@@ -73,9 +73,17 @@ struct db_interface
     } sponsor;
 
     struct {
-        int (*add_or_get)(struct db* db, int sponsor_id, struct str_view name, struct str_view tag, struct str_view social, struct str_view pronouns);
-        int (*get_id)(struct db* db, struct str_view name);
-        int (*get_team_id)(struct db* db, struct str_view name);
+        int (*add_or_get)(struct db* db,
+            int sponsor_id, struct str_view name, struct str_view tag, struct str_view social, struct str_view pronouns,
+            int (*on_person)(
+                int id, int sponsor_id, const char* name, const char* tag, const char* social, const char* pronouns,
+                void* user),
+            void* user);
+        int (*get_id_from_name)(struct db* db, struct str_view name);
+        int (*get_team_id_from_name)(struct db* db, struct str_view name);
+        int (*set_tag)(struct db* db, int person_id, struct str_view tag);
+        int (*set_social)(struct db* db, int person_id, struct str_view social);
+        int (*set_pronouns)(struct db* db, int person_id, struct str_view pronouns);
     } person;
 
     struct game {

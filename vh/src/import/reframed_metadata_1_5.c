@@ -4,14 +4,18 @@
 #include "json-c/json.h"
 
 int
+reframed_add_person_to_db(
+    struct db_interface* dbi, struct db* db,
+    int sponsor_id,
+    struct str_view name, struct str_view tag,
+    struct str_view social, struct str_view pronouns);
+
+int
 import_reframed_metadata_1_5(
         struct db_interface* dbi,
         struct db* db,
         struct json_object* root)
 {
-    char* err_msg;
-    int ret;
-
     /*
     {
         "gameinfo":{
@@ -91,8 +95,8 @@ import_reframed_metadata_1_5(
         round_number = json_object_get_int(json_object_object_get(game_info, "set"));
     }
 
-    uint64_t time_started = json_object_get_int64(json_object_object_get(game_info, "timestampstart"));
-    uint64_t time_ended = json_object_get_int64(json_object_object_get(game_info, "timestampend"));
+    uint64_t time_started = (uint64_t)json_object_get_int64(json_object_object_get(game_info, "timestampstart"));
+    uint64_t time_ended = (uint64_t)json_object_get_int64(json_object_object_get(game_info, "timestampend"));
     int stage_id = json_object_get_int(json_object_object_get(game_info, "stageid"));
     int winner = json_object_get_int(json_object_object_get(game_info, "winner"));
 
@@ -100,9 +104,9 @@ import_reframed_metadata_1_5(
     int winner_team_id = -1;
     if (player_info && json_object_get_type(player_info) != json_type_array)
         return -1;
-    for (int i = 0; i != json_object_array_length(player_info); ++i)
+    for (int i = 0; i != (int)json_object_array_length(player_info); ++i)
     {
-        struct json_object* player = json_object_array_get_idx(player_info, i);
+        struct json_object* player = json_object_array_get_idx(player_info, (size_t)i);
         const char* name = json_object_get_string(json_object_object_get(player, "name"));
         const char* tag = json_object_get_string(json_object_object_get(player, "tag"));
 
@@ -118,16 +122,20 @@ import_reframed_metadata_1_5(
             name = tag;
         }
 
+        if (cstr_starts_with(cstr_view(tag), "Player "))
+            tag = name;
+
         int sponsor_id = -1;
         const char* social = "";
         const char* pronouns = "";
 
-        int person_id = dbi->person.add_or_get(db,
+        int person_id = reframed_add_person_to_db(
+            dbi, db,
             sponsor_id,
             cstr_view(name),
             cstr_view(tag),
-            cstr_view(social),
-            cstr_view(pronouns));
+            cstr_view(social ? social : ""),
+            cstr_view(pronouns ? pronouns : ""));
         if (person_id < 0)
             return -1;
 
@@ -157,19 +165,19 @@ import_reframed_metadata_1_5(
         if (dbi->game.associate_event(db, game_id, event_id) < 0)
             return -1;
 
-    for (int i = 0; i != json_object_array_length(player_info); ++i)
+    for (int i = 0; i != (int)json_object_array_length(player_info); ++i)
     {
-        struct json_object* player = json_object_array_get_idx(player_info, i);
+        struct json_object* player = json_object_array_get_idx(player_info, (size_t)i);
         const char* name = json_object_get_string(json_object_object_get(player, "name"));
         int is_loser_side = 0;
         int fighter_id = json_object_get_int(json_object_object_get(player, "fighterid"));
         int costume = 0;
 
-        int person_id = dbi->person.get_id(db, cstr_view(name));
+        int person_id = dbi->person.get_id_from_name(db, cstr_view(name));
         if (person_id < 0)
             return -1;
 
-        int team_id = dbi->person.get_team_id(db, cstr_view(name));
+        int team_id = dbi->person.get_team_id_from_name(db, cstr_view(name));
         if (team_id < 0)
             return -1;
 

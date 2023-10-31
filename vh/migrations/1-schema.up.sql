@@ -83,7 +83,8 @@ CREATE TABLE IF NOT EXISTS people (
     social TEXT NOT NULL,
     pronouns TEXT NOT NULL,
     FOREIGN KEY (sponsor_id) REFERENCES sponsors(id),
-    UNIQUE (name)
+    UNIQUE (name, tag),
+    CHECK (name <> '')
 );
 CREATE TABLE IF NOT EXISTS tournaments (
     id INTEGER PRIMARY KEY NOT NULL,

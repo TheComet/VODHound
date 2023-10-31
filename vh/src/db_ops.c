@@ -16,7 +16,7 @@
 #define STMT_LIST                        \
     X(motion, add)                       \
     X(fighter, add)                      \
-    X(fighter, name)                     \
+    X(fighter, get_name)                 \
     X(stage, add)                        \
     X(status_enum, add)                  \
     X(hit_status_enum, add)              \
@@ -39,8 +39,11 @@
     X(sponsor, add_or_get)               \
                                          \
     X(person, add_or_get)                \
-    X(person, get_id)                    \
-    X(person, get_team_id)               \
+    X(person, get_id_from_name)          \
+    X(person, get_team_id_from_name)     \
+    X(person, set_tag)                   \
+    X(person, set_social)                \
+    X(person, set_pronouns)              \
                                          \
     X(game, add_or_get)                  \
     X(game, query)                       \
@@ -359,38 +362,39 @@ fighter_add(struct db* ctx, int fighter_id, struct str_view name)
 }
 
 static int
-fighter_name(struct db* ctx, int fighter_id, struct str* name)
+fighter_get_name(struct db* ctx, int fighter_id, struct str* name)
 {
     int ret;
     str_clear(name);
-    if (ctx->fighter_name == NULL)
-        if (prepare_stmt_wrapper(ctx->db, &ctx->fighter_name, cstr_view(
+    if (ctx->fighter_get_name == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->fighter_get_name, cstr_view(
             "SELECT name FROM fighters WHERE id=?;")) != 0)
             return -1;
 
-    if ((ret = sqlite3_bind_int(ctx->fighter_name, 1, fighter_id)) != SQLITE_OK)
+    if ((ret = sqlite3_bind_int(ctx->fighter_get_name, 1, fighter_id)) != SQLITE_OK)
         goto error;
 
 next_step:
-    ret = sqlite3_step(ctx->fighter_name);
+    ret = sqlite3_step(ctx->fighter_get_name);
     switch (ret)
     {
         case SQLITE_ROW  :
-            if (str_set(name, cstr_view((const char*)sqlite3_column_text(ctx->fighter_name, 0))) < 0)
+            if (str_set(name, cstr_view((const char*)sqlite3_column_text(ctx->fighter_get_name, 0))) < 0)
             {
-                sqlite3_reset(ctx->fighter_name);
+                sqlite3_reset(ctx->fighter_get_name);
                 return -1;
             }
-            sqlite3_reset(ctx->fighter_name);
-            return 0;
+            sqlite3_reset(ctx->fighter_get_name);
+            return 1;
         case SQLITE_BUSY : goto next_step;
-        case SQLITE_DONE : goto done;
+        case SQLITE_DONE :
+            sqlite3_reset(ctx->fighter_get_name);
+            return 0;
     }
 
 error:
     log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-done:
-    sqlite3_reset(ctx->fighter_name);
+    sqlite3_reset(ctx->fighter_get_name);
     return -1;
 }
 
@@ -780,17 +784,17 @@ done:
 static int
 person_add_or_get(
     struct db* ctx,
-    int sponsor_id,
-    struct str_view name,
-    struct str_view tag,
-    struct str_view social,
-    struct str_view pronouns)
+    int sponsor_id, struct str_view name, struct str_view tag, struct str_view social, struct str_view pronouns,
+    int (*on_person)(
+        int id, int sponsor_id, const char* name, const char* tag, const char* social, const char* pronouns,
+        void* user),
+    void* user)
 {
     int ret, person_id = -1;
     if (ctx->person_add_or_get == NULL)
         if (prepare_stmt_wrapper(ctx->db, &ctx->person_add_or_get, cstr_view(
             "INSERT INTO people (sponsor_id, name, tag, social, pronouns) VALUES (?, ?, ?, ?, ?) "
-            "ON CONFLICT DO UPDATE SET name=excluded.name RETURNING id;")) != 0)
+            "ON CONFLICT DO UPDATE SET name=excluded.name RETURNING id, sponsor_id, name, tag, social, pronouns;")) != 0)
             return -1;
 
     if (sponsor_id < 0)
@@ -818,6 +822,16 @@ next_step:
     {
         case SQLITE_ROW  :
             person_id = sqlite3_column_int(ctx->person_add_or_get, 0);
+            ret = on_person(
+                sqlite3_column_int(ctx->person_add_or_get, 0),
+                sqlite3_column_int(ctx->person_add_or_get, 1),
+                (const char*)sqlite3_column_text(ctx->person_add_or_get, 2),
+                (const char*)sqlite3_column_text(ctx->person_add_or_get, 3),
+                (const char*)sqlite3_column_text(ctx->person_add_or_get, 4),
+                (const char*)sqlite3_column_text(ctx->person_add_or_get, 5),
+                user);
+            if (ret < 0)
+                person_id = -1;
             goto done;
         case SQLITE_BUSY : goto next_step;
         case SQLITE_DONE : goto done;
@@ -831,23 +845,23 @@ done:
 }
 
 static int
-person_get_id(struct db* ctx, struct str_view name)
+person_get_id_from_name(struct db* ctx, struct str_view name)
 {
     int ret, person_id = -1;
-    if (ctx->person_get_id == NULL)
-        if (prepare_stmt_wrapper(ctx->db, &ctx->person_get_id, cstr_view(
+    if (ctx->person_get_id_from_name == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->person_get_id_from_name, cstr_view(
             "SELECT id FROM people WHERE name=?;")) != 0)
             return -1;
 
-    if ((ret = sqlite3_bind_text(ctx->person_get_id, 1, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK)
+    if ((ret = sqlite3_bind_text(ctx->person_get_id_from_name, 1, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK)
         goto error;
 
 next_step:
-    ret = sqlite3_step(ctx->person_get_id);
+    ret = sqlite3_step(ctx->person_get_id_from_name);
     switch (ret)
     {
         case SQLITE_ROW  :
-            person_id = sqlite3_column_int(ctx->person_get_id, 0);
+            person_id = sqlite3_column_int(ctx->person_get_id_from_name, 0);
             goto done;
         case SQLITE_BUSY : goto next_step;
         case SQLITE_DONE : goto done;
@@ -856,31 +870,31 @@ next_step:
 error:
     log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
 done:
-    sqlite3_reset(ctx->person_get_id);
+    sqlite3_reset(ctx->person_get_id_from_name);
     return person_id;
 }
 
 static int
-person_get_team_id(struct db* ctx, struct str_view name)
+person_get_team_id_from_name(struct db* ctx, struct str_view name)
 {
     int ret, team_id = -11;
-    if (ctx->person_get_team_id == NULL)
-        if (prepare_stmt_wrapper(ctx->db, &ctx->person_get_team_id, cstr_view(
+    if (ctx->person_get_team_id_from_name == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->person_get_team_id_from_name, cstr_view(
             "SELECT team_id "
             "FROM team_members "
-            "JOIN people ON (team_members.person_id=people.id)"
+            "JOIN people ON team_members.person_id=people.id "
             "WHERE name=?;")) != 0)
             return -1;
 
-    if ((ret = sqlite3_bind_text(ctx->person_get_team_id, 1, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK)
+    if ((ret = sqlite3_bind_text(ctx->person_get_team_id_from_name, 1, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK)
         goto error;
 
 next_step:
-    ret = sqlite3_step(ctx->person_get_team_id);
+    ret = sqlite3_step(ctx->person_get_team_id_from_name);
     switch (ret)
     {
         case SQLITE_ROW  :
-            team_id = sqlite3_column_int(ctx->person_get_team_id, 0);
+            team_id = sqlite3_column_int(ctx->person_get_team_id_from_name, 0);
             goto done;
         case SQLITE_BUSY : goto next_step;
         case SQLITE_DONE : goto done;
@@ -889,8 +903,65 @@ next_step:
 error:
     log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
 done:
-    sqlite3_reset(ctx->person_get_team_id);
+    sqlite3_reset(ctx->person_get_team_id_from_name);
     return team_id;
+}
+
+static int
+person_set_tag(struct db* ctx, int person_id, struct str_view tag)
+{
+    int ret;
+    if (ctx->person_set_tag == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->person_set_tag, cstr_view(
+            "UPDATE OR IGNORE people SET tag=? WHERE id=?;")) != 0)
+            return -1;
+
+    if ((ret = sqlite3_bind_text(ctx->person_set_tag, 1, tag.data, tag.len, SQLITE_STATIC)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->person_set_tag, 2, person_id)) != SQLITE_OK)
+    {
+        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        return -1;
+    }
+
+    return step_stmt_wrapper(ctx->db, ctx->person_set_tag);
+}
+
+static int
+person_set_social(struct db* ctx, int person_id, struct str_view social)
+{
+    int ret;
+    if (ctx->person_set_social == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->person_set_social, cstr_view(
+            "UPDATE OR IGNORE people SET social=? WHERE id=?;")) != 0)
+            return -1;
+
+    if ((ret = sqlite3_bind_text(ctx->person_set_social, 1, social.data, social.len, SQLITE_STATIC)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->person_set_social, 2, person_id)) != SQLITE_OK)
+    {
+        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        return -1;
+    }
+
+    return step_stmt_wrapper(ctx->db, ctx->person_set_social);
+}
+
+static int
+person_set_pronouns(struct db* ctx, int person_id, struct str_view pronouns)
+{
+    int ret;
+    if (ctx->person_set_pronouns == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->person_set_pronouns, cstr_view(
+            "UPDATE OR IGNORE people SET social=? WHERE id=?;")) != 0)
+            return -1;
+
+    if ((ret = sqlite3_bind_text(ctx->person_set_pronouns, 1, pronouns.data, pronouns.len, SQLITE_STATIC)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->person_set_pronouns, 2, person_id)) != SQLITE_OK)
+    {
+        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        return -1;
+    }
+
+    return step_stmt_wrapper(ctx->db, ctx->person_set_pronouns);
 }
 
 static int

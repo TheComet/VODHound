@@ -26,17 +26,17 @@ import_reframed_framedata(
         if (uncompressed_size == 0 || uncompressed_size > 128*1024*1024)
             return -1;
 
-        void* uncompressed_data = mem_alloc(uncompressed_size);
+        void* uncompressed_data = mem_alloc((mem_size)uncompressed_size);
         if (uncompress(
             (uint8_t*)uncompressed_data, &uncompressed_size,
-            (const uint8_t*)mstream_ptr(ms), mstream_bytes_left(ms)) != Z_OK)
+            (const uint8_t*)mstream_ptr(ms), (uLongf)mstream_bytes_left(ms)) != Z_OK)
         {
             mem_free(uncompressed_data);
             return -1;
         }
 
         struct mstream uncompressed_stream = mstream_from_memory(
-                uncompressed_data, uncompressed_size);
+                uncompressed_data, (int)uncompressed_size);
         int result = import_reframed_framedata_1_5(dbi, db, &uncompressed_stream, game_id);
         mem_free(uncompressed_data);
         return result;
