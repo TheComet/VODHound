@@ -82,25 +82,25 @@ function (vodhound_add_plugin NAME)
         if (VODHOUND_TESTS AND ${PLUGIN_NAME}_TESTS)
             enable_language (CXX)
             configure_file (${PLUGIN_TEST_MAIN_TEMPLATE} "tests/main.cpp" COPYONLY)
-            add_executable (${TARGET_NAME}_tests
+            add_executable (${TARGET_NAME}-tests
                 ${${PLUGIN_NAME}_SOURCES}
                 ${${PLUGIN_NAME}_HEADERS}
                 ${${PLUGIN_NAME}_TESTS}
                 "${PROJECT_BINARY_DIR}/tests/main.cpp")
-            target_include_directories (${TARGET_NAME}_tests
+            target_include_directories (${TARGET_NAME}-tests
                 PRIVATE
                     ${${PLUGIN_NAME}_INCLUDES})
-            target_compile_definitions (${TARGET_NAME}_tests
+            target_compile_definitions (${TARGET_NAME}-tests
                 PRIVATE
                     ${${PLUGIN_NAME}_DEFINES}
                     PLUGIN_BUILDING
                     "PLUGIN_VERSION=((${PROJECT_VERSION_MAJOR}<<24) | (${PROJECT_VERSION_MINOR}<<16) | (${PROJECT_VERSION_PATCH}<<8))"
                     "PLUGIN_API=${PLUGIN_API}")
-            target_link_libraries (${TARGET_NAME}_tests
+            target_link_libraries (${TARGET_NAME}-tests
                 PRIVATE
                     ${${PLUGIN_NAME}_LIBS}
                     gmock)
-            set_target_properties (${TARGET_NAME}_tests
+            set_target_properties (${TARGET_NAME}-tests
                 PROPERTIES
                     MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>
                     RUNTIME_OUTPUT_DIRECTORY ${VODHOUND_BUILD_BINDIR}

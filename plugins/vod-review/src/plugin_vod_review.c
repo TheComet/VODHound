@@ -69,7 +69,8 @@ static int try_load_video_driver_plugin(struct plugin_ctx* ctx)
     }
     else
     {
-        log_err("Video plugin '%s' uses unsupported IUP class '%s'. Overlays won't work.\n", ctx->video_plugin.i->name, class_name.data);
+        log_err("Video plugin '%s' uses unsupported IUP class '%s'. Overlays won't work.\n",
+                ctx->video_plugin.i->info->name, class_name.data);
         goto unsupported_video_ui;
     }
 
@@ -85,7 +86,7 @@ static int on_scan_plugin_prefer_ffmpeg(struct plugin plugin, void* user)
 {
     struct plugin_ctx* ctx = user;
 
-    if (cstr_equal(cstr_view("FFmpeg Video Player"), plugin.i->name))
+    if (cstr_equal(cstr_view("FFmpeg Video Player"), plugin.i->info->name))
     {
         ctx->video_plugin = plugin;
         if (try_load_video_driver_plugin(ctx) == 0)
@@ -100,7 +101,7 @@ static int on_scan_plugin_any_video_driver(struct plugin plugin, void* user)
 {
     struct plugin_ctx* ctx = user;
 
-    if (cstr_equal(cstr_view("video driver"), plugin.i->category))
+    if (cstr_equal(cstr_view("video driver"), plugin.i->info->category))
     {
         ctx->video_plugin = plugin;
         if (try_load_video_driver_plugin(ctx) == 0)
@@ -287,13 +288,22 @@ static struct video_player_interface controls = {
     video_volume
 };
 
-PLUGIN_API struct plugin_interface vh_plugin = {
-    PLUGIN_VERSION,
-    0,
+static struct plugin_info info = {
     "VOD Review",
     "video",
     "TheComet",
     "@TheComet93",
-    "Tool for reviewing videos.",
-    create, destroy, &ui, NULL, &controls
+    "Tool for reviewing videos."
+};
+
+PLUGIN_API struct plugin_interface vh_plugin = {
+    PLUGIN_VERSION,
+    0,
+    &info,
+    create,
+    destroy,
+    &ui,
+    NULL,
+    NULL,
+    &controls
 };

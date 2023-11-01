@@ -111,13 +111,22 @@ static struct video_player_interface controls = {
     video_volume
 };
 
-PLUGIN_API struct plugin_interface vh_plugin = {
-    PLUGIN_VERSION,
-    0,
+static struct plugin_info info = {
     "FFmpeg Video Player",
     "video driver",
     "TheComet",
     "@TheComet93",
-    "Decodes videos using FFmpeg libraries.",
-    create, destroy, &ui, NULL, &controls
+    "Decodes videos using FFmpeg libraries."
+};
+
+PLUGIN_API struct plugin_interface vh_plugin = {
+    PLUGIN_VERSION,
+    0,
+    &info,
+    create,
+    destroy,
+    &ui,
+    NULL,
+    NULL,
+    &controls
 };

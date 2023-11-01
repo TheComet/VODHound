@@ -24,15 +24,18 @@ struct plugin_state
 {
     struct plugin plugin;
     struct plugin_ctx* ctx;
-    Ihandle* ui;
+    Ihandle* ui_center;
+    Ihandle* ui_pane;
 };
 
 static int
-center_view_open_plugin(Ihandle* center_view, struct str_view plugin_name)
+open_plugin(Ihandle* main_view, struct str_view plugin_name)
 {
     int insert_pos;
-    struct vec* plugin_state_vec = (struct vec*)IupGetAttribute(center_view, "_IUP_plugin_state_vec");
+    struct vec* plugin_state_vec = (struct vec*)IupGetAttribute(main_view, "_IUP_plugin_state_vec");
     struct plugin_state* state = vec_emplace(plugin_state_vec);
+    Ihandle* center_view = IupGetHandle("center_view");
+    Ihandle* pane_view = IupGetHandle("pane_view");
 
     if (plugin_load(&state->plugin, plugin_name) != 0)
         goto load_plugin_failed;
@@ -41,27 +44,82 @@ center_view_open_plugin(Ihandle* center_view, struct str_view plugin_name)
     if (state->ctx == NULL)
         goto create_context_failed;
 
-    state->ui = state->plugin.i->ui_center->create(state->ctx);
-    if (state->ui == NULL)
-        goto create_ui_failed;
+    state->ui_center = NULL;
+    if (state->plugin.i->ui_center)
+    {
+        state->ui_center = state->plugin.i->ui_center->create(state->ctx);
+        if (state->ui_center == NULL)
+            goto create_ui_center_failed;
+    }
 
-    insert_pos = IupGetChildCount(center_view) - 1;
-    IupSetAttribute(state->ui, "TABTITLE", state->plugin.i->name);
-    if (IupInsert(center_view, IupGetChild(center_view, insert_pos), state->ui) == NULL)
-        goto add_to_ui_failed;
-    IupSetInt(center_view, "VALUEPOS", insert_pos);
+    state->ui_pane = NULL;
+    if (state->plugin.i->ui_pane)
+    {
+        state->ui_pane = state->plugin.i->ui_pane->create(state->ctx);
+        if (state->ui_pane == NULL)
+            goto create_ui_pane_failed;
+    }
 
-    IupMap(state->ui);
-    IupRefresh(state->ui);
+    if (state->ui_center)
+    {
+        insert_pos = IupGetChildCount(center_view) - 1;
+        IupSetAttribute(state->ui_center, "TABTITLE", state->plugin.i->info->name);
+        if (IupInsert(center_view, IupGetChild(center_view, insert_pos), state->ui_center) == NULL)
+            goto add_to_ui_center_failed;
+        IupSetInt(center_view, "VALUEPOS", insert_pos);
+        IupMap(state->ui_center);
+        IupRefresh(state->ui_center);
+    }
+
+    if (state->ui_pane)
+    {
+        insert_pos = IupGetChildCount(pane_view) - 1;
+        IupSetAttribute(state->ui_pane, "TABTITLE", state->plugin.i->info->name);
+        if (IupInsert(pane_view, IupGetChild(pane_view, insert_pos), state->ui_pane) == NULL)
+            goto add_to_ui_pane_failed;
+        IupSetInt(pane_view, "VALUEPOS", insert_pos);
+        IupMap(state->ui_pane);
+        IupRefresh(state->ui_pane);
+    }
 
     return 0;
 
-    add_to_ui_failed      : state->plugin.i->ui_center->destroy(state->ctx, state->ui);
-    create_ui_failed      : state->plugin.i->destroy(state->ctx);
-    create_context_failed : plugin_unload(&state->plugin);
-    load_plugin_failed    : vec_pop(plugin_state_vec);
+add_to_ui_pane_failed:
+    IupDetach(state->ui_center);
+add_to_ui_center_failed:
+    if (state->ui_pane)
+        state->plugin.i->ui_pane->destroy(state->ctx, state->ui_pane);
+create_ui_pane_failed:
+    if (state->ui_center)
+        state->plugin.i->ui_center->destroy(state->ctx, state->ui_center);
+create_ui_center_failed:
+    state->plugin.i->destroy(state->ctx);
+create_context_failed:
+    plugin_unload(&state->plugin);
+load_plugin_failed:
+    vec_pop(plugin_state_vec);
 
     return -1;
+}
+
+static void
+close_plugin(struct plugin_state* state)
+{
+    if (state->plugin.i->video && state->plugin.i->video->is_open(state->ctx))
+        state->plugin.i->video->close(state->ctx);
+
+    if (state->ui_pane)
+        IupDetach(state->ui_pane);
+    if (state->ui_center)
+        IupDetach(state->ui_center);
+
+    if (state->ui_pane)
+        state->plugin.i->ui_pane->destroy(state->ctx, state->ui_pane);
+    if (state->ui_center)
+        state->plugin.i->ui_center->destroy(state->ctx, state->ui_center);
+
+    state->plugin.i->destroy(state->ctx);
+    plugin_unload(&state->plugin);
 }
 
 static int
@@ -151,46 +209,58 @@ on_replay_browser_game_video(const char* file_name, const char* path_hint, int64
 static int
 on_replay_browser_node_selected(Ihandle* ih, int node_id, int selected)
 {
-    Ihandle* center_view;
+    Ihandle* main_view;
     struct replay_browser_video_path_ctx ctx;
     int game_id;
-
-    if (!selected)
-        return IUP_DEFAULT;
 
     game_id = (int)(intptr_t)IupTreeGetUserId(ih, node_id);
     ctx.dbi = (struct db_interface*)IupGetAttribute(ih, "dbi");
     ctx.db = (struct db*)IupGetAttribute(ih, "db");
-    center_view = IupGetHandle("center_view");
-    ctx.plugin_state_vec = (struct vec*)IupGetAttribute(center_view, "_IUP_plugin_state_vec");
+    main_view = IupGetHandle("main_view");
+    ctx.plugin_state_vec = (struct vec*)IupGetAttribute(main_view, "_IUP_plugin_state_vec");
 
-    /* Close all open video files */
-    VEC_FOR_EACH(ctx.plugin_state_vec, struct plugin_state, state)
-        struct plugin_interface* i = state->plugin.i;
-        if (i->video == NULL)
-            continue;
-        if (i->video->is_open(state->ctx))
-            i->video->close(state->ctx);
-    VEC_END_EACH
+    if (selected)
+    {
+        /* Notify plugins of new replay selection */
+        VEC_FOR_EACH(ctx.plugin_state_vec, struct plugin_state, state)
+            struct plugin_interface* i = state->plugin.i;
+            if (i->replays)
+                i->replays->select(state->ctx, &game_id, 1);
+        VEC_END_EACH
 
-    /* Iterate all videos associated with this game */
-    path_init(&ctx.file_path);
-    if (ctx.dbi->game.get_videos(ctx.db, game_id, on_replay_browser_game_video, &ctx) <= 0)
-        goto clear_video;
+        /* Iterate all videos associated with this game */
+        path_init(&ctx.file_path);
+        if (ctx.dbi->game.get_videos(ctx.db, game_id, on_replay_browser_game_video, &ctx) <= 0)
+        {
+            /* If video failed to open, clear */
+            VEC_FOR_EACH(ctx.plugin_state_vec, struct plugin_state, state)
+                struct plugin_interface* i = state->plugin.i;
+                if (i->video == NULL)
+                    continue;
+                if (!i->video->is_open(state->ctx))
+                    i->video->clear(state->ctx);
+            VEC_END_EACH
+        }
+        path_deinit(&ctx.file_path);
+    }
+    else
+    {
+        /* Clear replay selection in plugins */
+        VEC_FOR_EACH(ctx.plugin_state_vec, struct plugin_state, state)
+            struct plugin_interface* i = state->plugin.i;
+            if (i->replays)
+                i->replays->clear(state->ctx);
+        VEC_END_EACH
 
-    path_deinit(&ctx.file_path);
-    return IUP_DEFAULT;
-
-    /* If video failed to open, clear */
-clear_video:
-    path_deinit(&ctx.file_path);
-    VEC_FOR_EACH(ctx.plugin_state_vec, struct plugin_state, state)
-        struct plugin_interface* i = state->plugin.i;
-        if (i->video == NULL)
-            continue;
-        if (!i->video->is_open(state->ctx))
-            i->video->clear(state->ctx);
-    VEC_END_EACH
+        /* Close all open video files */
+        VEC_FOR_EACH(ctx.plugin_state_vec, struct plugin_state, state)
+            struct plugin_interface* i = state->plugin.i;
+            if (i->video == NULL)
+                continue;
+            if (i->video->is_open(state->ctx))
+                i->video->close(state->ctx);
+        VEC_END_EACH
+    }
 
     return IUP_DEFAULT;
 }
@@ -288,8 +358,8 @@ create_replay_browser(struct db_interface* dbi, struct db* db)
 static int
 on_center_view_popup_plugin_selected(Ihandle* ih)
 {
-    Ihandle* center_view = IupGetAttributeHandle(ih, "center_view");
-    center_view_open_plugin(center_view, cstr_view(IupGetAttribute(ih, "TITLE")));
+    Ihandle* main_view = IupGetHandle("main_view");
+    open_plugin(main_view, cstr_view(IupGetAttribute(ih, "TITLE")));
     return IUP_DEFAULT;
 }
 
@@ -297,7 +367,7 @@ static int
 on_center_view_popup_scan_plugins(struct plugin plugin, void* user)
 {
     struct center_view_popup_ctx* ctx = user;
-    Ihandle* item = IupItem(plugin.i->name, NULL);
+    Ihandle* item = IupItem(plugin.i->info->name, NULL);
     IupSetAttributeHandle(item, "center_view", ctx->tabs);
     IupSetCallback(item, "ACTION", (Icallback)on_center_view_popup_plugin_selected);
     IupAppend(ctx->menu, item);
@@ -329,71 +399,14 @@ on_center_view_tab_change(Ihandle* ih, int new_pos, int old_pos)
     return IUP_DEFAULT;
 }
 
-static int
-on_center_view_map(Ihandle* ih)
-{
-    struct vec* plugin_state_vec = vec_alloc(sizeof(struct plugin_state));
-    IupSetAttribute(ih, "_IUP_plugin_state_vec", (char*)plugin_state_vec);
-    return IUP_DEFAULT;
-}
-static int
-on_center_view_unmap(Ihandle* ih)
-{
-    struct vec* plugin_state_vec = (struct vec*)IupGetAttribute(ih, "_IUP_plugin_state_vec");
-    vec_free(plugin_state_vec);
-    return IUP_DEFAULT;
-}
-static int
-on_center_view_close(Ihandle* ih)
-{
-    struct vec* plugin_state_vec = (struct vec*)IupGetAttribute(ih, "_IUP_plugin_state_vec");
-    VEC_FOR_EACH(plugin_state_vec, struct plugin_state, state)
-        if (state->plugin.i->video && state->plugin.i->video->is_open(state->ctx))
-            state->plugin.i->video->close(state->ctx);
-
-        IupDetach(state->ui);
-        state->plugin.i->ui_center->destroy(state->ctx, state->ui);
-        state->plugin.i->destroy(state->ctx);
-        plugin_unload(&state->plugin);
-    VEC_END_EACH
-    vec_clear(plugin_state_vec);
-
-    return IUP_DEFAULT;
-}
-static int
-on_center_view_close_tab(Ihandle* ih, int pos)
-{
-    struct vec* plugin_state_vec = (struct vec*)IupGetAttribute(ih, "_IUP_plugin_state_vec");
-    Ihandle* ui = IupGetChild(ih, pos);
-    VEC_FOR_EACH(plugin_state_vec, struct plugin_state, state)
-        if (state->ui == ui)
-        {
-            if (state->plugin.i->video && state->plugin.i->video->is_open(state->ctx))
-                state->plugin.i->video->close(state->ctx);
-
-            IupDetach(state->ui);
-            state->plugin.i->ui_center->destroy(state->ctx, state->ui);
-            state->plugin.i->destroy(state->ctx);
-            plugin_unload(&state->plugin);
-            vec_erase_element(plugin_state_vec, state);
-
-            return IUP_IGNORE;  /* We already destroyed the tab */
-        }
-    VEC_END_EACH
-
-    return IUP_DEFAULT;
-}
-
 static Ihandle*
 create_center_view(void)
 {
-    Ihandle* empty_tab = IupSetAttributes(IupCanvas(NULL), "TABTITLE=home");
-    Ihandle* plus_tab = IupSetAttributes(IupCanvas(NULL), "TABTITLE=+");
-    Ihandle* tabs = IupSetAttributes(IupTabs(empty_tab, plus_tab, NULL), "SHOWCLOSE=NO");
-    IupSetCallback(tabs, "MAP_CB", (Icallback)on_center_view_map);
-    IupSetCallback(tabs, "UNMAP_CB", (Icallback)on_center_view_unmap);
-    IupSetCallback(tabs, "TABCHANGEPOS_CB", (Icallback)on_center_view_tab_change);
-    IupSetCallback(tabs, "TABCLOSE_CB", (Icallback)on_center_view_close_tab);
+    //Ihandle* empty_tab = IupSetAttributes(IupCanvas(NULL), "TABTITLE=home");
+    //Ihandle* plus_tab = IupSetAttributes(IupCanvas(NULL), "TABTITLE=+");
+    Ihandle* tabs = IupSetAttributes(IupTabs(/*empty_tab, plus_tab,*/ NULL), "SHOWCLOSE=NO");
+    //IupSetCallback(tabs, "TABCHANGEPOS_CB", (Icallback)on_center_view_tab_change);
+    //IupSetCallback(tabs, "TABCLOSE_CB", (Icallback)on_center_view_close_tab);
     IupSetHandle("center_view", tabs);
     return tabs;
 }
@@ -406,18 +419,43 @@ create_pane_view(void)
     return tabs;
 }
 
+static int
+on_main_view_map(Ihandle* ih)
+{
+    return IUP_DEFAULT;
+}
+
+static int
+on_main_view_close(Ihandle* ih)
+{
+    struct vec* plugin_state_vec = (struct vec*)IupGetAttribute(ih, "_IUP_plugin_state_vec");
+    VEC_FOR_EACH(plugin_state_vec, struct plugin_state, state)
+        close_plugin(state);
+    VEC_END_EACH
+    vec_free(plugin_state_vec);
+
+    return IUP_DEFAULT;
+}
+
 static Ihandle*
 create_main_view(struct db_interface* dbi, struct db* db)
 {
     Ihandle *replays, *center, *pane;
     Ihandle *sbox1, *sbox2, *hbox;
+    Ihandle* main_view;
 
     replays = create_replay_browser(dbi, db);
     center = create_center_view();
     pane = create_pane_view();
     sbox1 = IupSetAttributes(IupSbox(replays), "DIRECTION=EAST, COLOR=225 225 225");
     sbox2 = IupSetAttributes(IupSbox(pane), "DIRECTION=WEST, COLOR=225 225 225");
-    return IupHbox(sbox1, center, sbox2, NULL);
+    main_view = IupHbox(sbox1, center, sbox2, NULL);
+
+    struct vec* plugin_state_vec = vec_alloc(sizeof(struct plugin_state));
+    IupSetAttribute(main_view, "_IUP_plugin_state_vec", (char*)plugin_state_vec);
+
+    IupSetHandle("main_view", main_view);
+    return main_view;
 }
 
 static Ihandle*
@@ -515,15 +553,16 @@ int main(int argc, char **argv)
         str_deinit(&ctx.name);
     }
 
-    Ihandle* center_view = IupGetHandle("center_view");
-    center_view_open_plugin(center_view, cstr_view("VOD Review"));
+    Ihandle* main_view = IupGetHandle("main_view");
+    open_plugin(main_view, cstr_view("VOD Review"));
+    open_plugin(main_view, cstr_view("Search"));
 
     IupSetAttribute(dlg, "PLACEMENT", "MAXIMIZED");
     IupShow(dlg);
 
     IupMainLoop();
 
-    on_center_view_close(center_view);
+    on_main_view_close(main_view);
 
     IupDestroy(dlg);
     IupGfxClose();

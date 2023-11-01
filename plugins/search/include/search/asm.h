@@ -8,7 +8,8 @@ extern "C" {
 #endif
 
 struct dfa_table;
-struct frame_data;
+union symbol;
+struct vec;
 
 typedef int (*asm_func)(int state, uint64_t symbol);
 
@@ -25,7 +26,10 @@ void
 asm_deinit(struct asm_dfa* assembly);
 
 struct range
-asm_run(const struct asm_dfa* assembly, const struct frame_data* fdata, struct range window);
+asm_find_first(const struct asm_dfa* assembly, const union symbol* symbols, struct range window);
+
+int
+asm_find_all(struct vec* ranges, const struct asm_dfa* assembly, const union symbol* symbols, struct range window);
 
 #if defined(__cplusplus)
 }

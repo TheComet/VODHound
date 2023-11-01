@@ -10,6 +10,7 @@ vodhound_add_plugin (${PROJECT_NAME}
         "src/asm_x86_64.c"
         "src/ast.c"
         "src/dfa.c"
+        "src/search_index.c"
         "src/nfa.c"
         "src/parser.c"
         "src/plugin_search.c"
@@ -19,7 +20,7 @@ vodhound_add_plugin (${PROJECT_NAME}
         "include/${PROJECT_NAME}/asm.h"
         "include/${PROJECT_NAME}/ast.h"
         "include/${PROJECT_NAME}/dfa.h"
-        "include/${PROJECT_NAME}/frame_data.h"
+        "include/${PROJECT_NAME}/search_index.h"
         "include/${PROJECT_NAME}/match.h"
         "include/${PROJECT_NAME}/nfa.h"
         "include/${PROJECT_NAME}/range.h"
@@ -39,7 +40,6 @@ vodhound_add_plugin (${PROJECT_NAME}
 
 if (VODHOUND_${PLUGIN_NAME})
     option (${PLUGIN_NAME}_COUNTER_EXAMPLES "Have BISON generate counter examples" OFF)
-    option (${PLUGIN_NAME}_CLI "Build standalone command line interface for testing" OFF)
 
     ###########################################################################
     # Parsers
@@ -83,11 +83,11 @@ if (VODHOUND_${PLUGIN_NAME})
             $<BUILD_INTERFACE:$<$<AND:$<PLATFORM_ID:Windows>,$<NOT:$<BOOL:${HAVE_UNISTD_H}>>>:${PROJECT_SOURCE_DIR}/include/win32_unistd>>)
 
     if (VODHOUND_TESTS)
-        target_sources (${PROJECT_NAME}_tests
+        target_sources (${PROJECT_NAME}-tests
             PRIVATE
                 ${BISON_${PROJECT_NAME}-parser_OUTPUTS}
                 ${FLEX_${PROJECT_NAME}-scanner_OUTPUTS})
-        target_include_directories (${PROJECT_NAME}_tests
+        target_include_directories (${PROJECT_NAME}-tests
             PRIVATE
                 $<BUILD_INTERFACE:$<$<AND:$<PLATFORM_ID:Windows>,$<NOT:$<BOOL:${HAVE_UNISTD_H}>>>:${PROJECT_SOURCE_DIR}/include/win32_unistd>>)
     endif ()
@@ -101,51 +101,4 @@ if (VODHOUND_${PLUGIN_NAME})
     #add_subdirectory ("thirdparty/ogdf.v2022.02")
     #target_link_libraries (${PROJECT_NAME}
     #    PRIVATE OGDF)
-
-    ###########################################################################
-    # CLI
-    ###########################################################################
-
-    if (${PLUGIN_NAME}_CLI)
-        add_executable (${PROJECT_NAME}_cli
-            "src/asm_x86_64.c"
-            "src/ast.c"
-            "src/dfa.c"
-            "src/match.c"
-            "src/nfa.c"
-            "src/parser.c"
-            "src/parser.y"
-            "src/scanner.lex"
-
-            "include/${PROJECT_NAME}/asm.h"
-            "include/${PROJECT_NAME}/ast.h"
-            "include/${PROJECT_NAME}/dfa.h"
-            "include/${PROJECT_NAME}/frame_data.h"
-            "include/${PROJECT_NAME}/match.h"
-            "include/${PROJECT_NAME}/nfa.h"
-            "include/${PROJECT_NAME}/range.h"
-            "include/${PROJECT_NAME}/parser.h"
-            "include/${PROJECT_NAME}/symbol.h"
-
-            ${BISON_${PROJECT_NAME}-parser_OUTPUTS}
-            ${FLEX_${PROJECT_NAME}-scanner_OUTPUTS}
-
-            "src/cli.c")
-        target_include_directories (${PROJECT_NAME}_cli
-            PRIVATE
-                "include"
-                "${PROJECT_BINARY_DIR}/include"
-                $<BUILD_INTERFACE:$<$<AND:$<PLATFORM_ID:Windows>,$<NOT:$<BOOL:${HAVE_UNISTD_H}>>>:${PROJECT_SOURCE_DIR}/include/win32_unistd>>)
-        target_link_libraries (${PROJECT_NAME}_cli
-            PRIVATE
-                ${PROJECT_NAME}
-                VODHound::vh)
-        set_target_properties (${PROJECT_NAME}_cli
-            PROPERTIES
-                VS_DEBUGGER_WORKING_DIRECTORY ${VODHOUND_BUILD_BINDIR}
-                MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>
-                RUNTIME_OUTPUT_DIRECTORY ${VODHOUND_BUILD_BINDIR}
-                RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VODHOUND_BUILD_BINDIR}
-                RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VODHOUND_BUILD_BINDIR})
-    endif ()
 endif ()

@@ -33,10 +33,10 @@ static int on_symbol(const char* sym, void* user)
     plugin.i = dynlib_symbol_addr(ctx->lib, sym);
     if (plugin.i)
     {
-        log_dbg("  * %s by %s: %s\n", plugin.i->name, plugin.i->author, plugin.i->description);
+        log_dbg("  * %s by %s: %s\n", plugin.i->info->name, plugin.i->info->author, plugin.i->info->description);
         int ret = ctx->on_plugin(plugin, ctx->on_plugin_user);
         if (ret > 0)
-            log_info("Loading plugin %s by %s: %s\n", plugin.i->name, plugin.i->author, plugin.i->description);
+            log_info("Loading plugin %s by %s: %s\n", plugin.i->info->name, plugin.i->info->author, plugin.i->info->description);
         return ret;
     }
 
@@ -143,7 +143,7 @@ struct plugin_load_ctx
 static int plugin_load_on_plugin(struct plugin plugin, void* user)
 {
     struct plugin_load_ctx* ctx = user;
-    if (cstr_equal(ctx->name, plugin.i->name))
+    if (cstr_equal(ctx->name, plugin.i->info->name))
     {
         *ctx->plugin = plugin;
         return 1;
@@ -164,6 +164,6 @@ void
 plugin_unload(struct plugin* plugin)
 {
     struct plugin_interface* pi = plugin->i;
-    log_info("Unloading plugin %s by %s: %s\n", pi->name, pi->author, pi->description);
+    log_info("Unloading plugin %s by %s: %s\n", pi->info->name, pi->info->author, pi->info->description);
     dynlib_close(plugin->handle);
 }

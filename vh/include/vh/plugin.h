@@ -20,6 +20,12 @@ struct ui_pane_interface
     void (*destroy)(struct plugin_ctx* plugin, Ihandle* view);
 };
 
+struct replay_interface
+{
+    void (*select)(struct plugin_ctx* plugin, const int* game_ids, int count);
+    void (*clear)(struct plugin_ctx* plugin);
+};
+
 struct video_player_interface
 {
     /*!
@@ -119,19 +125,25 @@ struct video_player_interface
     int (*volume)(const struct plugin_ctx* plugin);
 };
 
-struct plugin_interface
+struct plugin_info
 {
-    uint32_t plugin_version;
-    uint32_t vh_version;
     const char* name;
     const char* category;
     const char* author;
     const char* contact;
     const char* description;
+};
+
+struct plugin_interface
+{
+    uint32_t plugin_version;
+    uint32_t vh_version;
+    struct plugin_info* info;
     struct plugin_ctx* (*create)(void);
     void (*destroy)(struct plugin_ctx* plugin);
     struct ui_center_interface* ui_center;
     struct ui_pane_interface* ui_pane;
+    struct replay_interface* replays;
     struct video_player_interface* video;
 };
 

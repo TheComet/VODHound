@@ -587,13 +587,7 @@ nfa_export_dot(const struct nfa_graph* nfa, const char* file_name)
             fprintf(fp, "label=\"");
             if (matches_motion(m))
                 fprintf(fp, "0x%" PRIx64, ((uint64_t)m->symbol.motionh << 32) | ((uint64_t)m->symbol.motionl));
-            if (matches_status(m))
-            {
-                if (matches_motion(m))
-                    fprintf(fp, ", ");
-                fprintf(fp, ", %d", m->symbol.status);
-            }
-            if (matches_wildcard(m))
+            else if (matches_wildcard(m))
                 fprintf(fp, "(.)");
             fprintf(fp, "\"];\n");
         VEC_END_EACH

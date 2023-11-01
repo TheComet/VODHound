@@ -73,6 +73,7 @@ add_library (vh ${VH_LIB_TYPE}
     "include/vh/db_ops.h"
     "include/vh/dynlib.h"
     "include/vh/fs.h"
+    "include/vh/frame_data.h"
     "include/vh/hash.h"
     "include/vh/hash40.h"
     "include/vh/hm.h"
@@ -94,6 +95,7 @@ add_library (vh ${VH_LIB_TYPE}
     "src/btree.c"
     "src/crc32.c"
     "src/db_ops.c"
+    "src/frame_data.c"
     "src/fs_common.c"
     "src/hash.c"
     "src/hash40.c"
@@ -172,23 +174,6 @@ set_target_properties (vh
 add_library (VODHound::vh ALIAS vh)
 
 ###############################################################################
-# Unit tests
-###############################################################################
-
-if (VH_TESTS)
-    enable_language (CXX)
-    add_executable (tests
-        "src/tests/test_btree.cpp"
-        "src/tests/test_btree_as_set.cpp"
-        "src/tests/test_hashmap.cpp"
-        "src/tests/test_vector.cpp"
-        "src/tests/env_library_init.cpp"
-        "src/tests/main.cpp")
-    target_link_libraries (tests PRIVATE vh)
-    target_link_libraries (tests PRIVATE gmock)
-endif ()
-
-###############################################################################
 # Benchmarks
 ###############################################################################
 
@@ -243,6 +228,7 @@ if (VODHOUND_TESTS)
         "tests/env_vh_init.cpp"
         "tests/test_vh_btree.cpp"
         "tests/test_vh_btree_as_set.cpp"
+        "tests/test_vh_frame_data.cpp"
         "tests/test_vh_mem.cpp"
         "tests/test_vh_hm.cpp"
         "tests/test_vh_rb.cpp"

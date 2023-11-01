@@ -1,6 +1,5 @@
 DROP TABLE IF EXISTS stream_recording_sources;
 DROP TABLE IF EXISTS switch_info;
-DROP TABLE IF EXISTS frames;
 DROP TABLE IF EXISTS scores;
 DROP TABLE IF EXISTS game_groups;
 DROP TABLE IF EXISTS groups;

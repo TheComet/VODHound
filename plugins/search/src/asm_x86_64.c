@@ -1,6 +1,5 @@
 #include "search/asm.h"
 #include "search/dfa.h"
-#include "search/frame_data.h"
 #include "search/match.h"
 
 #include "vh/vec.h"
@@ -364,7 +363,7 @@ asm_deinit(struct asm_dfa* assembly)
 }
 
 static int
-asm_run_single(const struct asm_dfa* assembly, const struct frame_data* fdata, struct range r)
+asm_run(const struct asm_dfa* assembly, const union symbol* symbols, struct range r)
 {
     int state;
     int idx;
@@ -373,7 +372,7 @@ asm_run_single(const struct asm_dfa* assembly, const struct frame_data* fdata, s
     state = 0;
     for (idx = r.start; idx != r.end; idx++)
     {
-        state = assembly->next_state(state < 0 ? -state : state, fdata->symbols[idx].u64);
+        state = assembly->next_state(state < 0 ? -state : state, symbols[idx].u64);
 
         /*
          * Transitioning to state 0 indicates the state machine has entered the
@@ -396,11 +395,11 @@ asm_run_single(const struct asm_dfa* assembly, const struct frame_data* fdata, s
 }
 
 struct range
-asm_run(const struct asm_dfa* assembly, const struct frame_data* fdata, struct range window)
+asm_find_first(const struct asm_dfa* assembly, const union symbol* symbols, struct range window)
 {
     for (; window.start != window.end; ++window.start)
     {
-        int end = asm_run_single(assembly, fdata, window);
+        int end = asm_run(assembly, symbols, window);
         if (end > window.start)
         {
             window.end = end;
@@ -409,4 +408,24 @@ asm_run(const struct asm_dfa* assembly, const struct frame_data* fdata, struct r
     }
 
     return window;
+}
+
+int
+asm_find_all(struct vec* ranges, const struct asm_dfa* assembly, const union symbol* symbols, struct range window)
+{
+    for (; window.start != window.end; ++window.start)
+    {
+        int end = asm_run(assembly, symbols, window);
+        if (end > window.start)
+        {
+            struct range* r = vec_emplace(ranges);
+            if (r == NULL)
+                return -1;
+            r->start = window.start;
+            r->end = end;
+            window.start = end - 1;
+        }
+    }
+
+    return 0;
 }

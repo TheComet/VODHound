@@ -1,5 +1,4 @@
 #include "search/dfa.h"
-#include "search/frame_data.h"
 #include "search/nfa.h"
 
 #include "vh/str.h"
@@ -700,13 +699,7 @@ dfa_export_dot(const struct dfa_table* dfa, const char* file_name)
             fprintf(fp, "label=\"");
             if (matches_motion(m))
                 fprintf(fp, "0x%" PRIx64, ((uint64_t)m->symbol.motionh << 32) | ((uint64_t)m->symbol.motionl));
-            if (matches_status(m))
-            {
-                if (matches_motion(m))
-                    fprintf(fp, ", ");
-                fprintf(fp, ", %d", m->symbol.status);
-            }
-            if (matches_wildcard(m))
+            else if (matches_wildcard(m))
                 fprintf(fp, "(.)");
             fprintf(fp, "\"];\n");
         }
@@ -739,7 +732,7 @@ lookup_next_state(const struct dfa_table* dfa, union symbol s, int state)
 }
 
 static int
-dfa_run_single(const struct dfa_table* dfa, const struct frame_data* fdata, struct range r)
+dfa_run(const struct dfa_table* dfa, const union symbol* symbols, struct range r)
 {
     int state;
     int idx;
@@ -748,7 +741,7 @@ dfa_run_single(const struct dfa_table* dfa, const struct frame_data* fdata, stru
     state = 0;
     for (idx = r.start; idx != r.end; idx++)
     {
-        state = lookup_next_state(dfa, fdata->symbols[idx], state < 0 ? -state : state);
+        state = lookup_next_state(dfa, symbols[idx], state < 0 ? -state : state);
 
         /*
          * Transitioning to state 0 indicates the state machine has entered the
@@ -771,11 +764,11 @@ dfa_run_single(const struct dfa_table* dfa, const struct frame_data* fdata, stru
 }
 
 struct range
-dfa_run(const struct dfa_table* dfa, const struct frame_data* fdata, struct range window)
+dfa_find_first(const struct dfa_table* dfa, const union symbol* symbols, struct range window)
 {
     for (; window.start != window.end; ++window.start)
     {
-        int end = dfa_run_single(dfa, fdata, window);
+        int end = dfa_run(dfa, symbols, window);
         if (end > window.start)
         {
             window.end = end;
@@ -784,4 +777,24 @@ dfa_run(const struct dfa_table* dfa, const struct frame_data* fdata, struct rang
     }
 
     return window;
+}
+
+int
+dfa_find_all(struct vec* ranges, const struct dfa_table* dfa, const union symbol* symbols, struct range window)
+{
+    for (; window.start != window.end; ++window.start)
+    {
+        int end = dfa_run(dfa, symbols, window);
+        if (end > window.start)
+        {
+            struct range* r = vec_emplace(ranges);
+            if (r == NULL)
+                return -1;
+            r->start = window.start;
+            r->end = end;
+            window.start = end - 1;
+        }
+    }
+
+    return 0;
 }

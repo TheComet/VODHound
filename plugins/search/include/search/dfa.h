@@ -8,8 +8,9 @@
 extern "C" {
 #endif
 
-struct frame_data;
+union symbol;
 struct nfa_graph;
+struct vec;
 
 struct dfa_table
 {
@@ -27,7 +28,10 @@ int
 dfa_export_dot(const struct dfa_table* dfa, const char* file_name);
 
 struct range
-dfa_run(const struct dfa_table* dfa, const struct frame_data* fdata, struct range window);
+dfa_find_first(const struct dfa_table* dfa, const union symbol* symbols, struct range window);
+
+int
+dfa_find_all(struct vec* ranges, const struct dfa_table* dfa, const union symbol* symbols, struct range window);
 
 #if defined(__cplusplus)
 }

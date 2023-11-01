@@ -138,10 +138,6 @@ struct db_interface
     } score;
 
     struct {
-        int (*add)(struct db* db, int game_id, int slot, uint64_t time_stamp, int frame_number, int frames_left, float posx, float posy, float damage, float hitstun, float shield, int status_id, int hit_status_id, uint64_t hash40, int stocks, int attack_connected, int facing_left, int opponent_in_hitlag);
-    } frame;
-
-    struct {
         int (*add)(struct db* db, struct str_view name, struct str_view ip, uint16_t port);
     } switch_info;
 

@@ -17,6 +17,13 @@ import_reframed_videometadata(
         int game_id);
 
 int
+import_reframed_framedata(
+        struct db_interface* dbi,
+        struct db* db,
+        struct mstream* ms,
+        int game_id);
+
+int
 import_reframed_replay(
         struct db_interface* dbi,
         struct db* db,
@@ -96,16 +103,15 @@ import_reframed_replay(
                 goto fail;
             break;
         }
-#if 0
+
     for (i = 0; i != num_entries; ++i)
         if (memcmp(entries[i].type, "FDAT", 4) == 0)
         {
             struct mstream blob = mstream_from_mstream(&ms, entries[i].offset, entries[i].size);
-            if (import_rfr_framedata_into_db(dbi, db, &blob, game_id) < 0)
+            if (import_reframed_framedata(dbi, db, &blob, game_id) < 0)
                 goto fail;
             break;
         }
-#endif
 
     mfile_unmap(&mf);
     return 0;

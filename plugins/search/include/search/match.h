@@ -6,13 +6,12 @@ enum match_flags
 {
     MATCH_ACCEPT       = 0x01,
     MATCH_MOTION       = 0x02,
-    MATCH_STATUS       = 0x04,
 
-    MATCH_CTX_HIT      = 0x08,
-    MATCH_CTX_WHIFF    = 0x10,
-    MATCH_CTX_SHIELD   = 0x20,
-    MATCH_CTX_RISING   = 0x40,
-    MATCH_CTX_FALLING  = 0x80
+    MATCH_CTX_HIT      = 0x04,
+    MATCH_CTX_WHIFF    = 0x08,
+    MATCH_CTX_SHIELD   = 0x10,
+    MATCH_CTX_RISING   = 0x20,
+    MATCH_CTX_FALLING  = 0x40
 };
 
 struct matcher
@@ -31,11 +30,6 @@ static inline int
 matches_motion(const struct matcher* m)
 {
     return m->mask.motionl != 0;
-}
-static inline int
-matches_status(const struct matcher* m)
-{
-    return m->mask.status != 0;
 }
 
 static inline struct matcher

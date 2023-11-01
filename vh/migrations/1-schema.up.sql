@@ -232,30 +232,6 @@ CREATE TABLE IF NOT EXISTS scores (
     FOREIGN KEY (game_id) REFERENCES games(id),
     FOREIGN KEY (team_id) REFERENCES teams(id)
 );
-CREATE TABLE IF NOT EXISTS frames (
-    id INTEGER PRIMARY KEY NOT NULL,
-    game_id INTEGER NOT NULL CHECK (game_id > 0),
-    slot INTEGER NOT NULL,
-    time_stamp TIMESTAMP NOT NULL,
-    frame_number INTEGER NOT NULL,
-    frames_left INTEGER NOT NULL,
-    posx FLOAT NOT NULL,
-    posy FLOAT NOT NULL,
-    damage FLOAT NOT NULL,
-    hitstun FLOAT NOT NULL,
-    shield FLOAT NOT NULL,
-    status_id INTEGER NOT NULL,
-    hit_status_id INTEGER NOT NULL,
-    hash40 INTEGER NOT NULL,
-    stocks INTEGER NOT NULL,
-    attack_connected BOOLEAN NOT NULL CHECK (attack_connected IN (0, 1)),
-    facing_left BOOLEAN NOT NULL CHECK (facing_left IN (0, 1)),
-    opponent_in_hitlag BOOLEAN NOT NULL CHECK (opponent_in_hitlag IN (0, 1)),
-    FOREIGN KEY (game_id) REFERENCES games(id),
-    FOREIGN KEY (status_id) REFERENCES status_enums(id),
-    FOREIGN KEY (hash40) REFERENCES motions(hash40),
-    FOREIGN KEY (hit_status_id) REFERENCES hit_status_enums(id)
-);
 CREATE TABLE IF NOT EXISTS switch_info (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,

@@ -3,7 +3,6 @@
 #include "search/asm.h"
 #include "search/ast.h"
 #include "search/dfa.h"
-#include "search/frame_data.h"
 #include "search/nfa.h"
 #include "search/parser.h"
 #include "search/range.h"
@@ -41,10 +40,9 @@ protected:
 
         ASSERT_THAT(asm_compile(&asm_dfa, &dfa), Eq(0));
 
-        struct frame_data fdata = { symbols.data() };
-        struct range window = { 0, (int)symbols.size() };
-        struct range dfa_res = dfa_run(&dfa, &fdata, window);
-        struct range asm_res = asm_run(&asm_dfa, &fdata, window);
+        struct range window = { 0, symbols.size() };
+        struct range dfa_res = dfa_find_first(&dfa, symbols.data(), window);
+        struct range asm_res = asm_find_first(&asm_dfa, symbols.data(), window);
         dfa_deinit(&dfa);
         asm_deinit(&asm_dfa);
 

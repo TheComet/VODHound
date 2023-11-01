@@ -106,7 +106,7 @@ vec_resize(struct vec* vec, vec_size size);
 
 #define vec_capacity(x) ((x)->capacity)
 
-#define vec_data(x) ((x)->data)
+#define vec_data(x) ((void*)(x)->data)
 
 /*!
  * @brief Inserts (copies) a new element at the head of the vector.
