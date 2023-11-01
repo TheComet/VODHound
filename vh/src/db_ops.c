@@ -64,8 +64,6 @@
                                          \
     X(score, add)                        \
                                          \
-    X(frame, add)                        \
-                                         \
     X(switch_info, add)                  \
                                          \
     X(stream_recording_sources, add)
@@ -1475,62 +1473,6 @@ score_add(struct db* ctx, int game_id, int team_id, int score)
     }
 
     return step_stmt_wrapper(ctx->db, ctx->score_add);
-}
-
-static int
-frame_add(
-        struct db* ctx,
-        int game_id,
-        int slot,
-        uint64_t time_stamp,
-        int frame_number,
-        int frames_left,
-        float posx,
-        float posy,
-        float damage,
-        float hitstun,
-        float shield,
-        int status_id,
-        int hit_status_id,
-        uint64_t hash40,
-        int stocks,
-        int attack_connected,
-        int facing_left,
-        int opponent_in_hitlag)
-{
-    int ret;
-    if (ctx->frame_add == NULL)
-        if (prepare_stmt_wrapper(ctx->db, &ctx->frame_add, cstr_view(
-            "INSERT OR IGNORE INTO frames ("
-            "    game_id, slot, time_stamp, frame_number, frames_left, "
-            "    posx, posy, damage, hitstun, shield, status_id, "
-            "    hit_status_id, hash40, stocks, attack_connected, facing_left, "
-            "    opponent_in_hitlag) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);")) != 0)
-            return -1;
-
-    if ((ret = sqlite3_bind_int(ctx->frame_add, 1, game_id)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->frame_add, 2, slot)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int64(ctx->frame_add, 3, (int64_t)time_stamp)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->frame_add, 4, frame_number)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->frame_add, 5, frames_left)) != SQLITE_OK ||
-        (ret = sqlite3_bind_double(ctx->frame_add, 6, posx)) != SQLITE_OK ||
-        (ret = sqlite3_bind_double(ctx->frame_add, 7, posy)) != SQLITE_OK ||
-        (ret = sqlite3_bind_double(ctx->frame_add, 8, damage)) != SQLITE_OK ||
-        (ret = sqlite3_bind_double(ctx->frame_add, 9, hitstun)) != SQLITE_OK ||
-        (ret = sqlite3_bind_double(ctx->frame_add, 10, shield)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->frame_add, 11, status_id)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->frame_add, 12, hit_status_id)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int64(ctx->frame_add, 13, (int64_t)hash40)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->frame_add, 14, stocks)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->frame_add, 15, attack_connected)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->frame_add, 16, facing_left)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int(ctx->frame_add, 17, opponent_in_hitlag)) != SQLITE_OK)
-    {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-        return -1;
-    }
-
-    return step_stmt_wrapper(ctx->db, ctx->frame_add);
 }
 
 static int

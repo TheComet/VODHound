@@ -66,10 +66,10 @@ TEST(NAME, save_and_load_works)
             fd.stocks     [fighter][frame] = 0x10 * fighter + 0x1 * frame + 0xB;
             fd.flags      [fighter][frame] = 0x10 * fighter + 0x1 * frame + 0xC;
         }
-    frame_data_save(&fd, 0);
+    ASSERT_THAT(frame_data_save(&fd, 0), Eq(0));
     frame_data_free(&fd);
 
-    frame_data_load(&fd, 0);
+    ASSERT_THAT(frame_data_load(&fd, 0), Eq(0));
     for (int fighter = 0; fighter != 2; ++fighter)
         for (int frame = 0; frame != 2; ++frame)
         {

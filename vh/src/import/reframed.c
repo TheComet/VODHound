@@ -103,7 +103,7 @@ import_reframed_config(struct db_interface* dbi, struct db* db, const char* file
     gamepaths_ctx.db = db;
     path_init(&gamepaths_ctx.path);
 
-#define MAX_IMPORT_PATHS 1
+#define MAX_IMPORT_PATHS 10
     for (int i = 0; i != (int)json_object_array_length(gamepaths) && i < MAX_IMPORT_PATHS; ++i)
     {
         const char* path = json_object_get_string(json_object_array_get_idx(gamepaths, (size_t)i));

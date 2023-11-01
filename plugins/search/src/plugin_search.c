@@ -14,6 +14,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <inttypes.h>
 
 struct plugin_ctx
 {
@@ -69,7 +70,7 @@ run_search(struct plugin_ctx* ctx)
         for (int i = r->start; i != r->end; ++i)
         {
             if (i != r->start) fprintf(stderr, " -> ");
-            fprintf(stderr, "0x%lx", ((uint64_t)symbols[i].motionh << 32) | symbols[i].motionl);
+            fprintf(stderr, "0x%" PRIx64, ((uint64_t)symbols[i].motionh << 32) | symbols[i].motionl);
         }
         fprintf(stderr, "\n");
     VEC_END_EACH

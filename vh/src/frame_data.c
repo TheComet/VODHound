@@ -1,4 +1,5 @@
 #include "vh/frame_data.h"
+#include "vh/fs.h"
 #include "vh/mem.h"
 #include "vh/mstream.h"
 #include "vh/utf8.h"
@@ -25,7 +26,7 @@ align_64(void* addr)
     uintptr_t value = (uintptr_t)addr;
     if (!(value & 0xF))
         return addr;
-    value = (value + 0x10) & ~0xFUL;
+    value = (value + 0x10) & ~((uint64_t)0xF);
     return (void*)value;
 }
 
@@ -53,7 +54,7 @@ frame_data_alloc_structure(struct frame_data* fdata, int fighter_count, int fram
     mem_size fighter_size = frame_size * (mem_size)frame_count;
     mem_size data_size = frame_size * (mem_size)fighter_count * (mem_size)frame_count;
     mem_size ptr_size = sizeof(void*) * 12 * (mem_size)fighter_count;
-    mem_size align_padding = 0x8U * (mem_size)fighter_count;
+    mem_size align_padding = 0x10U * (mem_size)fighter_count;
 
     void* mem = mem_alloc(data_size + ptr_size + align_padding);
     if (mem == NULL)
@@ -134,7 +135,7 @@ frame_data_load(struct frame_data* fdata, int game_id)
         fdata->shield[f]      = (float*)(fdata->hitstun[f]      + (mem_size)fdata->frame_count);
         fdata->status[f]      = (uint16_t*)(fdata->shield[f]    + (mem_size)fdata->frame_count);
         fdata->hit_status[f]  = (uint8_t*)(fdata->status[f]     + (mem_size)fdata->frame_count);
-        fdata->stocks[f]      = (uint8_t*)(fdata->hit_status[f]     + (mem_size)fdata->frame_count);
+        fdata->stocks[f]      = (uint8_t*)(fdata->hit_status[f] + (mem_size)fdata->frame_count);
         fdata->flags[f]       = (uint8_t*)(fdata->stocks[f]     + (mem_size)fdata->frame_count);
     }
 
@@ -165,6 +166,12 @@ frame_data_save(const struct frame_data* fdata, int game_id)
     sprintf(file_name, "fdata/%d.fdat", game_id);
     fp = fopen_utf8_wb(file_name, (int)strlen(file_name));
     if (fp == NULL)
+    {
+        /* Assume it's because fdata/ doesn't exist */
+        fs_make_dir("fdata");
+        fp = fopen_utf8_wb(file_name, (int)strlen(file_name));
+    }
+    if (fp == NULL)
         return -1;
 
     fwrite(magic, 1, 4, fp);
@@ -180,17 +187,17 @@ frame_data_save(const struct frame_data* fdata, int game_id)
         fwrite(fdata->timestamp[f],   sizeof(uint64_t), (size_t)fdata->frame_count, fp);
         fwrite(fdata->motion[f],      sizeof(uint64_t), (size_t)fdata->frame_count, fp);
         fwrite(fdata->frames_left[f], sizeof(uint32_t), (size_t)fdata->frame_count, fp);
-        fwrite(fdata->posx[f],        sizeof(float), (size_t)fdata->frame_count, fp);
-        fwrite(fdata->posy[f],        sizeof(float), (size_t)fdata->frame_count, fp);
-        fwrite(fdata->damage[f],      sizeof(float), (size_t)fdata->frame_count, fp);
-        fwrite(fdata->hitstun[f],     sizeof(float), (size_t)fdata->frame_count, fp);
-        fwrite(fdata->shield[f],      sizeof(float), (size_t)fdata->frame_count, fp);
+        fwrite(fdata->posx[f],        sizeof(float),    (size_t)fdata->frame_count, fp);
+        fwrite(fdata->posy[f],        sizeof(float),    (size_t)fdata->frame_count, fp);
+        fwrite(fdata->damage[f],      sizeof(float),    (size_t)fdata->frame_count, fp);
+        fwrite(fdata->hitstun[f],     sizeof(float),    (size_t)fdata->frame_count, fp);
+        fwrite(fdata->shield[f],      sizeof(float),    (size_t)fdata->frame_count, fp);
         fwrite(fdata->status[f],      sizeof(uint16_t), (size_t)fdata->frame_count, fp);
-        fwrite(fdata->hit_status[f],  sizeof(uint8_t), (size_t)fdata->frame_count, fp);
-        fwrite(fdata->stocks[f],      sizeof(uint8_t), (size_t)fdata->frame_count, fp);
-        fwrite(fdata->flags[f],       sizeof(uint8_t), (size_t)fdata->frame_count, fp);
+        fwrite(fdata->hit_status[f],  sizeof(uint8_t),  (size_t)fdata->frame_count, fp);
+        fwrite(fdata->stocks[f],      sizeof(uint8_t),  (size_t)fdata->frame_count, fp);
+        fwrite(fdata->flags[f],       sizeof(uint8_t),  (size_t)fdata->frame_count, fp);
 
-        long target = (long)align_64((void*)ftell(fp));
+        long target = (long)(uintptr_t)align_64((void*)(uintptr_t)ftell(fp));
         uint8_t dummy = 0xAA;
         while (ftell(fp) != target)
             fwrite(&dummy, 1, 1, fp);

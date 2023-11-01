@@ -10,6 +10,12 @@ struct path
     struct str str;
 };
 
+VH_PUBLIC_API int
+fs_init(void);
+
+VH_PRIVATE_API void
+fs_deinit(void);
+
 static inline void
 path_init(struct path* path)
 {
@@ -62,13 +68,13 @@ fs_list_strlist_matching(
 VH_PUBLIC_API int
 fs_file_exists(const char* file_path);
 
-VH_PUBLIC_API struct str_view
-fs_appdata_dir(void);
+VH_PUBLIC_API int
+fs_path_exists(const char* file_path);
 
 VH_PUBLIC_API int
-fs_init(void);
+fs_make_dir(const char* path);
 
-VH_PRIVATE_API void
-fs_deinit(void);
+VH_PUBLIC_API struct str_view
+fs_appdata_dir(void);
 
 C_END

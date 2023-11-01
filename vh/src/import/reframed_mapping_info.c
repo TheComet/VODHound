@@ -1,5 +1,6 @@
 #include "vh/db_ops.h"
 #include "vh/log.h"
+#include "vh/import.h"
 
 #include "json-c/json.h"
 

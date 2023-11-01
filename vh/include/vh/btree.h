@@ -261,7 +261,7 @@ btree_erase(struct btree* btree, btree_key key);
 VH_PUBLIC_API btree_key
 btree_erase_value(struct btree* btree, const void* value);
 
-btree_key
+VH_PUBLIC_API btree_key
 btree_erase_index(struct btree* btree, btree_size idx);
 
 /*!
