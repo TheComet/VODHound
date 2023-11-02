@@ -145,8 +145,8 @@ import_reframed_all(struct db_interface* dbi, struct db* db)
     if (path_join(&file_path, cstr_view("ReFramed")) < 0) goto fail;
     if (path_join(&file_path, cstr_view("config.json")) < 0) goto fail;
     path_terminate(&file_path);
-    if (import_reframed_config(dbi, db, file_path.str.data) < 0)
-        goto fail;
+    //if (import_reframed_config(dbi, db, file_path.str.data) < 0)
+    //    goto fail;
 
     /*
      * Some information on players might still be in the player details json.
@@ -160,13 +160,12 @@ import_reframed_all(struct db_interface* dbi, struct db* db)
     if (import_reframed_player_details(dbi, db, file_path.str.data) < 0)
         goto fail;
 
-    /*
     if (path_set(&file_path, fs_appdata_dir()) < 0) goto fail;
     if (path_join(&file_path, cstr_view("ReFramed")) < 0) goto fail;
     if (path_join(&file_path, cstr_view("motionLabels.dat")) < 0) goto fail;
     path_terminate(&file_path);
     if (import_reframed_motion_labels(dbi, db, file_path.str.data) < 0)
-        goto fail;*/
+        goto fail;
 
     if (dbi->transaction.commit(db) != 0)
         goto fail;

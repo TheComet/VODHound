@@ -33,29 +33,41 @@ CREATE TABLE IF NOT EXISTS motions (
     hash40 INTEGER PRIMARY KEY NOT NULL,
     string TEXT NOT NULL
 );
+CREATE UNIQUE INDEX id_motions ON motions (hash40);
+CREATE TABLE IF NOT EXISTS motion_groups (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    UNIQUE(name)
+);
+CREATE TABLE IF NOT EXISTS motion_layers (
+    id INTEGER PRIMARY KEY NOT NULL,
+    group_id INTEGER NOT NULL,
+    priority INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    UNIQUE(group_id, priority),
+    FOREIGN KEY (group_id) REFERENCES motion_groups(id)
+);
 CREATE TABLE IF NOT EXISTS motion_categories (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS motion_usages (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS motion_labels (
     id INTEGER PRIMARY KEY NOT NULL,
     hash40 INTEGER NOT NULL,
+    fighter_id INTEGER NOT NULL,
     layer_id INTEGER NOT NULL,
     category_id INTEGER NOT NULL,
     usage_id INTEGER NOT NULL,
     label TEXT NOT NULL,
     FOREIGN KEY (hash40) REFERENCES motions(hash40),
+    FOREIGN KEY (fighter_id) REFERENCES fighters(id),
     FOREIGN KEY (layer_id) REFERENCES motion_layers(id),
     FOREIGN KEY (category_id) REFERENCES motion_categories(id),
     FOREIGN KEY (usage_id) REFERENCES motion_usages(id)
-);
-CREATE TABLE IF NOT EXISTS motion_usages (
-    id INTEGER PRIMARY KEY NOT NULL,
-    name TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS motion_layers (
-    id INTEGER PRIMARY KEY NOT NULL,
-    name TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS videos (
     id INTEGER PRIMARY KEY NOT NULL,

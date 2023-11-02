@@ -21,10 +21,17 @@ struct db_interface
         int (*rollback_nested)(struct db* db, struct str_view name);
     } transaction;
 
-    /* Static tables */
     struct {
         int (*add)(struct db* db, uint64_t hash40, struct str_view string);
     } motion;
+
+    struct {
+        int (*add_or_get_group)(struct db* db, struct str_view name);
+        int (*add_or_get_layer)(struct db* db, int group_id, struct str_view name);
+        int (*add_or_get_category)(struct db* db, struct str_view name);
+        int (*add_or_get_usage)(struct db* db, struct str_view name);
+        int (*add_or_get_label)(struct db* db, uint64_t motion, int fighter_id, int layer_id, int category_id, int usage_id, struct str_view name);
+    } motion_label;
 
     struct {
         int (*add)(struct db* db, int fighter_id, struct str_view name);

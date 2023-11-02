@@ -38,13 +38,7 @@ mstream_from_mstream(struct mstream* ms, int offset, int size)
 static inline int
 mstream_at_end(struct mstream* ms)
 {
-    return ms->idx >= ms->size;
-}
-
-static inline int
-mstream_past_end(struct mstream* ms)
-{
-    return ms->idx > ms->size;
+    return ms->idx == ms->size;
 }
 
 static inline int
@@ -56,12 +50,14 @@ mstream_bytes_left(struct mstream* ms)
 static inline uint8_t
 mstream_read_u8(struct mstream* ms)
 {
+    if (mstream_bytes_left(ms) < 1) return 0;
     return ((const uint8_t*)ms->address)[ms->idx++];
 }
 
 static inline char
 mstream_read_char(struct mstream* ms)
 {
+    if (mstream_bytes_left(ms) < 1) return 0;
     return ((const char*)ms->address)[ms->idx++];
 }
 
@@ -69,6 +65,7 @@ static inline uint16_t
 mstream_read_lu16(struct mstream* ms)
 {
     uint16_t value;
+    if (mstream_bytes_left(ms) < 2) return 0;
     memcpy(&value, (const char*)ms->address + ms->idx, 2);
     ms->idx += 2;
     return value;
@@ -78,6 +75,7 @@ static inline uint32_t
 mstream_read_lu32(struct mstream* ms)
 {
     uint32_t value;
+    if (mstream_bytes_left(ms) < 4) return 0;
     memcpy(&value, (const char*)ms->address + ms->idx, 4);
     ms->idx += 4;
     return value;
@@ -87,6 +85,7 @@ static inline uint64_t
 mstream_read_lu64(struct mstream* ms)
 {
     uint64_t value;
+    if (mstream_bytes_left(ms) < 8) return 0;
     memcpy(&value, (const char*)ms->address + ms->idx, 8);
     ms->idx += 8;
     return value;
@@ -96,6 +95,7 @@ static inline float
 mstream_read_lf32(struct mstream* ms)
 {
     float value;
+    if (mstream_bytes_left(ms) < 4) return 0;
     memcpy(&value, (const char*)ms->address + ms->idx, 4);
     ms->idx += 4;
     return value;
@@ -106,6 +106,8 @@ mstream_read(struct mstream* ms, int len)
 {
     const void* data = (const char*)ms->address + ms->idx;
     ms->idx += len;
+    if (ms->idx >= ms->size)
+        ms->idx = ms->size;
     return data;
 }
 

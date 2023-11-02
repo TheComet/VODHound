@@ -516,7 +516,7 @@ int main(int argc, char **argv)
     if (vh_init() != 0)
         goto vh_init_failed;
 
-    int reinit_db = 0;
+    int reinit_db = 1;
 
     struct db_interface* dbi = db("sqlite");
     struct db* db = dbi->open_and_prepare("vodhound.db", reinit_db);

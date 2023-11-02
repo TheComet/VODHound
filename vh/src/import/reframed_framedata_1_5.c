@@ -24,6 +24,10 @@ import_reframed_framedata_1_5(
         {
             uint32_t motion_l;
             uint8_t motion_h;
+
+            if (mstream_bytes_left(ms) < 8+4+4+4+4+4+4+2+4+1+1+1+1)
+                goto fail;
+
             fdata.timestamp[fighter_idx][frame]   = mstream_read_lu64(ms);
             fdata.frames_left[fighter_idx][frame] = mstream_read_lu32(ms);
             fdata.posx[fighter_idx][frame]        = mstream_read_lf32(ms);
@@ -38,9 +42,6 @@ import_reframed_framedata_1_5(
             fdata.hit_status[fighter_idx][frame]  = mstream_read_u8(ms);
             fdata.stocks[fighter_idx][frame]      = mstream_read_u8(ms);
             fdata.flags[fighter_idx][frame]       = mstream_read_u8(ms);
-
-            if (mstream_past_end(ms))
-                goto fail;
         }
 
     if (!mstream_at_end(ms))

@@ -13,59 +13,66 @@
 #   define min(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
-#define STMT_LIST                        \
-    X(motion, add)                       \
-    X(fighter, add)                      \
-    X(fighter, get_name)                 \
-    X(stage, add)                        \
-    X(status_enum, add)                  \
-    X(hit_status_enum, add)              \
-                                         \
-    X(tournament, add_or_get)            \
-    X(tournament, add_sponsor)           \
-    X(tournament, add_organizer)         \
-    X(tournament, add_commentator)       \
-                                         \
-    X(event, add_or_get_type)            \
-    X(event, add_or_get)                 \
-                                         \
-    X(round, add_or_get_type)            \
-                                         \
-    X(set_format, add_or_get)            \
-                                         \
-    X(team, add_or_get)                  \
-    X(team, add_member)                  \
-                                         \
-    X(sponsor, add_or_get)               \
-                                         \
-    X(person, add_or_get)                \
-    X(person, get_id_from_name)          \
-    X(person, get_team_id_from_name)     \
-    X(person, set_tag)                   \
-    X(person, set_social)                \
-    X(person, set_pronouns)              \
-                                         \
-    X(game, add_or_get)                  \
-    X(game, query)                       \
-    X(game, associate_tournament)        \
-    X(game, associate_event)             \
-    X(game, associate_video)             \
-    X(game, unassociate_video)           \
-    X(game, get_videos)                  \
-    X(game, add_player)                  \
-                                         \
-    X(group, add_or_get)                 \
-    X(group, add_game)                   \
-                                         \
-    X(video, add_or_get)                 \
-    X(video, set_path_hint)              \
-    X(video, add_path)                   \
-    X(video, query_paths)                \
-                                         \
-    X(score, add)                        \
-                                         \
-    X(switch_info, add)                  \
-                                         \
+#define STMT_LIST                           \
+    X(motion, add)                          \
+                                            \
+    X(motion_label, add_or_get_group)       \
+    X(motion_label, add_or_get_layer)       \
+    X(motion_label, add_or_get_category)    \
+    X(motion_label, add_or_get_usage)       \
+    X(motion_label, add_or_get_label)       \
+                                            \
+    X(fighter, add)                         \
+    X(fighter, get_name)                    \
+    X(stage, add)                           \
+    X(status_enum, add)                     \
+    X(hit_status_enum, add)                 \
+                                            \
+    X(tournament, add_or_get)               \
+    X(tournament, add_sponsor)              \
+    X(tournament, add_organizer)            \
+    X(tournament, add_commentator)          \
+                                            \
+    X(event, add_or_get_type)               \
+    X(event, add_or_get)                    \
+                                            \
+    X(round, add_or_get_type)               \
+                                            \
+    X(set_format, add_or_get)               \
+                                            \
+    X(team, add_or_get)                     \
+    X(team, add_member)                     \
+                                            \
+    X(sponsor, add_or_get)                  \
+                                            \
+    X(person, add_or_get)                   \
+    X(person, get_id_from_name)             \
+    X(person, get_team_id_from_name)        \
+    X(person, set_tag)                      \
+    X(person, set_social)                   \
+    X(person, set_pronouns)                 \
+                                            \
+    X(game, add_or_get)                     \
+    X(game, query)                          \
+    X(game, associate_tournament)           \
+    X(game, associate_event)                \
+    X(game, associate_video)                \
+    X(game, unassociate_video)              \
+    X(game, get_videos)                     \
+    X(game, add_player)                     \
+                                            \
+    X(group, add_or_get)                    \
+    X(group, add_game)                      \
+                                            \
+    X(video, add_or_get)                    \
+    X(video, set_path_hint)                 \
+    X(video, add_path)                      \
+    X(video, query_paths)                   \
+                                            \
+    X(score, add)                           \
+                                            \
+    X(switch_info, add)                     \
+                                            \
     X(stream_recording_sources, add)
 
 #define STMT_PREPARE_OR_RESET(stmt, error_return, text)                       \
@@ -81,6 +88,7 @@ struct db
 #define X(group, stmt) sqlite3_stmt* group##_##stmt;
     STMT_LIST
 #undef X
+    sqlite3_stmt* motion_layer_add_or_get_layer_priority;
 };
 
 static int
@@ -155,19 +163,19 @@ retry_step:
             goto retry_step;
         case SQLITE_ROW:
         case SQLITE_DONE:
-            sqlite3_finalize(stmt);
             sql_len -= (int)(sql_next - sql);
             sql = sql_next;
             for (; sql_len && isspace(*sql); ++sql, --sql_len) {}
             if (sql_len <= 0)
                 break;
+            sqlite3_finalize(stmt);
             goto next_step;
         default:
-            sqlite3_finalize(stmt);
             log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
             goto exec_failed;
     }
 
+    sqlite3_finalize(stmt);
     mfile_unmap(&mf);
     return 0;
 
@@ -263,7 +271,7 @@ open_and_prepare(const char* uri, int reinit_db)
 
     return ctx;
 
-    migrate_db_failed             :
+    migrate_db_failed             : sqlite3_close(ctx->db);
     open_db_failed                : mem_free(ctx);
     oom                           : return NULL;
 }
@@ -271,6 +279,7 @@ open_and_prepare(const char* uri, int reinit_db)
 static void
 close_db(struct db* ctx)
 {
+    sqlite3_finalize(ctx->motion_layer_add_or_get_layer_priority);
 #define X(group, stmt) sqlite3_finalize(ctx->group##_##stmt);
     STMT_LIST
 #undef X
@@ -338,6 +347,196 @@ motion_add(struct db* ctx, uint64_t hash40, struct str_view string)
     }
 
     return step_stmt_wrapper(ctx->db, ctx->motion_add);
+}
+
+static int
+motion_label_add_or_get_group(struct db* ctx, struct str_view name)
+{
+    int ret, group_id = -1;
+    if (ctx->motion_label_add_or_get_group == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->motion_label_add_or_get_group, cstr_view(
+            "INSERT INTO motion_groups (name) VALUES (?) "
+            "ON CONFLICT DO UPDATE SET name=excluded.name RETURNING id;")) != 0)
+            return -1;
+
+    if ((ret = sqlite3_bind_text(ctx->motion_label_add_or_get_group, 1, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK)
+        goto error;
+
+next_step:
+    ret = sqlite3_step(ctx->motion_label_add_or_get_group);
+    switch (ret)
+    {
+        case SQLITE_ROW:
+            group_id = sqlite3_column_int(ctx->motion_label_add_or_get_group, 0);
+            goto done;
+        case SQLITE_BUSY: goto next_step;
+        case SQLITE_DONE: goto done;
+    }
+
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+done:
+    sqlite3_reset(ctx->motion_label_add_or_get_group);
+    return group_id;
+}
+
+static int
+motion_label_add_or_get_layer(struct db* ctx, int group_id, struct str_view name)
+{
+    int ret, layer_id = -1, priority = -1;
+    if (ctx->motion_layer_add_or_get_layer_priority == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->motion_layer_add_or_get_layer_priority, cstr_view(
+            "SELECT priority FROM motion_layers "
+            "JOIN motion_groups ON motion_groups.id = motion_layers.group_id "
+            "ORDER BY priority ASC LIMIT 1;")) != 0)
+            return -1;
+
+next_step_priority:
+    ret = sqlite3_step(ctx->motion_layer_add_or_get_layer_priority);
+    switch (ret)
+    {
+        case SQLITE_ROW:
+            priority = sqlite3_column_int(ctx->motion_layer_add_or_get_layer_priority, 0);
+            break;
+        case SQLITE_BUSY: goto next_step_priority;
+        case SQLITE_DONE:
+            priority = 0;
+            break;
+    }
+    sqlite3_reset(ctx->motion_layer_add_or_get_layer_priority);
+    if (priority < 0)
+        goto error;
+    priority++;
+
+    if (ctx->motion_label_add_or_get_layer == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->motion_label_add_or_get_layer, cstr_view(
+            "INSERT INTO motion_layers (group_id, priority, name) VALUES (?, ?, ?) "
+            "ON CONFLICT DO UPDATE SET group_id=excluded.group_id RETURNING id;")) != 0)
+            return -1;
+
+    if ((ret = sqlite3_bind_int(ctx->motion_label_add_or_get_layer, 1, group_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->motion_label_add_or_get_layer, 2, priority)) != SQLITE_OK ||
+        (ret = sqlite3_bind_text(ctx->motion_label_add_or_get_layer, 3, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK)
+    {
+        goto error;
+    }
+
+next_step:
+    ret = sqlite3_step(ctx->motion_label_add_or_get_layer);
+    switch (ret)
+    {
+        case SQLITE_ROW:
+            layer_id = sqlite3_column_int(ctx->motion_label_add_or_get_layer, 0);
+            goto done;
+        case SQLITE_BUSY: goto next_step;
+        case SQLITE_DONE: goto done;
+    }
+
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+done:
+    sqlite3_reset(ctx->motion_label_add_or_get_layer);
+    return layer_id;
+}
+
+static int
+motion_label_add_or_get_category(struct db* ctx, struct str_view name)
+{
+    int ret, category_id = -1;
+    if (ctx->motion_label_add_or_get_category == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->motion_label_add_or_get_category, cstr_view(
+            "INSERT INTO motion_categories (name) VALUES (?) "
+            "ON CONFLICT DO UPDATE SET name=excluded.name RETURNING id;")) != 0)
+            return -1;
+
+    if ((ret = sqlite3_bind_text(ctx->motion_label_add_or_get_category, 1, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK)
+        goto error;
+
+next_step:
+    ret = sqlite3_step(ctx->motion_label_add_or_get_category);
+    switch (ret)
+    {
+        case SQLITE_ROW:
+            category_id = sqlite3_column_int(ctx->motion_label_add_or_get_category, 0);
+            goto done;
+        case SQLITE_BUSY: goto next_step;
+        case SQLITE_DONE: goto done;
+    }
+
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+done:
+    sqlite3_reset(ctx->motion_label_add_or_get_category);
+    return category_id;
+}
+
+static int
+motion_label_add_or_get_usage(struct db* ctx, struct str_view name)
+{
+    int ret, usage_id = -1;
+    if (ctx->motion_label_add_or_get_usage == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->motion_label_add_or_get_usage, cstr_view(
+            "INSERT INTO motion_usages (name) VALUES (?) "
+            "ON CONFLICT DO UPDATE SET name=excluded.name RETURNING id;")) != 0)
+            return -1;
+
+    if ((ret = sqlite3_bind_text(ctx->motion_label_add_or_get_usage, 1, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK)
+        goto error;
+
+next_step:
+    ret = sqlite3_step(ctx->motion_label_add_or_get_usage);
+    switch (ret)
+    {
+        case SQLITE_ROW:
+            usage_id = sqlite3_column_int(ctx->motion_label_add_or_get_usage, 0);
+            goto done;
+        case SQLITE_BUSY: goto next_step;
+        case SQLITE_DONE: goto done;
+    }
+
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+done:
+    sqlite3_reset(ctx->motion_label_add_or_get_usage);
+    return usage_id;
+}
+
+static int
+motion_label_add_or_get_label(struct db* ctx, uint64_t motion, int fighter_id, int layer_id, int category_id, int usage_id, struct str_view name)
+{
+    int ret, label_id = -1;
+    if (ctx->motion_label_add_or_get_label == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->motion_label_add_or_get_label, cstr_view(
+            "INSERT INTO motion_labels (hash40, fighter_id, layer_id, category_id, usage_id, label) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT DO UPDATE SET group_id=excluded.group_id RETURNING id;")) != 0)
+            return -1;
+
+    if ((ret = sqlite3_bind_int64(ctx->motion_label_add_or_get_label, 1, motion)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->motion_label_add_or_get_label, 2, fighter_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->motion_label_add_or_get_label, 3, layer_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->motion_label_add_or_get_label, 4, category_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->motion_label_add_or_get_label, 5, usage_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_text(ctx->motion_label_add_or_get_label, 6, name.data, name.len, SQLITE_STATIC)) != SQLITE_OK)
+    {
+        goto error;
+    }
+
+next_step:
+    ret = sqlite3_step(ctx->motion_label_add_or_get_label);
+    switch (ret)
+    {
+        case SQLITE_ROW:
+            label_id = sqlite3_column_int(ctx->motion_label_add_or_get_label, 0);
+            goto done;
+        case SQLITE_BUSY: goto next_step;
+        case SQLITE_DONE: goto done;
+    }
+
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+done:
+    sqlite3_reset(ctx->motion_label_add_or_get_label);
+    return label_id;
 }
 
 static int

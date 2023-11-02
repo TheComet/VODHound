@@ -337,6 +337,8 @@ mem_mutated_string_and_hex_dump(const void* data, mem_size length_in_bytes)
     char* dump;
     mem_idx i;
 
+    return;
+
     /* allocate and copy data into new buffer */
     if (!(dump = malloc(length_in_bytes + 1)))
     {
