@@ -6,6 +6,28 @@
 #include <dirent.h>
 #include <pwd.h>
 
+static struct path appdata_dir;
+
+int
+fs_init(void)
+{
+    struct passwd* pw = getpwuid(getuid());
+
+    path_init(&appdata_dir);
+    if (path_set(&appdata_dir, cstr_view(pw->pw_dir)) < 0) goto fail;
+    if (path_join(&appdata_dir, cstr_view(".local/share")) < 0) goto fail;
+    return 0;
+fail:
+    path_deinit(&appdata_dir);
+    return -1;
+}
+
+void
+fs_deinit(void)
+{
+    path_deinit(&appdata_dir);
+}
+
 struct path
 path_take_str(struct str* str)
 {
@@ -85,33 +107,28 @@ int
 fs_file_exists(const char* file_path)
 {
     struct stat st;
-    return (stat(file_path, &st) == 0);
+    if (stat(file_path, &st))
+        return 0;
+    return S_ISREG(st.st_mode);
 }
 
-static struct path appdata_dir;
+int
+fs_dir_exists(const char* file_path)
+{
+    struct stat st;
+    if (stat(file_path, &st))
+        return 0;
+    return S_ISDIR(st.st_mode);
+}
+
+int
+fs_make_dir(const char* path)
+{
+    return mkdir(path, 0755) == 0;
+}
 
 struct str_view
 fs_appdata_dir(void)
 {
     return path_view(appdata_dir);
-}
-
-int
-fs_init(void)
-{
-    struct passwd* pw = getpwuid(getuid());
-
-    path_init(&appdata_dir);
-    if (path_set(&appdata_dir, cstr_view(pw->pw_dir)) < 0) goto fail;
-    if (path_join(&appdata_dir, cstr_view(".local/share")) < 0) goto fail;
-    return 0;
-fail:
-    path_deinit(&appdata_dir);
-    return -1;
-}
-
-void
-fs_deinit(void)
-{
-    path_deinit(&appdata_dir);
 }

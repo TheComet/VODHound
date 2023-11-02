@@ -145,8 +145,8 @@ import_reframed_all(struct db_interface* dbi, struct db* db)
     if (path_join(&file_path, cstr_view("ReFramed")) < 0) goto fail;
     if (path_join(&file_path, cstr_view("config.json")) < 0) goto fail;
     path_terminate(&file_path);
-    //if (import_reframed_config(dbi, db, file_path.str.data) < 0)
-    //    goto fail;
+    if (import_reframed_config(dbi, db, file_path.str.data) < 0)
+        goto fail;
 
     /*
      * Some information on players might still be in the player details json.

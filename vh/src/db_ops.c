@@ -2,6 +2,7 @@
 #include "vh/log.h"
 #include "vh/mem.h"
 #include "vh/mfile.h"
+#include "vh/vec.h"
 
 #include "sqlite/sqlite3.h"
 
@@ -21,6 +22,7 @@
     X(motion_label, add_or_get_category)    \
     X(motion_label, add_or_get_usage)       \
     X(motion_label, add_or_get_label)       \
+    X(motion_label, to_motions)             \
                                             \
     X(fighter, add)                         \
     X(fighter, get_name)                    \
@@ -89,6 +91,7 @@ struct db
     STMT_LIST
 #undef X
     sqlite3_stmt* motion_layer_add_or_get_layer_priority;
+    sqlite3_stmt* motion_label_to_motions_priority_range;
 };
 
 static int
@@ -279,6 +282,7 @@ open_and_prepare(const char* uri, int reinit_db)
 static void
 close_db(struct db* ctx)
 {
+    sqlite3_finalize(ctx->motion_label_to_motions_priority_range);
     sqlite3_finalize(ctx->motion_layer_add_or_get_layer_priority);
 #define X(group, stmt) sqlite3_finalize(ctx->group##_##stmt);
     STMT_LIST
@@ -511,7 +515,7 @@ motion_label_add_or_get_label(struct db* ctx, uint64_t motion, int fighter_id, i
             "ON CONFLICT DO UPDATE SET group_id=excluded.group_id RETURNING id;")) != 0)
             return -1;
 
-    if ((ret = sqlite3_bind_int64(ctx->motion_label_add_or_get_label, 1, motion)) != SQLITE_OK ||
+    if ((ret = sqlite3_bind_int64(ctx->motion_label_add_or_get_label, 1, (int64_t)motion)) != SQLITE_OK ||
         (ret = sqlite3_bind_int(ctx->motion_label_add_or_get_label, 2, fighter_id)) != SQLITE_OK ||
         (ret = sqlite3_bind_int(ctx->motion_label_add_or_get_label, 3, layer_id)) != SQLITE_OK ||
         (ret = sqlite3_bind_int(ctx->motion_label_add_or_get_label, 4, category_id)) != SQLITE_OK ||
@@ -537,6 +541,75 @@ error:
 done:
     sqlite3_reset(ctx->motion_label_add_or_get_label);
     return label_id;
+}
+
+static int
+motion_label_to_motions(struct db* ctx, int fighter_id, struct str_view label, struct vec* motions_out)
+{
+    int ret, priority, min_priority = -1, max_priority = -1;
+    if (ctx->motion_label_to_motions_priority_range == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->motion_label_to_motions_priority_range, cstr_view(
+            "SELECT MIN(priority), MAX(priority) FROM motion_layers;")) != 0)
+            return -1;
+
+    if (ctx->motion_label_to_motions == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->motion_label_to_motions, cstr_view(
+            "SELECT hash40 FROM motion_labels "
+            "JOIN motion_layers ON motion_layers.id=motion_labels.layer_id "
+            "WHERE fighter_id=? AND priority=? AND label=?;")) != 0)
+            return -1;
+
+    /* Find min and max values of layer priorities */
+next_step_priority_range:
+    ret = sqlite3_step(ctx->motion_label_to_motions_priority_range);
+    switch (ret)
+    {
+        case SQLITE_ROW:
+            min_priority = sqlite3_column_int(ctx->motion_label_to_motions_priority_range, 0);
+            max_priority = sqlite3_column_int(ctx->motion_label_to_motions_priority_range, 1);
+            break;
+        case SQLITE_BUSY: goto next_step_priority_range;
+        case SQLITE_DONE: break;
+    }
+    sqlite3_reset(ctx->motion_label_to_motions_priority_range);
+    if (min_priority < 0 || max_priority < 0)
+        goto error;
+
+    if ((ret = sqlite3_bind_int(ctx->motion_label_to_motions, 1, fighter_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_text(ctx->motion_label_to_motions, 3, label.data, label.len, SQLITE_STATIC)) != SQLITE_OK)
+    {
+        goto error;
+    }
+
+    /* Search for labels starting on highest priority */
+    for (priority = min_priority; priority <= max_priority; ++priority)
+    {
+        if ((ret = sqlite3_bind_int(ctx->motion_label_to_motions, 2, priority)) != SQLITE_OK)
+            goto error;
+
+next_step:
+        ret = sqlite3_step(ctx->motion_label_to_motions);
+        switch (ret)
+        {
+            case SQLITE_ROW : {
+                uint64_t motion = (uint64_t)sqlite3_column_int64(ctx->motion_label_to_motions, 0);
+                if (vec_push(motions_out, &motion) < 0)
+                    goto error;
+            }
+            case SQLITE_BUSY : goto next_step;
+            case SQLITE_DONE : break;
+            default          : goto error;
+        }
+        sqlite3_reset(ctx->motion_label_to_motions);
+    }
+
+    if (vec_count(motions_out) > 0)
+        return 1;
+    return 0;
+
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    return -1;
 }
 
 static int

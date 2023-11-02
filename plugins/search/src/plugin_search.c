@@ -1,5 +1,6 @@
 #include "search/asm.h"
 #include "search/ast.h"
+#include "search/ast_post.h"
 #include "search/dfa.h"
 #include "search/search_index.h"
 #include "search/nfa.h"
@@ -18,6 +19,8 @@
 
 struct plugin_ctx
 {
+    struct db_interface* dbi;
+    struct db* db;
     Ihandle* error_label;
     struct parser parser;
     struct asm_dfa asm_dfa;
@@ -26,10 +29,12 @@ struct plugin_ctx
 };
 
 static struct plugin_ctx*
-create(void)
+create(struct db_interface* dbi, struct db* db)
 {
     struct plugin_ctx* ctx = mem_alloc(sizeof(struct plugin_ctx));
     memset(ctx, 0, sizeof *ctx);
+    ctx->dbi = dbi;
+    ctx->db = db;
     parser_init(&ctx->parser);
     search_index_init(&ctx->index);
     return ctx;
@@ -85,6 +90,7 @@ on_search_text_changed(Ihandle* search_box, int c, char* new_value)
     struct nfa_graph nfa;
     struct dfa_table dfa;
     struct plugin_ctx* ctx = (struct plugin_ctx*)IupGetAttribute(search_box, "plugin_ctx");
+    int fighter_id = 8;
 
     if (ctx->asm_dfa.size)
     {
@@ -96,6 +102,8 @@ on_search_text_changed(Ihandle* search_box, int c, char* new_value)
     ast = parser_parse(&ctx->parser, new_value);
     if (ast == NULL)
         goto parse_failed;
+    if (ast_post_patch_motions(ast, ctx->dbi, ctx->db, fighter_id) < 0)
+        goto patch_motions_failed;
     if (nfa_compile(&nfa, ast))
         goto nfa_compile_failed;
     if (dfa_compile(&dfa, &nfa))
@@ -109,10 +117,11 @@ on_search_text_changed(Ihandle* search_box, int c, char* new_value)
 
     run_search(ctx);
 
-    assemble_failed    : dfa_deinit(&dfa);
-    dfa_compile_failed : nfa_deinit(&nfa);
-    nfa_compile_failed : ast_destroy_recurse(ast);
-    parse_failed       : return IUP_DEFAULT;
+    assemble_failed      : dfa_deinit(&dfa);
+    dfa_compile_failed   : nfa_deinit(&nfa);
+    nfa_compile_failed   :
+    patch_motions_failed : ast_destroy_recurse(ast);
+    parse_failed         : return IUP_DEFAULT;
 }
 
 static Ihandle* ui_create(struct plugin_ctx* ctx)

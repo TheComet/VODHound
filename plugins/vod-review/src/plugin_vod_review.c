@@ -39,6 +39,8 @@ struct overlay_interface
 
 struct plugin_ctx
 {
+    struct db_interface* dbi;
+    struct db* db;
     struct plugin video_plugin;
     struct plugin_ctx* video_ctx;
     Ihandle* video_ui;
@@ -50,7 +52,7 @@ struct plugin_ctx
 
 static int try_load_video_driver_plugin(struct plugin_ctx* ctx)
 {
-    ctx->video_ctx = ctx->video_plugin.i->create();
+    ctx->video_ctx = ctx->video_plugin.i->create(ctx->dbi, ctx->db);
     if (ctx->video_ctx == NULL)
         goto create_video_ctx_failed;
 

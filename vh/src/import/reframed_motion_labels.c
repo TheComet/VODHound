@@ -13,7 +13,8 @@ import_reframed_motion_labels(
     struct mfile mf;
     struct mstream ms;
     struct btree layer_ids;
-    int i;
+    struct btree usage_ids;
+    int layer_idx;
     int hash40_count;
     int layer_count;
     int fighter_count;
@@ -21,6 +22,7 @@ import_reframed_motion_labels(
     uint8_t major, minor;
 
     btree_init(&layer_ids, sizeof(int));
+    btree_init(&usage_ids, sizeof(int));
 
     if (mfile_map(&mf, file_name) != 0)
         goto map_file_failed;
@@ -43,8 +45,8 @@ import_reframed_motion_labels(
     mstream_read_lu16(&ms);  /* Categorization */
 
     /* Hash40 table */
-    hash40_count = mstream_read_lu32(&ms);
-    for (i = 0; i != hash40_count; ++i)
+    hash40_count = (int)mstream_read_lu32(&ms);
+    for (layer_idx = 0; layer_idx != hash40_count; ++layer_idx)
     {
         uint32_t lower = mstream_read_lu32(&ms);
         uint8_t upper = mstream_read_u8(&ms);
@@ -56,26 +58,45 @@ import_reframed_motion_labels(
         (void)label;
     }
 
-    /* 
+    /*
      * Load layer names, group names, and layer usages. These map onto the
      * motion_layer, motion_groups and motion_usages tables in the db
      */
     layer_count = mstream_read_lu16(&ms);
-    for (i = 0; i != layer_count; ++i)
+    for (layer_idx = 0; layer_idx != layer_count; ++layer_idx)
     {
-        int layer_id;
+        enum usage
+        {
+            READABLE,
+            NOTATION,
+            CATEGORIZATION
+        };
+
+        int group_id, layer_id, usage_id;
         int name_len = mstream_read_u8(&ms);
         int group_len = mstream_read_u8(&ms);
-        int usage = mstream_read_u8(&ms);
+        enum usage usage = mstream_read_u8(&ms);
         struct str_view layer_name = { mstream_read(&ms, name_len), name_len };
         struct str_view group_name = { mstream_read(&ms, group_len), group_len };
-        int group_id = dbi->motion_label.add_or_get_group(db, group_name);
+
+        group_id = dbi->motion_label.add_or_get_group(db, group_name);
         if (group_id < 0)
             goto fail;
         layer_id = dbi->motion_label.add_or_get_layer(db, group_id, layer_name);
         if (layer_id < 0)
             goto fail;
-        if (btree_insert_new(&layer_ids, i, &layer_id) != 1)
+        switch (usage)
+        {
+            default             : usage_id = dbi->motion_label.add_or_get_usage(db, cstr_view("Readable")); break;
+            case NOTATION       : usage_id = dbi->motion_label.add_or_get_usage(db, cstr_view("Notation")); break;
+            case CATEGORIZATION : usage_id = dbi->motion_label.add_or_get_usage(db, cstr_view("Categorization")); break;
+        }
+        if (usage_id < 0)
+            goto fail;
+
+        if (btree_insert_new(&layer_ids, (btree_key)layer_idx, &layer_id) != 1)
+            goto fail;
+        if (btree_insert_new(&usage_ids, (btree_key)layer_idx, &usage_id) != 1)
             goto fail;
     }
 
@@ -86,9 +107,6 @@ import_reframed_motion_labels(
         int row_count = mstream_read_lu16(&ms);
         for (row = 0; row != row_count; ++row)
         {
-            int category_id = -1;
-            uint32_t lower = mstream_read_lu32(&ms);
-            uint8_t upper = mstream_read_lu32(&ms);
             enum category {
                 MOVEMENT,
                 GROUND_ATTACKS,
@@ -101,42 +119,52 @@ import_reframed_motion_labels(
                 ITEMS,
                 MISC,
                 UNLABELED
-            } category = mstream_read_u8(&ms);
+            };
+
+            int category_id = -1;
+            uint32_t lower = mstream_read_lu32(&ms);
+            uint8_t upper = mstream_read_u8(&ms);
+            enum category category = mstream_read_u8(&ms);
             uint64_t motion = ((uint64_t)upper << 32) | lower;
 
             switch (category)
             {
-            case MOVEMENT        : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Movement")); break;
-            case GROUND_ATTACKS  : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Movement")); break;
-            case AERIAL_ATTACKS  : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Movement")); break;
-            case SPECIAL_ATTACKS : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Movement")); break;
-            case GRABS           : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Movement")); break;
-            case LEDGE           : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Movement")); break;
-            case DEFENSIVE       : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Movement")); break;
-            case DISADVANTAGE    : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Movement")); break;
-            case ITEMS           : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Movement")); break;
-            case MISC            : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Movement")); break;
-            case UNLABELED       : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Movement")); break;
+                case MOVEMENT        : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Movement")); break;
+                case GROUND_ATTACKS  : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Ground Attacks")); break;
+                case AERIAL_ATTACKS  : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Aerial Attacks")); break;
+                case SPECIAL_ATTACKS : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Special Attacks")); break;
+                case GRABS           : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Grabs")); break;
+                case LEDGE           : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Ledge")); break;
+                case DEFENSIVE       : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Defensive")); break;
+                case DISADVANTAGE    : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Disadvantage")); break;
+                case ITEMS           : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Items")); break;
+                case MISC            : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Misc")); break;
+                default              : category_id = dbi->motion_label.add_or_get_category(db, cstr_view("Unlabeled")); break;
             }
+            if (category_id < 0)
+                goto fail;
 
-            int layer_idx;
             for (layer_idx = 0; layer_idx != layer_count; ++layer_idx)
             {
-                int8_t len = mstream_read_u8(&ms);
+                int8_t len = mstream_read_i8(&ms);
                 struct str_view label = { mstream_read(&ms, len), len };
-                int layer_id = *(int*)btree_find(&layer_ids, layer_idx);
-
+                int layer_id = *(int*)btree_find(&layer_ids, (btree_key)layer_idx);
+                int usage_id = *(int*)btree_find(&usage_ids, (btree_key)layer_idx);
+                if (dbi->motion_label.add_or_get_label(db, motion, fighter_id, layer_id, category_id, usage_id, label) < 0)
+                    goto fail;
             }
         }
     }
 
     mfile_unmap(&mf);
+    btree_deinit(&usage_ids);
     btree_deinit(&layer_ids);
     return 0;
 
 fail:
     mfile_unmap(&mf);
 map_file_failed:
+    btree_deinit(&usage_ids);
     btree_deinit(&layer_ids);
     return -1;
 }

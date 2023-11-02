@@ -5,6 +5,8 @@
 
 C_BEGIN
 
+struct db;
+struct db_interface;
 struct plugin_ctx;
 typedef struct Ihandle_ Ihandle;
 
@@ -139,7 +141,7 @@ struct plugin_interface
     uint32_t plugin_version;
     uint32_t vh_version;
     struct plugin_info* info;
-    struct plugin_ctx* (*create)(void);
+    struct plugin_ctx* (*create)(struct db_interface* dbi, struct db* db);
     void (*destroy)(struct plugin_ctx* plugin);
     struct ui_center_interface* ui_center;
     struct ui_pane_interface* ui_pane;

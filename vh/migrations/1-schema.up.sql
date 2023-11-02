@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS fighters (
 );
 
 -- Maps "hit status" values to their symbol name (extracted from the game).
--- Example: 
+-- Example:
 CREATE TABLE IF NOT EXISTS hit_status_enums (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL
@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS status_enums (
 );
 CREATE TABLE IF NOT EXISTS motions (
     hash40 INTEGER PRIMARY KEY NOT NULL,
-    string TEXT NOT NULL
+    string TEXT NOT NULL,
+    UNIQUE(string)
 );
 CREATE UNIQUE INDEX id_motions ON motions (hash40);
 CREATE TABLE IF NOT EXISTS motion_groups (
@@ -49,12 +50,18 @@ CREATE TABLE IF NOT EXISTS motion_layers (
 );
 CREATE TABLE IF NOT EXISTS motion_categories (
     id INTEGER PRIMARY KEY NOT NULL,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+    UNIQUE(name)
 );
 CREATE TABLE IF NOT EXISTS motion_usages (
     id INTEGER PRIMARY KEY NOT NULL,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+    UNIQUE(name)
 );
+INSERT OR REPLACE INTO motion_usages (id, name) VALUES
+    (0, 'Readable'),
+    (1, 'Notation'),
+    (2, 'Categorization');
 CREATE TABLE IF NOT EXISTS motion_labels (
     id INTEGER PRIMARY KEY NOT NULL,
     hash40 INTEGER NOT NULL,

@@ -114,7 +114,11 @@ fail:
 }
 
 static int
-nfa_compile_recurse(const union ast_node* ast_node, struct vec* nodes, struct vec* fstack, struct vec* qstack)
+nfa_compile_recurse(
+    const union ast_node* ast_node,
+    struct vec* nodes,
+    struct vec* fstack,
+    struct vec* qstack)
 {
     switch (ast_node->info.type)
     {
@@ -430,12 +434,8 @@ nfa_compile_recurse(const union ast_node* ast_node, struct vec* nodes, struct ve
             const char* label;
             int in, out;
 
-            label = ast_node->labels.label;
-            /* Assume label is a user-defined label and maps to one or more
-             * motion values */
-            /* TODO */
-
             /* Assume label is a hex value */
+            label = ast_node->labels.label;
             if (label[0] != '0' || label[1] != 'x' || str_hex_to_u64(cstr_view(label), &motion) != 0)
             {
                 /* Assume label is a hash40 string */

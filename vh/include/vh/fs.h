@@ -69,7 +69,7 @@ VH_PUBLIC_API int
 fs_file_exists(const char* file_path);
 
 VH_PUBLIC_API int
-fs_path_exists(const char* file_path);
+fs_dir_exists(const char* file_path);
 
 VH_PUBLIC_API int
 fs_make_dir(const char* path);

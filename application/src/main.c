@@ -29,10 +29,9 @@ struct plugin_state
 };
 
 static int
-open_plugin(Ihandle* main_view, struct str_view plugin_name)
+open_plugin(struct vec* plugin_state_vec, struct db_interface* dbi, struct db* db, struct str_view plugin_name)
 {
     int insert_pos;
-    struct vec* plugin_state_vec = (struct vec*)IupGetAttribute(main_view, "_IUP_plugin_state_vec");
     struct plugin_state* state = vec_emplace(plugin_state_vec);
     Ihandle* center_view = IupGetHandle("center_view");
     Ihandle* pane_view = IupGetHandle("pane_view");
@@ -40,7 +39,7 @@ open_plugin(Ihandle* main_view, struct str_view plugin_name)
     if (plugin_load(&state->plugin, plugin_name) != 0)
         goto load_plugin_failed;
 
-    state->ctx = state->plugin.i->create();
+    state->ctx = state->plugin.i->create(dbi, db);
     if (state->ctx == NULL)
         goto create_context_failed;
 
@@ -359,7 +358,10 @@ static int
 on_center_view_popup_plugin_selected(Ihandle* ih)
 {
     Ihandle* main_view = IupGetHandle("main_view");
-    open_plugin(main_view, cstr_view(IupGetAttribute(ih, "TITLE")));
+    struct vec* plugin_state_vec = (struct vec*)IupGetAttribute(ih, "_IUP_plugin_state_vec");
+    struct db_interface* dbi = (struct db_interface*)IupGetAttribute(main_view, "dbi");
+    struct db* db = (struct db*)IupGetAttribute(main_view, "db");
+    open_plugin(plugin_state_vec, dbi, db, cstr_view(IupGetAttribute(ih, "TITLE")));
     return IUP_DEFAULT;
 }
 
@@ -453,6 +455,8 @@ create_main_view(struct db_interface* dbi, struct db* db)
 
     struct vec* plugin_state_vec = vec_alloc(sizeof(struct plugin_state));
     IupSetAttribute(main_view, "_IUP_plugin_state_vec", (char*)plugin_state_vec);
+    IupSetAttribute(main_view, "dbi", (char*)dbi);
+    IupSetAttribute(main_view, "db", (char*)db);
 
     IupSetHandle("main_view", main_view);
     return main_view;
@@ -516,7 +520,7 @@ int main(int argc, char **argv)
     if (vh_init() != 0)
         goto vh_init_failed;
 
-    int reinit_db = 1;
+    int reinit_db = 0;
 
     struct db_interface* dbi = db("sqlite");
     struct db* db = dbi->open_and_prepare("vodhound.db", reinit_db);
@@ -554,8 +558,9 @@ int main(int argc, char **argv)
     }
 
     Ihandle* main_view = IupGetHandle("main_view");
-    open_plugin(main_view, cstr_view("VOD Review"));
-    open_plugin(main_view, cstr_view("Search"));
+    struct vec* plugin_state_vec = (struct vec*)IupGetAttribute(main_view, "_IUP_plugin_state_vec");
+    open_plugin(plugin_state_vec, dbi, db, cstr_view("VOD Review"));
+    open_plugin(plugin_state_vec, dbi, db, cstr_view("Search"));
 
     IupSetAttribute(dlg, "PLACEMENT", "MAXIMIZED");
     IupShow(dlg);

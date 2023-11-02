@@ -9,6 +9,7 @@ vodhound_add_plugin (${PROJECT_NAME}
     SOURCES
         "src/asm_x86_64.c"
         "src/ast.c"
+        "src/ast_post_patch_motions.c"
         "src/dfa.c"
         "src/search_index.c"
         "src/nfa.c"
@@ -19,6 +20,7 @@ vodhound_add_plugin (${PROJECT_NAME}
     HEADERS
         "include/${PROJECT_NAME}/asm.h"
         "include/${PROJECT_NAME}/ast.h"
+        "include/${PROJECT_NAME}/ast_post.h"
         "include/${PROJECT_NAME}/dfa.h"
         "include/${PROJECT_NAME}/search_index.h"
         "include/${PROJECT_NAME}/match.h"

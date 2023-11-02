@@ -54,6 +54,13 @@ mstream_read_u8(struct mstream* ms)
     return ((const uint8_t*)ms->address)[ms->idx++];
 }
 
+static inline int8_t
+mstream_read_i8(struct mstream* ms)
+{
+    if (mstream_bytes_left(ms) < 1) return 0;
+    return ((const int8_t*)ms->address)[ms->idx++];
+}
+
 static inline char
 mstream_read_char(struct mstream* ms)
 {
