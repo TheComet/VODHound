@@ -7,22 +7,26 @@
 #include <stddef.h>
 #include <stdio.h>
 
-#define MALLOC_AND_INIT(node_type, loc)      \
-    mem_alloc(sizeof(union ast_node));       \
-    if (node == NULL)                        \
-        return NULL;                         \
-    node->base.info.type = node_type;        \
-    node->base.info.loc.begin = loc->begin;  \
-    node->base.info.loc.end = loc->end;      \
-    node->base.left = NULL;                  \
-    node->base.right = NULL;
+#define NEW_NODE(ast, node_type, loc)                               \
+    ast->node_count++;                                              \
+    if (ast->node_count >= ast->node_capacity) {                    \
+        union ast_node* new_nodes = mem_realloc(ast->nodes, ast->node_capacity * 2); \
+        if (new_nodes == NULL)                                      \
+            return -1;                                              \
+        ast->nodes = new_nodes;                                     \
+    }                                                               \
+    ast->nodes[ast->node_count-1].base.info.type = node_type;       \
+    ast->nodes[ast->node_count-1].base.info.loc.begin = loc->begin; \
+    ast->nodes[ast->node_count-1].base.info.loc.end = loc->end;     \
+    ast->nodes[ast->node_count-1].base.left = -1;                   \
+    ast->nodes[ast->node_count-1].base.right = -1;
 
-union ast_node* ast_statement(union ast_node* child, union ast_node* next, struct YYLTYPE* loc)
+int ast_statement(struct ast* ast, int child, int next, struct YYLTYPE* loc)
 {
-    union ast_node* node = MALLOC_AND_INIT(AST_STATEMENT, loc);
-    node->statement.child = child;
-    node->statement.next = next;
-    return node;
+    int n = NEW_NODE(ast, AST_STATEMENT, loc);
+    ast->nodes[n].statement.child = child;
+    ast->nodes[n].statement.next = next;
+    return n;
 }
 
 union ast_node* ast_repetition(union ast_node* child, int min_reps, int max_reps, struct YYLTYPE* loc)
