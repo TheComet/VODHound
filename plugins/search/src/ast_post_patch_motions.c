@@ -3,7 +3,7 @@
 #include "vh/db_ops.h"
 
 int
-ast_post_patch_motions(union ast_node* root, struct db_interface* dbi, struct db* db, int fighter_id)
+ast_post_patch_motions(struct ast* ast, struct db_interface* dbi, struct db* db, int fighter_id)
 {
     return 0;
 }

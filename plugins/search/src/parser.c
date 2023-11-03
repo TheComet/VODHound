@@ -26,31 +26,35 @@ parser_deinit(struct parser* parser)
     yylex_destroy(parser->scanner);
 }
 
-union ast_node*
-parser_parse(struct parser* parser, const char* text)
+int
+parser_parse(struct parser* parser, const char* text, struct ast* ast)
 {
     int pushed_char;
     int parse_result;
     YY_BUFFER_STATE buffer;
     YYSTYPE pushed_value;
     YYLTYPE location = {1, 1};
-    union ast_node* ast = NULL;
+
+    if (ast_init(ast) < 0)
+        goto init_ast_failed;
 
     buffer = yy_scan_string(text, parser->scanner);
     if (buffer == NULL)
-        return NULL;
+        goto init_buffer_failed;
 
     do
     {
         pushed_char = yylex(&pushed_value, &location, parser->scanner);
-        parse_result = yypush_parse(parser->parser, pushed_char, &pushed_value, &location, &ast);
+        parse_result = yypush_parse(parser->parser, pushed_char, &pushed_value, &location, ast);
     } while (parse_result == YYPUSH_MORE);
 
-    yy_delete_buffer(buffer, parser->scanner);
-
     if (parse_result == 0)
-        return ast;
-    if (ast)
-        ast_destroy_recurse(ast);
-    return NULL;
+    {
+        yy_delete_buffer(buffer, parser->scanner);
+        return 0;
+    }
+
+parse_failed       : yy_delete_buffer(buffer, parser->scanner);
+init_buffer_failed : ast_deinit(ast);
+init_ast_failed    : return -1;
 }

@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-union ast_node;
+struct ast;
 
 struct nfa_node
 {
@@ -22,7 +22,7 @@ struct nfa_graph
 };
 
 int
-nfa_compile(struct nfa_graph* nfa, const union ast_node* ast);
+nfa_compile(struct nfa_graph* nfa, struct ast* ast);
 
 void
 nfa_deinit(struct nfa_graph* nfa);

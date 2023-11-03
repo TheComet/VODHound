@@ -86,7 +86,7 @@ run_search(struct plugin_ctx* ctx)
 static int
 on_search_text_changed(Ihandle* search_box, int c, char* new_value)
 {
-    union ast_node* ast;
+    struct ast ast;
     struct nfa_graph nfa;
     struct dfa_table dfa;
     struct plugin_ctx* ctx = (struct plugin_ctx*)IupGetAttribute(search_box, "plugin_ctx");
@@ -99,19 +99,18 @@ on_search_text_changed(Ihandle* search_box, int c, char* new_value)
         ctx->asm_dfa.size = 0;
     }
 
-    ast = parser_parse(&ctx->parser, new_value);
-    if (ast == NULL)
+    if (parser_parse(&ctx->parser, new_value, &ast) < 0)
         goto parse_failed;
-    if (ast_post_patch_motions(ast, ctx->dbi, ctx->db, fighter_id) < 0)
+    if (ast_post_patch_motions(&ast, ctx->dbi, ctx->db, fighter_id) < 0)
         goto patch_motions_failed;
-    if (nfa_compile(&nfa, ast))
+    if (nfa_compile(&nfa, &ast))
         goto nfa_compile_failed;
     if (dfa_compile(&dfa, &nfa))
         goto dfa_compile_failed;
     if (asm_compile(&ctx->asm_dfa, &dfa))
         goto assemble_failed;
 
-    ast_export_dot(ast, "ast.dot");
+    ast_export_dot(&ast, "ast.dot");
     nfa_export_dot(&nfa, "nfa.dot");
     dfa_export_dot(&dfa, "dfa.dot");
 
@@ -120,7 +119,7 @@ on_search_text_changed(Ihandle* search_box, int c, char* new_value)
     assemble_failed      : dfa_deinit(&dfa);
     dfa_compile_failed   : nfa_deinit(&nfa);
     nfa_compile_failed   :
-    patch_motions_failed : ast_destroy_recurse(ast);
+    patch_motions_failed : ast_deinit(&ast);
     parse_failed         : return IUP_DEFAULT;
 }
 

@@ -105,11 +105,12 @@ int ast_context_qualifier(struct ast* ast, int child, uint8_t flags, struct YYLT
 int ast_label_steal(struct ast* ast, char* label, struct YYLTYPE* loc);
 int ast_labels_steal(struct ast* ast, char* label, char* opponent_label, struct YYLTYPE* loc);
 int ast_wildcard(struct ast* ast, struct YYLTYPE* loc);
+void ast_set_root(struct ast* ast, int node);
 
-void ast_init(struct ast* ast);
+int ast_init(struct ast* ast);
 void ast_deinit(struct ast* ast);
 
-int ast_export_dot(struct ast* ast, const char* file_name);
+int ast_export_dot(const struct ast* ast, const char* file_name);
 
 #if defined(__cplusplus)
 }

@@ -29,127 +29,139 @@ int ast_statement(struct ast* ast, int child, int next, struct YYLTYPE* loc)
     return n;
 }
 
-union ast_node* ast_repetition(union ast_node* child, int min_reps, int max_reps, struct YYLTYPE* loc)
+int ast_repetition(struct ast* ast, int child, int min_reps, int max_reps, struct YYLTYPE* loc)
 {
-    union ast_node* node = MALLOC_AND_INIT(AST_REPETITION, loc);
-    node->repetition.child = child;
-    node->repetition.min_reps = min_reps;
-    node->repetition.max_reps = max_reps;
-    return node;
+    int n = NEW_NODE(ast, AST_REPETITION, loc);
+    ast->nodes[n].repetition.child = child;
+    ast->nodes[n].repetition.min_reps = min_reps;
+    ast->nodes[n].repetition.max_reps = max_reps;
+    return n;
 }
 
-union ast_node* ast_union(union ast_node* child, union ast_node* next, struct YYLTYPE* loc)
+int ast_union(struct ast* ast, int child, int next, struct YYLTYPE* loc)
 {
-    union ast_node* node = MALLOC_AND_INIT(AST_UNION, loc);
-    node->union_.child = child;
-    node->union_.next = next;
-    return node;
+    int n = NEW_NODE(ast, AST_UNION, loc);
+    ast->nodes[n].union_.child = child;
+    ast->nodes[n].union_.next = next;
+    return n;
 }
 
-union ast_node* ast_inversion(union ast_node* child, struct YYLTYPE* loc)
+int ast_inversion(struct ast* ast, int child, struct YYLTYPE* loc)
 {
-    union ast_node* node = MALLOC_AND_INIT(AST_INVERSION, loc);
-    node->inversion.child = child;
-    return node;
+    int n = NEW_NODE(ast, AST_INVERSION, loc);
+    ast->nodes[n].inversion.child = child;
+    return n;
 }
 
-union ast_node* ast_context_qualifier(union ast_node* child, uint8_t flags, struct YYLTYPE* loc)
+int ast_context_qualifier(struct ast* ast, int child, uint8_t flags, struct YYLTYPE* loc)
 {
-    union ast_node* node = MALLOC_AND_INIT(AST_CONTEXT_QUALIFIER, loc);
-    node->context_qualifier.child = child;
-    node->context_qualifier.flags = flags;
-    return node;
+    int n = NEW_NODE(ast, AST_CONTEXT_QUALIFIER, loc);
+    ast->nodes[n].context_qualifier.child = child;
+    ast->nodes[n].context_qualifier.flags = flags;
+    return n;
 }
 
-union ast_node* ast_label_steal(char* label, struct YYLTYPE* loc)
+int ast_label_steal(struct ast* ast, char* label, struct YYLTYPE* loc)
 {
-    union ast_node* node = MALLOC_AND_INIT(AST_LABEL, loc);
-    node->labels.label = label;
-    node->labels.opponent_label = NULL;
-    return node;
+    int n = NEW_NODE(ast, AST_LABEL, loc);
+    ast->nodes[n].labels.label = label;
+    ast->nodes[n].labels.opponent_label = NULL;
+    return n;
 }
 
-union ast_node* ast_labels_steal(char* label, char* opponent_label, struct YYLTYPE* loc)
+int ast_labels_steal(struct ast* ast, char* label, char* opponent_label, struct YYLTYPE* loc)
 {
-    union ast_node* node = MALLOC_AND_INIT(AST_LABEL, loc);
-    node->labels.label = label;
-    node->labels.opponent_label = opponent_label;
-    return node;
+    int n = NEW_NODE(ast, AST_LABEL, loc);
+    ast->nodes[n].labels.label = label;
+    ast->nodes[n].labels.opponent_label = opponent_label;
+    return n;
 }
 
-union ast_node* ast_wildcard(struct YYLTYPE* loc)
+int ast_wildcard(struct ast* ast, struct YYLTYPE* loc)
 {
-    union ast_node* node = MALLOC_AND_INIT(AST_WILDCARD, loc);
-    return node;
+    int n = NEW_NODE(ast, AST_WILDCARD, loc);
+    return n;
 }
 
-void ast_destroy_single(union ast_node* node)
+void ast_set_root(struct ast* ast, int node)
 {
-    if (node->info.type == AST_LABEL)
+    int n;
+    union ast_node tmp;
+
+    for (n = 0; n != ast->node_count; ++n)
     {
-        mem_free(node->labels.label);
-        if (node->labels.opponent_label)
-            mem_free(node->labels.opponent_label);
+        if (ast->nodes[n].base.left == 0) ast->nodes[n].base.left = -2;
+        if (ast->nodes[n].base.right == 0) ast->nodes[n].base.right = -2;
+    }
+    for (n = 0; n != ast->node_count; ++n)
+    {
+        if (ast->nodes[n].base.left == node) ast->nodes[n].base.left = 0;
+        if (ast->nodes[n].base.right == node) ast->nodes[n].base.right = 0;
+    }
+    for (n = 0; n != ast->node_count; ++n)
+    {
+        if (ast->nodes[n].base.left == -2) ast->nodes[n].base.left = node;
+        if (ast->nodes[n].base.right == -2) ast->nodes[n].base.right = node;
     }
 
-    mem_free(node);
+    tmp = ast->nodes[0];
+    ast->nodes[0] = ast->nodes[node];
+    ast->nodes[node] = tmp;
 }
 
-void ast_destroy_recurse(union ast_node* node)
+int ast_init(struct ast* ast)
 {
-    if (node->base.left)
-        ast_destroy_recurse(node->base.left);
-    if (node->base.right)
-        ast_destroy_recurse(node->base.right);
-
-    ast_destroy_single(node);
-}
-
-// ----------------------------------------------------------------------------
-static int calculate_node_ids(const union ast_node* node, struct hm* node_ids, int* counter)
-{
-    *counter += 1;
-    if (hm_insert_new(node_ids, &node, counter) <= 0)
+    ast->node_count = 0;
+    ast->node_capacity = 32;
+    ast->nodes = mem_alloc(sizeof(union ast_node) * ast->node_capacity);
+    if (ast->nodes == NULL)
         return -1;
-
-    if (node->base.left)
-        if (calculate_node_ids(node->base.left, node_ids, counter) < 0)
-            return -1;
-    if (node->base.right)
-        if (calculate_node_ids(node->base.right, node_ids, counter) < 0)
-            return -1;
-
     return 0;
 }
 
-static void write_nodes(const union ast_node* node, FILE* fp, const struct hm* node_ids)
+void ast_deinit(struct ast* ast)
 {
-    const int node_id = *(int*)hm_find(node_ids, &node);
-    switch (node->info.type)
+    int n;
+    for (n = 0; n != ast->node_count; ++n)
+    {
+        if (ast->nodes[n].info.type == AST_LABEL)
+        {
+            mem_free(ast->nodes[n].labels.label);
+            if (ast->nodes[n].labels.opponent_label)
+                mem_free(ast->nodes[n].labels.opponent_label);
+        }
+    }
+
+    mem_free(ast->nodes);
+}
+
+static void write_nodes(const struct ast* ast, int n, FILE* fp)
+{
+    switch (ast->nodes[n].info.type)
     {
         case AST_STATEMENT:
-            fprintf(fp, "  n%d [label=\"->\"];\n", node_id);
+            fprintf(fp, "  n%d [label=\"->\"];\n", n);
             break;
         case AST_REPETITION:
             fprintf(fp, "  n%d [label=\"rep %d,%d\"];\n",
-                    node_id, node->repetition.min_reps, node->repetition.max_reps);
+                    n, ast->nodes[n].repetition.min_reps, ast->nodes[n].repetition.max_reps);
             break;
         case AST_UNION:
-            fprintf(fp, "  n%d [label=\"|\"];\n", node_id);
+            fprintf(fp, "  n%d [label=\"|\"];\n", n);
             break;
         case AST_INVERSION:
-            fprintf(fp, "  n%d [label=\"!\"];\n", node_id);
+            fprintf(fp, "  n%d [label=\"!\"];\n", n);
             break;
         case AST_WILDCARD:
-            fprintf(fp, "  n%d [shape=\"rectangle\",label=\".\"];\n", node_id);
+            fprintf(fp, "  n%d [shape=\"rectangle\",label=\".\"];\n", n);
             break;
         case AST_LABEL:
-            if (node->labels.opponent_label)
+            if (ast->nodes[n].labels.opponent_label)
                 fprintf(fp, "  n%d [shape=\"rectangle\",label=\"%s [%s]\"];\n",
-                        node_id, node->labels.label, node->labels.opponent_label);
+                        n, ast->nodes[n].labels.label, ast->nodes[n].labels.opponent_label);
             else
                 fprintf(fp, "  n%d [shape=\"rectangle\",label=\"%s\"];\n",
-                        node_id, node->labels.label);
+                        n, ast->nodes[n].labels.label);
             break;
         case AST_CONTEXT_QUALIFIER: {
             #define APPEND_WITH_PIPE(str) {  \
@@ -161,65 +173,46 @@ static void write_nodes(const union ast_node* node, FILE* fp, const struct hm* n
             }
 
             int need_pipe = 0;
-            fprintf(fp, "  n%d [shape=\"record\",label=\"", node_id);
-            if (node->context_qualifier.flags & AST_CTX_OS) APPEND_WITH_PIPE("OS")
-            if (node->context_qualifier.flags & AST_CTX_HIT) APPEND_WITH_PIPE("HIT")
-            if (node->context_qualifier.flags & AST_CTX_WHIFF) APPEND_WITH_PIPE("WHIFF")
+            fprintf(fp, "  n%d [shape=\"record\",label=\"", n);
+            if (ast->nodes[n].context_qualifier.flags & AST_CTX_OS) APPEND_WITH_PIPE("OS")
+            if (ast->nodes[n].context_qualifier.flags & AST_CTX_HIT) APPEND_WITH_PIPE("HIT")
+            if (ast->nodes[n].context_qualifier.flags & AST_CTX_WHIFF) APPEND_WITH_PIPE("WHIFF")
             fprintf(fp, "\"];\n");
 
             #undef APPEND_WITH_PIPE
         } break;
     }
 
-    if (node->base.left)
-        write_nodes(node->base.left, fp, node_ids);
-    if (node->base.right)
-        write_nodes(node->base.right, fp, node_ids);
+    if (ast->nodes[n].base.left >= 0)
+        write_nodes(ast, ast->nodes[n].base.left, fp);
+    if (ast->nodes[n].base.right >= 0)
+        write_nodes(ast, ast->nodes[n].base.right, fp);
 }
 
-static void write_edges(const union ast_node* node, FILE* fp, const struct hm* node_ids)
+static void write_edges(const struct ast* ast, FILE* fp)
 {
-    if (node->base.left)
+    int n;
+    for (n = 0; n != ast->node_count; ++n)
     {
-        fprintf(fp, "  n%d -> n%d;\n",
-            *(int*)hm_find(node_ids, &node), *(int*)hm_find(node_ids, &node->base.left));
-        write_edges(node->base.left, fp, node_ids);
-    }
+        if (ast->nodes[n].base.left >= 0)
+            fprintf(fp, "  n%d -> n%d;\n", n, ast->nodes[n].base.left);
 
-    if (node->base.right)
-    {
-        fprintf(fp, "  n%d -> n%d;\n",
-            *(int*)hm_find(node_ids, &node), *(int*)hm_find(node_ids, &node->base.right));
-        write_edges(node->base.right, fp, node_ids);
+        if (ast->nodes[n].base.right >= 0)
+            fprintf(fp, "  n%d -> n%d;\n", n, ast->nodes[n].base.right);
     }
 }
 
-int ast_export_dot(union ast_node* root, const char* file_name)
+int ast_export_dot(const struct ast* ast, const char* file_name)
 {
-    FILE* fp;
-    struct hm node_ids;
-    int counter;
-
-    fp = fopen(file_name, "w");
+    FILE* fp = fopen(file_name, "w");
     if (fp == NULL)
-        goto fopen_failed;
+        return -1;
 
-    if (hm_init(&node_ids, sizeof(union ast_node*), sizeof(int)) != 0)
-        goto hm_init_failed;
-
-    counter = 0;
-    if (calculate_node_ids(root, &node_ids, &counter) < 0)
-        goto calc_node_ids_failed;
     fprintf(fp, "digraph ast {\n");
-        write_nodes(root, fp, &node_ids);
-        write_edges(root, fp, &node_ids);
+        write_nodes(ast, 0, fp);
+        write_edges(ast, fp);
     fprintf(fp, "}\n");
     fclose(fp);
 
-    hm_deinit(&node_ids);
     return 0;
-
-    calc_node_ids_failed : hm_deinit(&node_ids);
-    hm_init_failed       : fclose(fp);
-    fopen_failed         : return -1;
 }

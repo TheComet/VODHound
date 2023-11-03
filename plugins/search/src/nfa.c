@@ -115,19 +115,20 @@ fail:
 
 static int
 nfa_compile_recurse(
-    const union ast_node* ast_node,
+    const struct ast* ast,
+    int n,
     struct vec* nodes,
     struct vec* fstack,
     struct vec* qstack)
 {
-    switch (ast_node->info.type)
+    switch (ast->nodes[n].info.type)
     {
         case AST_STATEMENT: {
             struct fragment* right;
             struct fragment* left;
 
-            if (nfa_compile_recurse(ast_node->statement.child, nodes, fstack, qstack) < 0) return -1;
-            if (nfa_compile_recurse(ast_node->statement.next, nodes, fstack, qstack) < 0) return -1;
+            if (nfa_compile_recurse(ast, ast->nodes[n].statement.child, nodes, fstack, qstack) < 0) return -1;
+            if (nfa_compile_recurse(ast, ast->nodes[n].statement.next, nodes, fstack, qstack) < 0) return -1;
             if (vec_count(fstack) < 2)
             {
                 log_err("Failed to compile AST: Incomplete statement\n");
@@ -190,7 +191,7 @@ nfa_compile_recurse(
         case AST_REPETITION: {
             struct fragment* f;
             int min_reps, max_reps;
-            if (nfa_compile_recurse(ast_node->repetition.child, nodes, fstack, qstack) < 0) return -1;
+            if (nfa_compile_recurse(ast, ast->nodes[n].repetition.child, nodes, fstack, qstack) < 0) return -1;
             if (vec_count(fstack) < 1)
             {
                 log_err("Failed to compile AST: Incomplete repetition\n");
@@ -198,8 +199,8 @@ nfa_compile_recurse(
             }
 
             f = vec_back(fstack);
-            min_reps = ast_node->repetition.min_reps;
-            max_reps = ast_node->repetition.max_reps;
+            min_reps = ast->nodes[n].repetition.min_reps;
+            max_reps = ast->nodes[n].repetition.max_reps;
 
             /* Invalid values */
             if (min_reps < 0)
@@ -386,8 +387,8 @@ nfa_compile_recurse(
             struct fragment* right;
             struct fragment* left;
 
-            if (nfa_compile_recurse(ast_node->union_.child, nodes, fstack, qstack) < 0) return -1;
-            if (nfa_compile_recurse(ast_node->union_.next, nodes, fstack, qstack) < 0) return -1;
+            if (nfa_compile_recurse(ast, ast->nodes[n].union_.child, nodes, fstack, qstack) < 0) return -1;
+            if (nfa_compile_recurse(ast, ast->nodes[n].union_.next, nodes, fstack, qstack) < 0) return -1;
             if (vec_count(fstack) < 2)
             {
                 log_err("Failed to compile AST: Incomplete union\n");
@@ -406,7 +407,7 @@ nfa_compile_recurse(
         } break;
 
         case AST_INVERSION: {
-            if (nfa_compile_recurse(ast_node->inversion.child, nodes, fstack, qstack) < 0) return -1;
+            if (nfa_compile_recurse(ast, ast->nodes[n].inversion.child, nodes, fstack, qstack) < 0) return -1;
         } break;
 
         case AST_WILDCARD: {
@@ -435,7 +436,7 @@ nfa_compile_recurse(
             int in, out;
 
             /* Assume label is a hex value */
-            label = ast_node->labels.label;
+            label = ast->nodes[n].labels.label;
             if (label[0] != '0' || label[1] != 'x' || str_hex_to_u64(cstr_view(label), &motion) != 0)
             {
                 /* Assume label is a hash40 string */
@@ -466,7 +467,7 @@ nfa_compile_recurse(
 }
 
 int
-nfa_compile(struct nfa_graph* nfa, const union ast_node* ast)
+nfa_compile(struct nfa_graph* nfa, const struct ast* ast)
 {
     struct vec fragment_stack;
     struct vec qualifier_stack;
@@ -491,7 +492,7 @@ nfa_compile(struct nfa_graph* nfa, const union ast_node* ast)
     vec_init(&entry_node->next, sizeof(int));
     entry_node->matcher = match_none();
 
-    if (nfa_compile_recurse(ast, &nodes, &fragment_stack, &qualifier_stack) != 0)
+    if (nfa_compile_recurse(ast, 0, &nodes, &fragment_stack, &qualifier_stack) != 0)
         goto out;
 
     /*

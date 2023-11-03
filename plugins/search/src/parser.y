@@ -11,7 +11,6 @@
     #define YYLTYPE_IS_DECLARED
 
     typedef void* yyscan_t;
-    union ast_node;
 }
 %code top
 {
@@ -37,21 +36,20 @@
 %define api.push-pull push
 %define api.token.prefix {TOK_}
 %define api.header.include {"search/parser.y.h"}
-
-%parse-param {union ast_node** root}
-%locations
 %define parse.error verbose
+%locations
+
+%parse-param {struct ast* ast}
 
 /* This is the union that will become known as QPSTYPE in the generated code */
 %union {
     char* string_value;
     int integer_value;
     uint8_t ctx_flags;
-    union ast_node* node_value;
+    int node_value;
 }
 
 %destructor { mem_free($$); } <string_value>
-%destructor { ast_destroy_recurse($$); } <node_value>
 
 %token '.' '*' '+' '?' '(' ')' '|' '!'
 %token INTO
@@ -78,40 +76,40 @@
 
 %%
 query
-  : stmnts                        { *root = $1; }
+  : stmnts                        { ast_set_root(ast, $1); }
   ;
 stmnts
-  : stmnts INTO stmnt             { $$ = ast_statement($1, $3, &@$); }
+  : stmnts INTO stmnt             { $$ = ast_statement(ast, $1, $3, &@$); }
   | stmnt                         { $$ = $1; }
   ;
 stmnt
-  : pre_qual union post_qual      { $$ = ast_context_qualifier($2, $1 | $3, &@$); }
-  | union post_qual               { $$ = ast_context_qualifier($1, $2, &@$); }
-  | pre_qual union                { $$ = ast_context_qualifier($2, $1, &@$); }
+  : pre_qual union post_qual      { $$ = ast_context_qualifier(ast, $2, $1 | $3, &@$); }
+  | union post_qual               { $$ = ast_context_qualifier(ast, $1, $2, &@$); }
+  | pre_qual union                { $$ = ast_context_qualifier(ast, $2, $1, &@$); }
   | union                         { $$ = $1; }
   ;
 union
-  : union '|' union               { $$ = ast_union($1, $3, &@$); }
+  : union '|' union               { $$ = ast_union(ast, $1, $3, &@$); }
   | repitition                    { $$ = $1; }
   ;
 repitition
-  : inversion '+'                 { $$ = ast_repetition($1, 1, -1, &@$); }
-  | inversion '*'                 { $$ = ast_repetition($1, 0, -1, &@$); }
-  | inversion '?'                 { $$ = ast_repetition($1, 0, 1, &@$); }
-  | inversion NUM                 { $$ = ast_repetition($1, $2, $2, &@$); }
-  | inversion NUM ',' NUM         { $$ = ast_repetition($1, $2, $4, &@$); }
-  | inversion NUM ',' '+'         { $$ = ast_repetition($1, $2, -1, &@$); }
-  | inversion NUM ',' '*'         { $$ = ast_repetition($1, $2, -1, &@$); }
+  : inversion '+'                 { $$ = ast_repetition(ast, $1, 1, -1, &@$); }
+  | inversion '*'                 { $$ = ast_repetition(ast, $1, 0, -1, &@$); }
+  | inversion '?'                 { $$ = ast_repetition(ast, $1, 0, 1, &@$); }
+  | inversion NUM                 { $$ = ast_repetition(ast, $1, $2, $2, &@$); }
+  | inversion NUM ',' NUM         { $$ = ast_repetition(ast, $1, $2, $4, &@$); }
+  | inversion NUM ',' '+'         { $$ = ast_repetition(ast, $1, $2, -1, &@$); }
+  | inversion NUM ',' '*'         { $$ = ast_repetition(ast, $1, $2, -1, &@$); }
   | inversion                     { $$ = $1; }
   ;
 inversion
-  : '!' label                     { $$ = ast_inversion($2, &@$); }
+  : '!' label                     { $$ = ast_inversion(ast, $2, &@$); }
   | label                         { $$ = $1; }
-  | '.'                           { $$ = ast_wildcard(&@$); }
+  | '.'                           { $$ = ast_wildcard(ast, &@$); }
   | '(' stmnts ')'                { $$ = $2; }
   ;
 label
-  : LABEL                         { $$ = ast_label_steal($1, &@$); }
+  : LABEL                         { $$ = ast_label_steal(ast, $1, &@$); }
   ;
 pre_qual
   : pre_qual '|' pre_qual         { $$ = $1; $$ |= $3; }
@@ -130,7 +128,7 @@ post_qual
   ;
 %%
 
-static void yyerror(yyscan_t scanner, union ast_node** root, const char* fmt, ...)
+static void yyerror(yyscan_t scanner, struct ast* ast, const char* fmt, ...)
 {
     va_list va;
     va_start(va, fmt);

@@ -8,7 +8,7 @@ extern "C" {
 typedef void* yyscan_t;
 typedef struct yypstate yypstate;
 
-union ast_node;
+struct ast;
 
 struct parser
 {
@@ -22,8 +22,8 @@ parser_init(struct parser* parser);
 void
 parser_deinit(struct parser* parser);
 
-union ast_node*
-parser_parse(struct parser* parser, const char* text);
+int
+parser_parse(struct parser* parser, const char* text, struct ast* ast);
 
 #if defined(__cplusplus)
 }
