@@ -128,6 +128,7 @@ static int
 resize_rehash(struct hm* hm, hm_size new_table_count)
 {
     struct hm new_hm;
+    void* new_value;
     int i;
 
     STATS_REHASH(hm);
@@ -144,11 +145,12 @@ resize_rehash(struct hm* hm, hm_size new_table_count)
     {
         if (SLOT(hm, i) == VH_HM_SLOT_UNUSED || SLOT(hm, i) == VH_HM_SLOT_RIP)
             continue;
-        if (hm_insert_new(&new_hm, KEY(hm, i), VALUE(hm, i)) != 1)
+        if (hm_insert(&new_hm, KEY(hm, i), &new_value) != 1)
         {
             mem_free(new_hm.storage);
             return -1;
         }
+        memcpy(new_value, VALUE(hm, i), hm->value_size);
     }
 
     /* Swap storage and free old */
@@ -247,7 +249,7 @@ hm_free(struct hm* hm)
 
 /* ------------------------------------------------------------------------- */
 int
-hm_insert_new(struct hm* hm, const void* key, const void* value)
+hm_insert(struct hm* hm, const void* key, void** value)
 {
     hash32 hash;
     int pos, i, last_tombstone;
@@ -271,7 +273,10 @@ hm_insert_new(struct hm* hm, const void* key, const void* value)
         if (SLOT(hm, pos) == hash)
         {
             if (hm->compare(KEY(hm, pos), key, (size_t)hm->key_size) == 0)
+            {
+                *value = VALUE(hm, pos);
                 return 0;
+            }
         }
         else
             if (SLOT(hm, pos) == VH_HM_SLOT_RIP)
@@ -299,74 +304,11 @@ hm_insert_new(struct hm* hm, const void* key, const void* value)
     /* Store hash, key and value */
     SLOT(hm, pos) = hash;
     memcpy(KEY(hm, pos), key, (size_t)hm->key_size);
-    if (value)  /* value may be NULL, and memcpy() with a NULL source is undefined, even if len is 0 */
-        memcpy(VALUE(hm, pos), value, (size_t)hm->value_size);
 
     hm->slots_used++;
 
+    *value = VALUE(hm, pos);
     return 1;
-}
-
-/* ------------------------------------------------------------------------- */
-void*
-hm_insert_or_get(struct hm* hm, const void* key, const void* value)
-{
-    hash32 hash;
-    int pos, i, last_tombstone;
-
-    /* NOTE: Rehashing may change table count, make sure to compute hash after this */
-    if (hm->slots_used * 100 / hm->table_count >= VH_HM_REHASH_AT_PERCENT)
-        if (resize_rehash(hm, hm->table_count * VH_HM_EXPAND_FACTOR) != 0)
-            return NULL;
-
-    /* Init values */
-    hash = hash_wrapper(hm, key, (int)hm->key_size);
-    pos = (int)(hash & (hash32)(hm->table_count - 1));
-    i = 0;
-    last_tombstone = VH_HM_SLOT_INVALID;
-
-    while (SLOT(hm, pos) != VH_HM_SLOT_UNUSED)
-    {
-        /* If the same hash already exists in this slot, and this isn't the
-         * result of a hash collision (which we can verify by comparing the
-         * original keys), then we can conclude this key was already inserted */
-        if (SLOT(hm, pos) == hash)
-        {
-            if (hm->compare(KEY(hm, pos), key, (size_t)hm->key_size) == 0)
-                return VALUE(hm, pos);
-        }
-        else
-            if (SLOT(hm, pos) == VH_HM_SLOT_RIP)
-                last_tombstone = pos;
-
-        /* Quadratic probing following p(K,i)=(i^2+i)/2. If the hash table
-         * size is a power of two, this will visit every slot */
-        i++;
-        pos += i;
-        pos &= (int)(hm->table_count - 1);
-        STATS_INSERTION_PROBE(hm);
-    }
-
-    /* It's safe to insert new values at the end of a probing sequence */
-    if (last_tombstone != VH_HM_SLOT_INVALID)
-    {
-        pos = last_tombstone;
-        STATS_INSERTED_IN_TOMBSTONE(hm);
-    }
-    else
-    {
-        STATS_INSERTED_IN_UNUSED(hm);
-    }
-
-    /* Store hash, key and value */
-    SLOT(hm, pos) = hash;
-    memcpy(KEY(hm, pos), key, (size_t)hm->key_size);
-    if (value)  /* value may be NULL, and memcpy() with a NULL source is undefined, even if len is 0 */
-        memcpy(VALUE(hm, pos), value, (size_t)hm->value_size);
-
-    hm->slots_used++;
-
-    return VALUE(hm, pos);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -403,6 +345,15 @@ hm_erase(struct hm* hm, const void* key)
 
     SLOT(hm, pos) = VH_HM_SLOT_RIP;
     return VALUE(hm, pos);
+}
+
+/* ------------------------------------------------------------------------- */
+void 
+hm_clear(struct hm* hm)
+{
+    /* Re-Initialize hash table -- NOTE: Only works if HM_VH_HM_SLOT_UNUSED is 0 */
+    memset(hm->storage, 0, (sizeof(hash32) + hm->key_size) * hm->table_count);
+    hm->slots_used = 0;
 }
 
 /* ------------------------------------------------------------------------- */

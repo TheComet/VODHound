@@ -14,6 +14,7 @@ enum ast_type
     AST_INVERSION,
     AST_WILDCARD,
     AST_LABEL,
+    AST_MOTION,
     AST_CONTEXT_QUALIFIER
 };
 
@@ -86,6 +87,13 @@ union ast_node
         char* label;
         char* opponent_label;
     } labels;
+
+    struct motion {
+        struct info info;
+        int _padding1;
+        int _padding2;
+        uint64_t motion;
+    } motion;
 };
 
 struct ast
@@ -101,14 +109,19 @@ int ast_statement(struct ast* ast, int child, int next, struct YYLTYPE* loc);
 int ast_repetition(struct ast* ast, int child, int min_reps, int max_reps, struct YYLTYPE* loc);
 int ast_union(struct ast* ast, int child, int next, struct YYLTYPE* loc);
 int ast_inversion(struct ast* ast, int child, struct YYLTYPE* loc);
+int ast_wildcard(struct ast* ast, struct YYLTYPE* loc);
 int ast_context_qualifier(struct ast* ast, int child, uint8_t flags, struct YYLTYPE* loc);
 int ast_label_steal(struct ast* ast, char* label, struct YYLTYPE* loc);
 int ast_labels_steal(struct ast* ast, char* label, char* opponent_label, struct YYLTYPE* loc);
-int ast_wildcard(struct ast* ast, struct YYLTYPE* loc);
+int ast_motion(struct ast* ast, uint64_t motion, struct YYLTYPE* loc);
+
 void ast_set_root(struct ast* ast, int node);
+void ast_swap_nodes(struct ast* ast, int n1, int n2);
+void ast_collapse_into(struct ast* ast, int node, int target);
 
 int ast_init(struct ast* ast);
 void ast_deinit(struct ast* ast);
+void ast_deinit_node(struct ast* ast, int node);
 
 int ast_export_dot(const struct ast* ast, const char* file_name);
 

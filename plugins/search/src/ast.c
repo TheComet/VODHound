@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 #include <stdio.h>
+#include <inttypes.h>
 
 #define NEW_NODE(ast, node_type, loc)                               \
     ast->node_count++;                                              \
@@ -53,6 +54,12 @@ int ast_inversion(struct ast* ast, int child, struct YYLTYPE* loc)
     return n;
 }
 
+int ast_wildcard(struct ast* ast, struct YYLTYPE* loc)
+{
+    int n = NEW_NODE(ast, AST_WILDCARD, loc);
+    return n;
+}
+
 int ast_context_qualifier(struct ast* ast, int child, uint8_t flags, struct YYLTYPE* loc)
 {
     int n = NEW_NODE(ast, AST_CONTEXT_QUALIFIER, loc);
@@ -77,36 +84,50 @@ int ast_labels_steal(struct ast* ast, char* label, char* opponent_label, struct 
     return n;
 }
 
-int ast_wildcard(struct ast* ast, struct YYLTYPE* loc)
+int ast_motion(struct ast* ast, uint64_t motion, struct YYLTYPE* loc)
 {
-    int n = NEW_NODE(ast, AST_WILDCARD, loc);
+    int n = NEW_NODE(ast, AST_MOTION, loc);
+    ast->nodes[n].motion.motion = motion;
     return n;
 }
 
-void ast_set_root(struct ast* ast, int node)
+void ast_swap_nodes(struct ast* ast, int n1, int n2)
 {
     int n;
     union ast_node tmp;
 
     for (n = 0; n != ast->node_count; ++n)
     {
-        if (ast->nodes[n].base.left == 0) ast->nodes[n].base.left = -2;
-        if (ast->nodes[n].base.right == 0) ast->nodes[n].base.right = -2;
+        if (ast->nodes[n].base.left == n1) ast->nodes[n].base.left = -2;
+        if (ast->nodes[n].base.right == n1) ast->nodes[n].base.right = -2;
     }
     for (n = 0; n != ast->node_count; ++n)
     {
-        if (ast->nodes[n].base.left == node) ast->nodes[n].base.left = 0;
-        if (ast->nodes[n].base.right == node) ast->nodes[n].base.right = 0;
+        if (ast->nodes[n].base.left == n2) ast->nodes[n].base.left = n1;
+        if (ast->nodes[n].base.right == n2) ast->nodes[n].base.right = n1;
     }
     for (n = 0; n != ast->node_count; ++n)
     {
-        if (ast->nodes[n].base.left == -2) ast->nodes[n].base.left = node;
-        if (ast->nodes[n].base.right == -2) ast->nodes[n].base.right = node;
+        if (ast->nodes[n].base.left == -2) ast->nodes[n].base.left = n2;
+        if (ast->nodes[n].base.right == -2) ast->nodes[n].base.right = n2;
     }
 
-    tmp = ast->nodes[0];
-    ast->nodes[0] = ast->nodes[node];
-    ast->nodes[node] = tmp;
+    tmp = ast->nodes[n1];
+    ast->nodes[n1] = ast->nodes[n2];
+    ast->nodes[n2] = tmp;
+}
+
+void ast_collapse_into(struct ast* ast, int node, int target)
+{
+    ast->node_count--;
+    ast_swap_nodes(ast, node, ast->node_count);
+    ast_deinit_node(ast, target);
+    ast->nodes[target] = ast->nodes[ast->node_count];
+}
+
+void ast_set_root(struct ast* ast, int node)
+{
+    ast_swap_nodes(ast, 0, node);
 }
 
 int ast_init(struct ast* ast)
@@ -119,18 +140,21 @@ int ast_init(struct ast* ast)
     return 0;
 }
 
+void ast_deinit_node(struct ast* ast, int n)
+{
+    if (ast->nodes[n].info.type == AST_LABEL)
+    {
+        mem_free(ast->nodes[n].labels.label);
+        if (ast->nodes[n].labels.opponent_label)
+            mem_free(ast->nodes[n].labels.opponent_label);
+    }
+}
+
 void ast_deinit(struct ast* ast)
 {
     int n;
     for (n = 0; n != ast->node_count; ++n)
-    {
-        if (ast->nodes[n].info.type == AST_LABEL)
-        {
-            mem_free(ast->nodes[n].labels.label);
-            if (ast->nodes[n].labels.opponent_label)
-                mem_free(ast->nodes[n].labels.opponent_label);
-        }
-    }
+        ast_deinit_node(ast, n);
 
     mem_free(ast->nodes);
 }
@@ -158,10 +182,14 @@ static void write_nodes(const struct ast* ast, int n, FILE* fp)
         case AST_LABEL:
             if (ast->nodes[n].labels.opponent_label)
                 fprintf(fp, "  n%d [shape=\"rectangle\",label=\"%s [%s]\"];\n",
-                        n, ast->nodes[n].labels.label, ast->nodes[n].labels.opponent_label);
+                    n, ast->nodes[n].labels.label, ast->nodes[n].labels.opponent_label);
             else
                 fprintf(fp, "  n%d [shape=\"rectangle\",label=\"%s\"];\n",
-                        n, ast->nodes[n].labels.label);
+                    n, ast->nodes[n].labels.label);
+            break;
+        case AST_MOTION:
+            fprintf(fp, "  n%d [shape=\"rectangle\",label=\"0x%" PRIx64 "\"];\n",
+                n, ast->nodes[n].motion.motion);
             break;
         case AST_CONTEXT_QUALIFIER: {
             #define APPEND_WITH_PIPE(str) {  \

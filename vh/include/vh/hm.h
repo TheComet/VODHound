@@ -108,21 +108,21 @@ hm_free(struct hm* hm);
  * @param[in] key A pointer to where the key is stored. key_size number of
  * bytes are hashed and copied into the hm from this location in
  * memory. @see hm_create() regarding key_size.
- * @param[in] value A pointer to where the value is stored. value_size number
- * of bytes are copied from this location in memory into the hm. If
- * value_size is 0, then nothing is copied.
+ * @param[out] value The address of where the value will be stored in the hm
+ * is written to this parameter. The caller should use it to actually insert
+ * the value
  * @return If the key already exists, then nothing is copied into the hm
  * and 0 is returned. If the key is successfully inserted, 1
  * is returned. If insertion failed, -1 is returned.
  */
 VH_PUBLIC_API int
-hm_insert_new(struct hm* hm, const void* key, const void* value);
-
-VH_PUBLIC_API void*
-hm_insert_or_get(struct hm* hm, const void* key, const void* value);
+hm_insert(struct hm* hm, const void* key, void** value);
 
 VH_PUBLIC_API void*
 hm_erase(struct hm* hm, const void* key);
+
+VH_PUBLIC_API void
+hm_clear(struct hm* hm);
 
 VH_PUBLIC_API void*
 hm_find(const struct hm* hm, const void* key);

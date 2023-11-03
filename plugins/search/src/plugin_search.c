@@ -7,6 +7,7 @@
 #include "search/parser.h"
 
 #include "vh/frame_data.h"
+#include "vh/hm.h"
 #include "vh/log.h"
 #include "vh/mem.h"
 #include "vh/plugin.h"
@@ -23,10 +24,18 @@ struct plugin_ctx
     struct db* db;
     Ihandle* error_label;
     struct parser parser;
+    struct hm original_labels;
     struct asm_dfa asm_dfa;
     struct frame_data fdata;
     struct search_index index;
 };
+
+static hash32
+hash_hash40(const void* data, int len)
+{
+    const uint64_t* motion = data;
+    return *motion & 0xFFFFFFFF;
+}
 
 static struct plugin_ctx*
 create(struct db_interface* dbi, struct db* db)
@@ -36,6 +45,7 @@ create(struct db_interface* dbi, struct db* db)
     ctx->dbi = dbi;
     ctx->db = db;
     parser_init(&ctx->parser);
+    hm_init_with_options(&ctx->original_labels, sizeof(uint64_t), sizeof(char*), VH_HM_MIN_CAPACITY, hash_hash40, (hm_compare_func)memcmp);
     search_index_init(&ctx->index);
     return ctx;
 }
@@ -49,6 +59,10 @@ destroy(struct plugin_ctx* ctx)
         frame_data_free(&ctx->fdata);
 
     search_index_deinit(&ctx->index);
+    HM_FOR_EACH(&ctx->original_labels, uint64_t, char*, motion, label)
+        mem_free(*label);
+    HM_END_EACH
+    hm_deinit(&ctx->original_labels);
     parser_deinit(&ctx->parser);
     mem_free(ctx);
 }
@@ -98,21 +112,25 @@ on_search_text_changed(Ihandle* search_box, int c, char* new_value)
         ctx->asm_dfa.next_state = NULL;
         ctx->asm_dfa.size = 0;
     }
+    HM_FOR_EACH(&ctx->original_labels, uint64_t, char*, motion, label)
+        mem_free(*label);
+    HM_END_EACH
+    hm_clear(&ctx->original_labels);
 
     if (parser_parse(&ctx->parser, new_value, &ast) < 0)
         goto parse_failed;
-    if (ast_post_patch_motions(&ast, ctx->dbi, ctx->db, fighter_id) < 0)
+    ast_export_dot(&ast, "ast.dot");
+    if (ast_post_patch_motions(&ast, ctx->dbi, ctx->db, fighter_id, &ctx->original_labels) < 0)
         goto patch_motions_failed;
+    ast_export_dot(&ast, "ast.dot");
     if (nfa_compile(&nfa, &ast))
         goto nfa_compile_failed;
+    nfa_export_dot(&nfa, "nfa.dot");
     if (dfa_compile(&dfa, &nfa))
         goto dfa_compile_failed;
+    dfa_export_dot(&dfa, "dfa.dot");
     if (asm_compile(&ctx->asm_dfa, &dfa))
         goto assemble_failed;
-
-    ast_export_dot(&ast, "ast.dot");
-    nfa_export_dot(&nfa, "nfa.dot");
-    dfa_export_dot(&dfa, "dfa.dot");
 
     run_search(ctx);
 

@@ -29,7 +29,7 @@
             }                                                               \
         } while (0)
 
-    static void yyerror(yyscan_t scanner, union ast_node** root, const char* msg, ...);
+    static void yyerror(yyscan_t scanner, struct ast* ast, const char* msg, ...);
 }
 
 %define api.pure full

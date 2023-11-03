@@ -458,6 +458,26 @@ nfa_compile_recurse(
             node->matcher = match_motion(motion);
         } break;
 
+        case AST_MOTION: {
+            struct nfa_node* node;
+            struct fragment* f;
+            int in, out;
+
+            f = vec_emplace(fstack);
+            if (f == NULL)
+                return -1;
+            fragment_init(f);
+
+            in = vec_count(nodes);
+            out = vec_count(nodes);
+            if (vec_push(&f->in, &in) < 0) return -1;
+            if (vec_push(&f->out, &out) < 0) return -1;
+
+            if ((node = vec_emplace(nodes)) == NULL) return -1;
+            vec_init(&node->next, sizeof(int));
+            node->matcher = match_motion(ast->nodes[n].motion.motion);
+        } break;
+
         case AST_CONTEXT_QUALIFIER: {
 
         } break;

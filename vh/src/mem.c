@@ -62,7 +62,7 @@ void*
 mem_alloc(mem_size size)
 {
     void* p = NULL;
-    report_info_t info = {0};
+    report_info_t* info;
 
     /* allocate */
     p = malloc(size);
@@ -82,15 +82,18 @@ mem_alloc(mem_size size)
             g_bytes_in_use_peak = g_bytes_in_use;
 
         g_ignore_hm_malloc = 1;
+            /* insert info into hashmap */
+            if (hm_insert(&g_report, &p, &info) != 1)
+                fprintf(stderr, "[memory] Hashmap insert failed\n");
 
             /* record the location and size of the allocation */
-            info.location = p;
-            info.size = size;
+            info->location = p;
+            info->size = size;
 
             /* if (enabled, generate a backtrace so we know where memory leaks
              * occurred */
 #   if defined(VH_MEM_BACKTRACE)
-            if (!(info.backtrace = backtrace_get(&info.backtrace_size)))
+            if (!(info->backtrace = backtrace_get(&info->backtrace_size)))
                 fprintf(stderr, "[memory] WARNING: Failed to generate backtrace\n");
             if (size == 0)
             {
@@ -98,18 +101,14 @@ mem_alloc(mem_size size)
                 fprintf(stderr, "[memory] WARNING: malloc(0)");
                 fprintf(stderr, "  -----------------------------------------\n");
                 fprintf(stderr, "  backtrace to where malloc() was called:\n");
-                for (i = 0; i < info.backtrace_size; ++i)
-                    fprintf(stderr, "      %s\n", info.backtrace[i]);
+                for (i = 0; i < info->backtrace_size; ++i)
+                    fprintf(stderr, "      %s\n", info->backtrace[i]);
                 fprintf(stderr, "  -----------------------------------------\n");
             }
 #   else
             if (size == 0)
                 fprintf(stderr, "[memory] WARNING: malloc(0)");
 #   endif
-
-            /* insert info into hashmap */
-            if (hm_insert_new(&g_report, &p, &info) != 1)
-                fprintf(stderr, "[memory] Hashmap insert failed\n");
 
         g_ignore_hm_malloc = 0;
     }
@@ -175,28 +174,27 @@ mem_realloc(void* p, mem_size new_size)
      */
     if (!g_ignore_hm_malloc)
     {
-        report_info_t info = {0};
+        report_info_t* info;
 
         g_bytes_in_use += new_size;
         if (g_bytes_in_use_peak < g_bytes_in_use)
             g_bytes_in_use_peak = g_bytes_in_use;
 
         g_ignore_hm_malloc = 1;
+            /* insert info into hashmap */
+            if (hm_insert(&g_report, &p, &info) != 1)
+                fprintf(stderr, "[memory] Hashmap insert failed\n");
 
             /* record the location and size of the allocation */
-            info.location = p;
-            info.size = new_size;
+            info->location = p;
+            info->size = new_size;
 
             /* if (enabled, generate a backtrace so we know where memory leaks
             * occurred */
 #   if defined(VH_MEM_BACKTRACE)
-            if (!(info.backtrace = backtrace_get(&info.backtrace_size)))
+            if (!(info->backtrace = backtrace_get(&info->backtrace_size)))
                 fprintf(stderr, "[memory] WARNING: Failed to generate backtrace\n");
 #   endif
-
-            /* insert info into hashmap */
-            if (hm_insert_new(&g_report, &p, &info) != 1)
-                fprintf(stderr, "[memory] Hashmap insert failed\n");
 
         g_ignore_hm_malloc = 0;
     }
@@ -336,8 +334,6 @@ mem_mutated_string_and_hex_dump(const void* data, mem_size length_in_bytes)
 {
     char* dump;
     mem_idx i;
-
-    return;
 
     /* allocate and copy data into new buffer */
     if (!(dump = malloc(length_in_bytes + 1)))
