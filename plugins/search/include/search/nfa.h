@@ -22,7 +22,7 @@ struct nfa_graph
 };
 
 int
-nfa_compile(struct nfa_graph* nfa, struct ast* ast);
+nfa_compile(struct nfa_graph* nfa, const struct ast* ast);
 
 void
 nfa_deinit(struct nfa_graph* nfa);

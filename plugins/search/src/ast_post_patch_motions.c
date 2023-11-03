@@ -22,6 +22,13 @@ ast_post_patch_motions(struct ast* ast, struct db_interface* dbi, struct db* db,
 
         label = cstr_view(ast->nodes[n].labels.label);
 
+        /*
+         * If the label is a user-defined label, for example "nair", then it
+         * may map to more than 1 motion value, for example, "attack_air_n"
+         * and "landing_air_n". The label node in the AST is replaced with
+         * "(attack_air_n|landing_air_n)+". This will match all patterns of
+         * "nair".
+         */
         vec_clear(&motions);
         switch (dbi->motion_label.to_motions(db, fighter_id, label, &motions))
         {
@@ -37,12 +44,17 @@ ast_post_patch_motions(struct ast* ast, struct db_interface* dbi, struct db* db,
                     if (root < 0)
                         goto error;
 
-                    if (hm_insert(original_labels, motion, (void**)&plabel) < 0)
-                        goto error;
-                    *plabel = mem_alloc(label.len + 1);
-                    if (*plabel == NULL)
-                        goto error;
-                    strcpy(*plabel, label.data);
+                    switch (hm_insert(original_labels, motion, (void**)&plabel))
+                    {
+                        case 1:
+                            *plabel = mem_alloc(label.len + 1);
+                            if (*plabel == NULL)
+                                goto error;
+                            strcpy(*plabel, label.data);
+                            break;
+                        case 0: break;
+                        default: goto error;
+                    }
                 VEC_END_EACH
 
                 if (root >= 0)

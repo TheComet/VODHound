@@ -415,10 +415,11 @@ dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
     vec_init(&dfa->tf, sizeof(struct matcher));
     for (n = 1; n != nfa->node_count; ++n)
     {
-        int col = hm_count(&nfa_unique_tf);
-        switch (hm_insert_new(&nfa_unique_tf, &nfa->nodes[n].matcher, &col))
+        int* hm_value;
+        switch (hm_insert(&nfa_unique_tf, &nfa->nodes[n].matcher, &hm_value))
         {
             case 1:
+                *hm_value = hm_count(&nfa_unique_tf) - 1;
                 if (vec_push(&dfa->tf, &nfa->nodes[n].matcher) < 0)
                     goto build_tfs_failed;
                 break;
@@ -548,15 +549,17 @@ wildcard_swapped_to_end:;
     for (r = 0; r != dfa_tt_intermediate.rows; ++r)
         for (c = 0; c != dfa_tt_intermediate.cols; ++c)
         {
+            int* hm_value;
             /* Go through current row and see if any sets of NFA states form
              * a new DFA state. If yes, we append a new row to the table with
              * that new state and initialize all cells. */
             struct vec* dfa_state = table_get(&dfa_tt_intermediate, r, c);
             if (vec_count(dfa_state) == 0)
                 continue;
-            switch (hm_insert_new(&dfa_unique_states, dfa_state, &dfa_tt_intermediate.rows))
+            switch (hm_insert(&dfa_unique_states, dfa_state, &hm_value))
             {
                 case 1: {
+                    *hm_value = dfa_tt_intermediate.rows;
                     if (table_add_row(&dfa_tt_intermediate) < 0)
                         goto build_dfa_table_failed;
                     for (n = 0; n != dfa_tt_intermediate.cols; ++n)

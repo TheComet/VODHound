@@ -67,12 +67,64 @@ destroy(struct plugin_ctx* ctx)
     mem_free(ctx);
 }
 
+struct sequence
+{
+    struct vec idxs;
+};
+
+void
+sequence_init(struct sequence* seq)
+{
+    vec_init(&seq->idxs, sizeof(int));
+}
+void
+sequence_deinit(struct sequence* seq)
+{
+    vec_deinit(&seq->idxs);
+}
+void
+sequence_clear(struct sequence* seq)
+{
+    vec_clear(&seq->idxs);
+}
+#define seq_first(s) (*(int*)vec_front(&(s)->idxs))
+#define SEQ_FOR_EACH(s, var) VEC_FOR_EACH(&(s)->idxs, int, seq_##var) int var = *seq_##var;
+#define SEQ_END_EACH VEC_END_EACH
+
+int
+sequence_from_search_result(struct sequence* seq, const union symbol* symbols, struct range range, const struct hm* labels)
+{
+    int s1, s2;
+    for (s1 = range.start; s1 < range.end; ++s1)
+    {
+        uint64_t motion1 = ((uint64_t)symbols[s1].motionh << 32) | symbols[s1].motionl;
+        char** label1 = hm_find(labels, &motion1);
+
+        if (vec_push(&seq->idxs, &s1) < 0)
+            return -1;
+
+        if (label1)
+            for (s2 = s1 + 1; s2 < range.end; ++s2)
+            {
+                uint64_t motion2 = ((uint64_t)symbols[s1].motionh << 32) | symbols[s1].motionl;
+                char** label2 = hm_find(labels, &motion2);
+                if (label2 && strcmp(*label1, *label2) == 0)
+                    s1++;
+                else
+                    break;
+            }
+    }
+
+    return 0;
+}
+
 static void
 run_search(struct plugin_ctx* ctx)
 {
     const union symbol* symbols;
     struct range window;
     struct vec results;
+    struct sequence seq;
     if (ctx->asm_dfa.size == 0)
         return;
     if (!search_index_has_data(&ctx->index))
@@ -83,16 +135,39 @@ run_search(struct plugin_ctx* ctx)
     window = search_index_range(&ctx->index, 0);
     asm_find_all(&results, &ctx->asm_dfa, symbols, window);
 
-    fprintf(stderr, "Matches (window %d-%d):\n", window.start, window.end);
+    fprintf(stderr, "Matching Ranges (window %d-%d):\n", window.start, window.end);
     VEC_FOR_EACH(&results, struct range, r)
         fprintf(stderr, "  %d-%d: ", r->start, r->end);
         for (int i = r->start; i != r->end; ++i)
         {
+            uint64_t motion = ((uint64_t)symbols[i].motionh << 32) | symbols[i].motionl;
+            char** label = hm_find(&ctx->original_labels, &motion);
             if (i != r->start) fprintf(stderr, " -> ");
-            fprintf(stderr, "0x%" PRIx64, ((uint64_t)symbols[i].motionh << 32) | symbols[i].motionl);
+            if (label)
+                fprintf(stderr, "%s", *label);
+            else
+                fprintf(stderr, "0x%" PRIx64, motion);
         }
         fprintf(stderr, "\n");
     VEC_END_EACH
+
+    sequence_init(&seq);
+    fprintf(stderr, "Matching Sequences (window %d-%d):\n", window.start, window.end);
+    VEC_FOR_EACH(&results, struct range, r)
+        fprintf(stderr, "  %d-%d: ", r->start, r->end);
+        sequence_from_search_result(&seq, symbols, *r, &ctx->original_labels);
+        SEQ_FOR_EACH(&seq, i)
+            uint64_t motion = ((uint64_t)symbols[i].motionh << 32) | symbols[i].motionl;
+            char** label = hm_find(&ctx->original_labels, &motion);
+            if (i != seq_first(&seq)) fprintf(stderr, " -> ");
+            if (label)
+                fprintf(stderr, "%s", *label);
+            else
+                fprintf(stderr, "0x%" PRIx64, motion);
+        SEQ_END_EACH
+        fprintf(stderr, "\n");
+    VEC_END_EACH
+    sequence_deinit(&seq);
 
     vec_deinit(&results);
 }
