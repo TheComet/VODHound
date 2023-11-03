@@ -258,7 +258,7 @@ import_reframed_metadata_1_7(
         winner_team_id,
         stage_id,
         time_started,
-        time_ended);
+        (int)(time_ended - time_started));
     if (game_id < 0)
         return -1;
 

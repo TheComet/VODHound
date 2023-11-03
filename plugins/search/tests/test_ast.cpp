@@ -10,11 +10,10 @@ using namespace testing;
 TEST(NAME, parse)
 {
     struct parser parser;
-    union ast_node* ast;
+    struct ast ast;
 
     parser_init(&parser);
-    ast = parser_parse(&parser, "0xa->0xb*|0xc+");
-    ASSERT_THAT(ast, NotNull());
-    ast_destroy_recurse(ast);
+    ASSERT_THAT(parser_parse(&parser, "0xa->0xb*|0xc+", &ast), Eq(0));
+    ast_deinit(&ast);
     parser_deinit(&parser);
 }

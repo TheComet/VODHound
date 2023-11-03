@@ -6,11 +6,13 @@
 #include "search/nfa.h"
 #include "search/parser.h"
 
+#include "vh/db_ops.h"
 #include "vh/frame_data.h"
 #include "vh/hm.h"
 #include "vh/log.h"
 #include "vh/mem.h"
 #include "vh/plugin.h"
+#include "vh/str.h"
 
 #include "iup.h"
 
@@ -106,7 +108,7 @@ sequence_from_search_result(struct sequence* seq, const union symbol* symbols, s
         if (label1)
             for (s2 = s1 + 1; s2 < range.end; ++s2)
             {
-                uint64_t motion2 = ((uint64_t)symbols[s1].motionh << 32) | symbols[s1].motionl;
+                uint64_t motion2 = ((uint64_t)symbols[s2].motionh << 32) | symbols[s2].motionl;
                 char** label2 = hm_find(labels, &motion2);
                 if (label2 && strcmp(*label1, *label2) == 0)
                     s1++;
@@ -125,12 +127,17 @@ run_search(struct plugin_ctx* ctx)
     struct range window;
     struct vec results;
     struct sequence seq;
+    struct str label;
+    int fighter_id = 8;
+
     if (ctx->asm_dfa.size == 0)
         return;
     if (!search_index_has_data(&ctx->index))
         return;
 
     vec_init(&results, sizeof(struct range));
+    str_init(&label);
+
     symbols = search_index_symbols(&ctx->index, 0);
     window = search_index_range(&ctx->index, 0);
     asm_find_all(&results, &ctx->asm_dfa, symbols, window);
@@ -141,12 +148,11 @@ run_search(struct plugin_ctx* ctx)
         for (int i = r->start; i != r->end; ++i)
         {
             uint64_t motion = ((uint64_t)symbols[i].motionh << 32) | symbols[i].motionl;
-            char** label = hm_find(&ctx->original_labels, &motion);
+            str_clear(&label);
+            if (ctx->dbi->motion_label.to_notation_label(ctx->db, fighter_id, motion, &label) < 1)
+                str_fmt(&label, "0x%" PRIx64, motion);
             if (i != r->start) fprintf(stderr, " -> ");
-            if (label)
-                fprintf(stderr, "%s", *label);
-            else
-                fprintf(stderr, "0x%" PRIx64, motion);
+            fprintf(stderr, "%.*s", label.len, label.data);
         }
         fprintf(stderr, "\n");
     VEC_END_EACH
@@ -158,17 +164,18 @@ run_search(struct plugin_ctx* ctx)
         sequence_from_search_result(&seq, symbols, *r, &ctx->original_labels);
         SEQ_FOR_EACH(&seq, i)
             uint64_t motion = ((uint64_t)symbols[i].motionh << 32) | symbols[i].motionl;
-            char** label = hm_find(&ctx->original_labels, &motion);
+        str_clear(&label);
+        if (ctx->dbi->motion_label.to_notation_label(ctx->db, fighter_id, motion, &label) < 1)
+            str_fmt(&label, "0x%" PRIx64, motion);
             if (i != seq_first(&seq)) fprintf(stderr, " -> ");
-            if (label)
-                fprintf(stderr, "%s", *label);
-            else
-                fprintf(stderr, "0x%" PRIx64, motion);
+            fprintf(stderr, "%.*s", label.len, label.data);
         SEQ_END_EACH
         fprintf(stderr, "\n");
+        sequence_clear(&seq);
     VEC_END_EACH
     sequence_deinit(&seq);
 
+    str_deinit(&label);
     vec_deinit(&results);
 }
 

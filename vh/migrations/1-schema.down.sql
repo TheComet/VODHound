@@ -27,9 +27,15 @@ DROP TABLE IF EXISTS motion_usages;
 DROP TABLE IF EXISTS motion_categories;
 DROP TABLE IF EXISTS motion_layers;
 DROP TABLE IF EXISTS motion_groups;
-DROP INDEX IF EXISTS id_motions;
 DROP TABLE IF EXISTS motions;
 DROP TABLE IF EXISTS status_enums;
 DROP TABLE IF EXISTS hit_status_enums;
 DROP TABLE IF EXISTS fighters;
 DROP TABLE IF EXISTS stages;
+
+DROP INDEX IF EXISTS idx_motion_labels;
+DROP INDEX IF EXISTS idx_status_enums;
+DROP INDEX IF EXISTS idx_motions_hash40;
+DROP INDEX IF EXISTS idx_stages_id;
+DROP INDEX IF EXISTS idx_fighters_id;
+

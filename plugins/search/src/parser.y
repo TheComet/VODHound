@@ -11,6 +11,7 @@
     #define YYLTYPE_IS_DECLARED
 
     typedef void* yyscan_t;
+    struct ast;
 }
 %code top
 {

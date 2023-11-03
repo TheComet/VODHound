@@ -41,6 +41,16 @@ public:
     }
 };
 
+static int
+hm_insert_value(struct hm* hm, const char* key, const float* value)
+{
+    float* hm_value;
+    int ret = hm_insert(hm, key, (void**)&hm_value);
+    if (ret == 1)
+        *hm_value = *value;
+    return ret;
+}
+
 TEST_F(NAME, construct_sane_values)
 {
     EXPECT_THAT(hm->table_count, Eq(VH_HM_MIN_CAPACITY));
@@ -54,14 +64,14 @@ TEST_F(NAME, insert_increases_slots_used)
 {
     float f = 5.6f;
     EXPECT_THAT(hm_count(hm), Eq(0));
-    EXPECT_THAT(hm_insert_new(hm, KEY1, &f), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY1, &f), Eq(1));
     EXPECT_THAT(hm_count(hm), Eq(1));
 }
 
 TEST_F(NAME, erase_decreases_slots_used)
 {
     float f = 5.6f;
-    EXPECT_THAT(hm_insert_new(hm, KEY1, &f), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY1, &f), Eq(1));
     EXPECT_THAT(hm_count(hm), Eq(1));
     EXPECT_THAT(hm_erase(hm, KEY1), NotNull());
     EXPECT_THAT(hm_count(hm), Eq(0));
@@ -70,22 +80,22 @@ TEST_F(NAME, erase_decreases_slots_used)
 TEST_F(NAME, erase_returns_value)
 {
     float f = 5.6f;
-    EXPECT_THAT(hm_insert_new(hm, KEY1, &f), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY1, &f), Eq(1));
     EXPECT_THAT(*(float*)hm_erase(hm, KEY1), FloatEq(f));
 }
 
 TEST_F(NAME, insert_same_key_twice_only_works_once)
 {
     float f = 5.6f;
-    EXPECT_THAT(hm_insert_new(hm, KEY1, &f), Eq(1));
-    EXPECT_THAT(hm_insert_new(hm, KEY1, &f), Eq(0));
+    EXPECT_THAT(hm_insert_value(hm, KEY1, &f), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY1, &f), Eq(0));
     EXPECT_THAT(hm_count(hm), Eq(1));
 }
 
 TEST_F(NAME, erasing_same_key_twice_only_works_once)
 {
     float f = 5.6f;
-    EXPECT_THAT(hm_insert_new(hm, KEY1, &f), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY1, &f), Eq(1));
     EXPECT_THAT(hm_erase(hm, KEY1), NotNull());
     EXPECT_THAT(hm_erase(hm, KEY1), IsNull());
     EXPECT_THAT(hm_count(hm), Eq(0));
@@ -96,8 +106,8 @@ TEST_F(NAME, hash_collision_insert_ab_erase_ba)
     float a = 5.6f;
     float b = 3.4f;
     hm->hash = shitty_hash;
-    EXPECT_THAT(hm_insert_new(hm, KEY1, &a), Eq(1));
-    EXPECT_THAT(hm_insert_new(hm, KEY2, &b), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY1, &a), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY2, &b), Eq(1));
     EXPECT_THAT(hm_count(hm), Eq(2));
     EXPECT_THAT(*(float*)hm_erase(hm, KEY2), FloatEq(b));
     EXPECT_THAT(*(float*)hm_erase(hm, KEY1), FloatEq(a));
@@ -109,8 +119,8 @@ TEST_F(NAME, hash_collision_insert_ab_erase_ab)
     float a = 5.6f;
     float b = 3.4f;
     hm->hash = shitty_hash;
-    EXPECT_THAT(hm_insert_new(hm, KEY1, &a), Eq(1));
-    EXPECT_THAT(hm_insert_new(hm, KEY2, &b), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY1, &a), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY2, &b), Eq(1));
     EXPECT_THAT(hm_count(hm), Eq(2));
     EXPECT_THAT(*(float*)hm_erase(hm, KEY1), FloatEq(a));
     EXPECT_THAT(*(float*)hm_erase(hm, KEY2), FloatEq(b));
@@ -122,8 +132,8 @@ TEST_F(NAME, hash_collision_insert_ab_find_ab)
     float a = 5.6f;
     float b = 3.4f;
     hm->hash = shitty_hash;
-    EXPECT_THAT(hm_insert_new(hm, KEY1, &a), Eq(1));
-    EXPECT_THAT(hm_insert_new(hm, KEY2, &b), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY1, &a), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY2, &b), Eq(1));
     EXPECT_THAT(*(float*)hm_find(hm, KEY1), FloatEq(a));
     EXPECT_THAT(*(float*)hm_find(hm, KEY2), FloatEq(b));
 }
@@ -133,8 +143,8 @@ TEST_F(NAME, hash_collision_insert_ab_erase_a_find_b)
     float a = 5.6f;
     float b = 3.4f;
     hm->hash = shitty_hash;
-    EXPECT_THAT(hm_insert_new(hm, KEY1, &a), Eq(1));
-    EXPECT_THAT(hm_insert_new(hm, KEY2, &b), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY1, &a), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY2, &b), Eq(1));
     EXPECT_THAT(hm_erase(hm, KEY1), NotNull());
     EXPECT_THAT(*(float*)hm_find(hm, KEY2), FloatEq(b));
 }
@@ -144,8 +154,8 @@ TEST_F(NAME, hash_collision_insert_ab_erase_b_find_a)
     float a = 5.6f;
     float b = 3.4f;
     hm->hash = shitty_hash;
-    EXPECT_THAT(hm_insert_new(hm, KEY1, &a), Eq(1));
-    EXPECT_THAT(hm_insert_new(hm, KEY2, &b), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY1, &a), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY2, &b), Eq(1));
     EXPECT_THAT(hm_erase(hm, KEY2), NotNull());
     EXPECT_THAT(*(float*)hm_find(hm, KEY1), FloatEq(a));
 }
@@ -155,12 +165,12 @@ TEST_F(NAME, hash_collision_insert_at_tombstone)
     float a = 5.6f;
     float b = 3.4f;
     hm->hash = shitty_hash;
-    EXPECT_THAT(hm_insert_new(hm, KEY1, &a), Eq(1));
-    EXPECT_THAT(hm_insert_new(hm, KEY2, &b), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY1, &a), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY2, &b), Eq(1));
     EXPECT_THAT(hm_count(hm), Eq(2));
     EXPECT_THAT(*(float*)hm_erase(hm, KEY1), FloatEq(a)); // creates tombstone
     EXPECT_THAT(hm_count(hm), Eq(1));
-    EXPECT_THAT(hm_insert_new(hm, KEY1, &a), Eq(1)); // should insert at tombstone location
+    EXPECT_THAT(hm_insert_value(hm, KEY1, &a), Eq(1)); // should insert at tombstone location
     EXPECT_THAT(*(float*)hm_erase(hm, KEY1), FloatEq(a));
     EXPECT_THAT(*(float*)hm_erase(hm, KEY2), FloatEq(b));
     EXPECT_THAT(hm_count(hm), Eq(0));
@@ -171,12 +181,12 @@ TEST_F(NAME, hash_collision_insert_at_tombstone_with_existing_key)
     float a = 5.6f;
     float b = 3.4f;
     hm->hash = shitty_hash;
-    EXPECT_THAT(hm_insert_new(hm, KEY1, &a), Eq(1));
-    EXPECT_THAT(hm_insert_new(hm, KEY2, &b), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY1, &a), Eq(1));
+    EXPECT_THAT(hm_insert_value(hm, KEY2, &b), Eq(1));
     EXPECT_THAT(hm_count(hm), Eq(2));
     EXPECT_THAT(*(float*)hm_erase(hm, KEY1), FloatEq(a)); // creates tombstone
     EXPECT_THAT(hm_count(hm), Eq(1));
-    EXPECT_THAT(hm_insert_new(hm, KEY2, &a), Eq(0));
+    EXPECT_THAT(hm_insert_value(hm, KEY2, &a), Eq(0));
     EXPECT_THAT(hm_count(hm), Eq(1));
 }
 
@@ -186,13 +196,13 @@ TEST_F(NAME, remove_probing_sequence_scenario_1)
     float b = 3.4f;
     // Creates a tombstone in the probing sequence to KEY2
     hm->hash = shitty_hash;
-    hm_insert_new(hm, KEY1, &a);
-    hm_insert_new(hm, KEY2, &b);
+    hm_insert_value(hm, KEY1, &a);
+    hm_insert_value(hm, KEY2, &b);
     hm_erase(hm, KEY1);
 
     // Inserts a different hash into where the tombstone is
     hm->hash = collide_with_shitty_hash;
-    hm_insert_new(hm, KEY1, &a);
+    hm_insert_value(hm, KEY1, &a);
     hm->hash = shitty_hash;
 
     // Does this cut off access to KEY2?
@@ -212,13 +222,13 @@ TEST_F(NAME, remove_probing_sequence_scenario_2)
 
     // First key is inserted directly, next 2 collide and are inserted along the probing sequence
     hm->hash = shitty_hash;
-    hm_insert_new(hm, KEY1, &a);
-    hm_insert_new(hm, KEY2, &b);
-    hm_insert_new(hm, KEY3, &c);
+    hm_insert_value(hm, KEY1, &a);
+    hm_insert_value(hm, KEY2, &b);
+    hm_insert_value(hm, KEY3, &c);
 
     // Insert a key with a different hash that collides with the slot of KEY3
     hm->hash = collide_with_shitty_hash_second_probe;
-    hm_insert_new(hm, KEY4, &d);
+    hm_insert_value(hm, KEY4, &d);
 
     // Erase KEY3
     hm->hash = shitty_hash;  // restore shitty hash
@@ -239,7 +249,7 @@ TEST_F(NAME, rehash_test)
     {
         memset(key, 0, sizeof key);
         sprintf(key, "%d", i);
-        ASSERT_THAT(hm_insert_new(hm, key, &value), Eq(1));
+        ASSERT_THAT(hm_insert_value(hm, key, &value), Eq(1));
     }
 
     value = 0;

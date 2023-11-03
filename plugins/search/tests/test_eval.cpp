@@ -22,25 +22,24 @@ protected:
     void run(const char* text, const std::vector<union symbol>& symbols)
     {
         struct parser parser;
-        union ast_node* ast;
+        struct ast ast;
         struct nfa_graph nfa;
         struct dfa_table dfa;
         struct asm_dfa asm_dfa;
 
         ASSERT_THAT(parser_init(&parser), Eq(0));
-        ast = parser_parse(&parser, text);
+        ASSERT_THAT(parser_parse(&parser, text, &ast), Eq(0));
         parser_deinit(&parser);
-        ASSERT_THAT(ast, NotNull());
 
-        ASSERT_THAT(nfa_compile(&nfa, ast), Eq(0));
-        ast_destroy_recurse(ast);
+        ASSERT_THAT(nfa_compile(&nfa, &ast), Eq(0));
+        ast_deinit(&ast);
 
         ASSERT_THAT(dfa_compile(&dfa, &nfa), Eq(0));
         nfa_deinit(&nfa);
 
         ASSERT_THAT(asm_compile(&asm_dfa, &dfa), Eq(0));
 
-        struct range window = { 0, symbols.size() };
+        struct range window = { 0, (int)symbols.size() };
         struct range dfa_res = dfa_find_first(&dfa, symbols.data(), window);
         struct range asm_res = asm_find_first(&asm_dfa, symbols.data(), window);
         dfa_deinit(&dfa);

@@ -23,6 +23,7 @@
     X(motion_label, add_or_get_usage)       \
     X(motion_label, add_or_get_label)       \
     X(motion_label, to_motions)             \
+    X(motion_label, to_notation_label)      \
                                             \
     X(fighter, add)                         \
     X(fighter, get_name)                    \
@@ -91,7 +92,6 @@ struct db
     STMT_LIST
 #undef X
     sqlite3_stmt* motion_layer_add_or_get_layer_priority;
-    sqlite3_stmt* motion_label_to_motions_priority_range;
 };
 
 static int
@@ -282,7 +282,6 @@ open_and_prepare(const char* uri, int reinit_db)
 static void
 close_db(struct db* ctx)
 {
-    sqlite3_finalize(ctx->motion_label_to_motions_priority_range);
     sqlite3_finalize(ctx->motion_layer_add_or_get_layer_priority);
 #define X(group, stmt) sqlite3_finalize(ctx->group##_##stmt);
     STMT_LIST
@@ -546,69 +545,82 @@ done:
 static int
 motion_label_to_motions(struct db* ctx, int fighter_id, struct str_view label, struct vec* motions_out)
 {
-    int ret, priority, min_priority = -1, max_priority = -1;
-    if (ctx->motion_label_to_motions_priority_range == NULL)
-        if (prepare_stmt_wrapper(ctx->db, &ctx->motion_label_to_motions_priority_range, cstr_view(
-            "SELECT MIN(priority), MAX(priority) FROM motion_layers;")) != 0)
-            return -1;
-
+    int ret;
     if (ctx->motion_label_to_motions == NULL)
         if (prepare_stmt_wrapper(ctx->db, &ctx->motion_label_to_motions, cstr_view(
             "SELECT hash40 FROM motion_labels "
-            "JOIN motion_layers ON motion_layers.id=motion_labels.layer_id "
-            "WHERE fighter_id=? AND priority=? AND label=?;")) != 0)
+            "WHERE fighter_id=? AND label=?;")) != 0)
             return -1;
 
-    /* Find min and max values of layer priorities */
-next_step_priority_range:
-    ret = sqlite3_step(ctx->motion_label_to_motions_priority_range);
-    switch (ret)
-    {
-        case SQLITE_ROW:
-            min_priority = sqlite3_column_int(ctx->motion_label_to_motions_priority_range, 0);
-            max_priority = sqlite3_column_int(ctx->motion_label_to_motions_priority_range, 1);
-            break;
-        case SQLITE_BUSY: goto next_step_priority_range;
-        case SQLITE_DONE: break;
-    }
-    sqlite3_reset(ctx->motion_label_to_motions_priority_range);
-    if (min_priority < 0 || max_priority < 0)
-        goto error;
-
     if ((ret = sqlite3_bind_int(ctx->motion_label_to_motions, 1, fighter_id)) != SQLITE_OK ||
-        (ret = sqlite3_bind_text(ctx->motion_label_to_motions, 3, label.data, label.len, SQLITE_STATIC)) != SQLITE_OK)
+        (ret = sqlite3_bind_text(ctx->motion_label_to_motions, 2, label.data, label.len, SQLITE_STATIC)) != SQLITE_OK)
     {
         goto error;
     }
-
-    /* Search for labels starting on highest priority */
-    for (priority = min_priority; priority <= max_priority; ++priority)
-    {
-        if ((ret = sqlite3_bind_int(ctx->motion_label_to_motions, 2, priority)) != SQLITE_OK)
-            goto error;
 
 next_step:
-        ret = sqlite3_step(ctx->motion_label_to_motions);
-        switch (ret)
-        {
-            case SQLITE_ROW : {
-                uint64_t motion = (uint64_t)sqlite3_column_int64(ctx->motion_label_to_motions, 0);
-                if (vec_push(motions_out, &motion) < 0)
-                    goto error;
-            }
-            case SQLITE_BUSY : goto next_step;
-            case SQLITE_DONE : break;
-            default          : goto error;
+    ret = sqlite3_step(ctx->motion_label_to_motions);
+    switch (ret)
+    {
+        case SQLITE_ROW : {
+            uint64_t motion = (uint64_t)sqlite3_column_int64(ctx->motion_label_to_motions, 0);
+            if (vec_push(motions_out, &motion) < 0)
+                goto error;
         }
-        sqlite3_reset(ctx->motion_label_to_motions);
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE :
+            sqlite3_reset(ctx->motion_label_to_motions);
+            if (vec_count(motions_out) > 0)
+                return 1;
+            return 0;
     }
-
-    if (vec_count(motions_out) > 0)
-        return 1;
-    return 0;
-
 error:
     log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    sqlite3_reset(ctx->motion_label_to_motions);
+    return -1;
+}
+
+static int
+motion_label_to_notation_label(struct db* ctx, int fighter_id, uint64_t motion, struct str* label)
+{
+    int ret;
+    if (ctx->motion_label_to_notation_label == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->motion_label_to_notation_label, cstr_view(
+            "SELECT label FROM motion_labels "
+            "JOIN motion_layers ON motion_layers.id=motion_labels.layer_id "
+            "WHERE hash40=? AND fighter_id=? AND usage_id=? AND label <> '' "
+            "ORDER BY priority ASC "
+            "LIMIT 1;")) != 0)
+            return -1;
+
+    if ((ret = sqlite3_bind_int64(ctx->motion_label_to_notation_label, 1, (int64_t)motion)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->motion_label_to_notation_label, 2, fighter_id)) != SQLITE_OK ||
+        (ret = sqlite3_bind_int(ctx->motion_label_to_notation_label, 3, 1 /* XXX: hard coded for now */)) != SQLITE_OK)
+    {
+        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        return -1;
+    }
+
+next_step:
+    ret = sqlite3_step(ctx->motion_label_to_notation_label);
+    switch (ret)
+    {
+        case SQLITE_ROW  :
+            if (str_set(label, cstr_view((const char*)sqlite3_column_text(ctx->motion_label_to_notation_label, 0))) < 0)
+            {
+                sqlite3_reset(ctx->motion_label_to_notation_label);
+                return -1;
+            }
+            sqlite3_reset(ctx->motion_label_to_notation_label);
+            return 1;
+        case SQLITE_BUSY : goto next_step;
+        case SQLITE_DONE :
+            sqlite3_reset(ctx->motion_label_to_notation_label);
+            return 0;
+    }
+
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    sqlite3_reset(ctx->motion_label_to_notation_label);
     return -1;
 }
 
@@ -1243,12 +1255,12 @@ game_add_or_get(
         int winner_team_id,
         int stage_id,
         uint64_t time_started,
-        uint64_t time_ended)
+        int duration)
 {
     int ret, game_id = -1;
     if (ctx->game_add_or_get == NULL)
         if (prepare_stmt_wrapper(ctx->db, &ctx->game_add_or_get, cstr_view(
-            "INSERT INTO games (round_type_id, round_number, set_format_id, winner_team_id, stage_id, time_started, time_ended) VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "INSERT INTO games (round_type_id, round_number, set_format_id, winner_team_id, stage_id, time_started, duration) VALUES (?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT DO UPDATE SET stage_id=excluded.stage_id RETURNING id;")) != 0)
             return -1;
 
@@ -1278,7 +1290,7 @@ game_add_or_get(
         (ret = sqlite3_bind_int(ctx->game_add_or_get, 4, winner_team_id)) != SQLITE_OK ||
         (ret = sqlite3_bind_int(ctx->game_add_or_get, 5, stage_id)) != SQLITE_OK ||
         (ret = sqlite3_bind_int64(ctx->game_add_or_get, 6, (int64_t)time_started)) != SQLITE_OK ||
-        (ret = sqlite3_bind_int64(ctx->game_add_or_get, 7, (int64_t)time_ended)) != SQLITE_OK)
+        (ret = sqlite3_bind_int(ctx->game_add_or_get, 7, duration)) != SQLITE_OK)
     {
         goto error;
     }
@@ -1306,7 +1318,7 @@ game_query(struct db* ctx,
     int (*on_game)(
         int game_id,
         uint64_t time_started,
-        uint64_t time_ended,
+        int duration,
         const char* tournament,
         const char* event,
         const char* stage,
@@ -1329,7 +1341,7 @@ game_query(struct db* ctx,
             "    SELECT "
             "        games.id, "
             "        time_started, "
-            "        time_ended, "
+            "        duration, "
             "        round_type_id, "
             "        round_number, "
             "        set_format_id, "
@@ -1354,7 +1366,7 @@ game_query(struct db* ctx,
             "SELECT "
             "    grouped_games.id, "
             "    time_started, "
-            "    time_ended, "
+            "    duration, "
             "    IFNULL(tournaments.name, '') tourney, "
             "    IFNULL(event_types.name, '') event, "
             "    IFNULL(stages.name, grouped_games.stage_id) stage, "
@@ -1388,7 +1400,7 @@ next_step:
             ret = on_game(
                 sqlite3_column_int(ctx->game_query, 0),
                 (uint64_t)sqlite3_column_int64(ctx->game_query, 1),
-                (uint64_t)sqlite3_column_int64(ctx->game_query, 2),
+                sqlite3_column_int(ctx->game_query, 2),
                 (const char*)sqlite3_column_text(ctx->game_query, 3),
                 (const char*)sqlite3_column_text(ctx->game_query, 4),
                 (const char*)sqlite3_column_text(ctx->game_query, 5),

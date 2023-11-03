@@ -272,7 +272,7 @@ hm_insert(struct hm* hm, const void* key, void** value)
          * original keys), then we can conclude this key was already inserted */
         if (SLOT(hm, pos) == hash)
         {
-            if (hm->compare(KEY(hm, pos), key, (size_t)hm->key_size) == 0)
+            if (hm->compare(KEY(hm, pos), key, (int)hm->key_size) == 0)
             {
                 *value = VALUE(hm, pos);
                 return 0;
@@ -323,7 +323,7 @@ hm_erase(struct hm* hm, const void* key)
     {
         if (SLOT(hm, pos) == hash)
         {
-            if (hm->compare(KEY(hm, pos), key, (size_t)hm->key_size) == 0)
+            if (hm->compare(KEY(hm, pos), key, (int)hm->key_size) == 0)
                 break;
         }
         else
@@ -348,7 +348,7 @@ hm_erase(struct hm* hm, const void* key)
 }
 
 /* ------------------------------------------------------------------------- */
-void 
+void
 hm_clear(struct hm* hm)
 {
     /* Re-Initialize hash table -- NOTE: Only works if HM_VH_HM_SLOT_UNUSED is 0 */
@@ -367,7 +367,7 @@ hm_find(const struct hm* hm, const void* key)
     {
         if (SLOT(hm, pos) == hash)
         {
-            if (hm->compare(KEY(hm, pos), key, (size_t)hm->key_size) == 0)
+            if (hm->compare(KEY(hm, pos), key, (int)hm->key_size) == 0)
                 break;
         }
         else
@@ -397,7 +397,7 @@ hm_exists(const struct hm* hm, const void* key)
     {
         if (SLOT(hm, pos) == hash)
         {
-            if (hm->compare(KEY(hm, pos), key, (size_t)hm->key_size) == 0)
+            if (hm->compare(KEY(hm, pos), key, (int)hm->key_size) == 0)
                 return 1;
         }
         else

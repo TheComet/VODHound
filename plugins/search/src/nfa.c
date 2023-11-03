@@ -51,7 +51,7 @@ node_duplicate(int node_idx, struct vec* nodes, struct hm* index_map)
     struct nfa_node* new_node;
     int* hm_value;
 
-    switch (hm_insert(index_map, &node_idx, &hm_value))
+    switch (hm_insert(index_map, &node_idx, (void**)&hm_value))
     {
         case 0: return 0;
         case 1: *hm_value = vec_count(nodes); break;

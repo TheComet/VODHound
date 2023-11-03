@@ -6,7 +6,6 @@ CREATE TABLE IF NOT EXISTS stages (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL
 );
-
 -- Maps SSBU fighter IDs (starting at index 0) to readable fighter names.
 -- The fighter names are user-defined, and are used in queries and are
 -- displayed in the UI. The table is initialized from a list of predefined
@@ -15,7 +14,6 @@ CREATE TABLE IF NOT EXISTS fighters (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL
 );
-
 -- Maps "hit status" values to their symbol name (extracted from the game).
 -- Example:
 CREATE TABLE IF NOT EXISTS hit_status_enums (
@@ -34,7 +32,6 @@ CREATE TABLE IF NOT EXISTS motions (
     string TEXT NOT NULL,
     UNIQUE(string)
 );
-CREATE UNIQUE INDEX id_motions ON motions (hash40);
 CREATE TABLE IF NOT EXISTS motion_groups (
     id INTEGER PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
@@ -184,7 +181,7 @@ CREATE TABLE IF NOT EXISTS games (
     winner_team_id INTEGER NOT NULL,
     stage_id INTEGER NOT NULL,
     time_started TIMESTAMP NOT NULL,
-    time_ended TIMESTAMP NOT NULL,
+    duration INTEGER NOT NULL,
     FOREIGN KEY (round_type_id) REFERENCES round_types(id),
     FOREIGN KEY (set_format_id) REFERENCES set_formats(id),
     FOREIGN KEY (winner_team_id) REFERENCES teams(id),
@@ -262,4 +259,10 @@ CREATE TABLE IF NOT EXISTS stream_recording_sources (
     path TEXT NOT NULL,
     frame_offset INTEGER NOT NULL
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fighters_id ON fighters(id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_stages_id ON stages(id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_motions_hash40 ON motions (hash40);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_status_enums ON status_enums(id, fighter_id);
+CREATE INDEX IF NOT EXISTS idx_games_timestamps ON games(time_started);
+CREATE INDEX IF NOT EXISTS idx_motion_labels ON motion_labels(hash40, fighter_id);
 

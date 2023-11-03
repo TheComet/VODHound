@@ -33,6 +33,7 @@ struct db_interface
         int (*add_or_get_usage)(struct db* db, struct str_view name);
         int (*add_or_get_label)(struct db* db, uint64_t motion, int fighter_id, int layer_id, int category_id, int usage_id, struct str_view name);
         int (*to_motions)(struct db* db, int fighter_id, struct str_view label, struct vec* motions_out);
+        int (*to_notation_label)(struct db* db, int fighter_id, uint64_t motion, struct str* label);
     } motion_label;
 
     struct {
@@ -96,12 +97,12 @@ struct db_interface
     } person;
 
     struct game {
-        int (*add_or_get)(struct db* db, int round_type_id, int round_number, int set_format_id, int winner_team_id, int stage_id, uint64_t time_started, uint64_t time_ended);
+        int (*add_or_get)(struct db* db, int round_type_id, int round_number, int set_format_id, int winner_team_id, int stage_id, uint64_t time_started, int duration);
         int (*query)(struct db* db,
             int (*on_game)(
                 int game_id,
                 uint64_t time_started,
-                uint64_t time_ended,
+                int duration,
                 const char* tournament,
                 const char* event,
                 const char* stage,

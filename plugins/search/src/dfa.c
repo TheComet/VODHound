@@ -416,7 +416,7 @@ dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
     for (n = 1; n != nfa->node_count; ++n)
     {
         int* hm_value;
-        switch (hm_insert(&nfa_unique_tf, &nfa->nodes[n].matcher, &hm_value))
+        switch (hm_insert(&nfa_unique_tf, &nfa->nodes[n].matcher, (void**)&hm_value))
         {
             case 1:
                 *hm_value = hm_count(&nfa_unique_tf) - 1;
@@ -556,7 +556,7 @@ wildcard_swapped_to_end:;
             struct vec* dfa_state = table_get(&dfa_tt_intermediate, r, c);
             if (vec_count(dfa_state) == 0)
                 continue;
-            switch (hm_insert(&dfa_unique_states, dfa_state, &hm_value))
+            switch (hm_insert(&dfa_unique_states, dfa_state, (void**)&hm_value))
             {
                 case 1: {
                     *hm_value = dfa_tt_intermediate.rows;

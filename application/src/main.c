@@ -275,7 +275,7 @@ struct replay_browser_game_query_ctx
 static int on_replay_browser_game_query(
     int game_id,
     uint64_t time_started,
-    uint64_t time_ended,
+    int duration,
     const char* tournament,
     const char* event,
     const char* stage,

@@ -83,7 +83,7 @@ mem_alloc(mem_size size)
 
         g_ignore_hm_malloc = 1;
             /* insert info into hashmap */
-            if (hm_insert(&g_report, &p, &info) != 1)
+            if (hm_insert(&g_report, &p, (void**)&info) != 1)
                 fprintf(stderr, "[memory] Hashmap insert failed\n");
 
             /* record the location and size of the allocation */
@@ -182,7 +182,7 @@ mem_realloc(void* p, mem_size new_size)
 
         g_ignore_hm_malloc = 1;
             /* insert info into hashmap */
-            if (hm_insert(&g_report, &p, &info) != 1)
+            if (hm_insert(&g_report, &p, (void**)&info) != 1)
                 fprintf(stderr, "[memory] Hashmap insert failed\n");
 
             /* record the location and size of the allocation */
@@ -302,7 +302,7 @@ mem_threadlocal_deinit(void)
         hm_deinit(&g_report);
     g_ignore_hm_malloc = 0;
 
-    return leaks;
+    return (mem_size)leaks;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -322,9 +322,9 @@ mem_get_memory_usage(void)
 #else /* VH_MEM_DEBUGGING */
 
 int mem_threadlocal_init(void)         { return 0; }
-uintptr_t mem_threadlocal_deinit(void) { return 0; }
-uintptr_t mem_get_num_allocs(void)     { return 0; }
-uintptr_t mem_get_memory_usage(void)   { return 0; }
+mem_size mem_threadlocal_deinit(void)  { return 0; }
+mem_size mem_get_num_allocs(void)      { return 0; }
+mem_size mem_get_memory_usage(void)    { return 0; }
 
 #endif /* VH_MEM_DEBUGGING */
 
