@@ -274,13 +274,34 @@ strlist_clear(struct strlist* sl)
 #define strlist_count(sl) ((sl)->count)
 
 static inline struct str_view
-strlist_get(const struct strlist* sl, strlist_idx i)
+strlist_to_view(const struct strlist* sl, struct strlist_str str)
+{
+    struct str_view view;
+    view.len = str.len;
+    view.data = &sl->data[str.off];
+    return view;
+}
+
+static inline struct str_view
+strlist_view(const struct strlist* sl, strlist_idx i)
 {
     struct str_view view;
     strlist_idx off = sl->strs[-i].off;
     view.len = sl->strs[-i].len;
     view.data = &sl->data[off];
     return view;
+}
+
+static inline struct strlist_str
+strlist_get(const struct strlist* sl, strlist_idx i)
+{
+    return sl->strs[-i];
+}
+
+static inline struct strlist_str
+strlist_last(const struct strlist* sl)
+{
+    return sl->strs[1-(strlist_idx)sl->count];
 }
 
 C_END

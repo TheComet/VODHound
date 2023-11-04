@@ -431,12 +431,12 @@ nfa_compile_recurse(
             uint64_t motion;
             struct nfa_node* node;
             struct fragment* f;
-            const char* label;
+            struct str_view label;
             int in, out;
 
             /* Assume label is a hex value */
-            label = ast->nodes[n].labels.label;
-            if (label[0] != '0' || label[1] != 'x' || str_hex_to_u64(cstr_view(label), &motion) != 0)
+            label = strlist_to_view(&ast->labels, ast->nodes[n].labels.label);
+            if (!cstr_starts_with(label, "0x") || str_hex_to_u64(label, &motion) != 0)
             {
                 /* Assume label is a hash40 string */
                 motion = hash40_str(label);
@@ -478,7 +478,7 @@ nfa_compile_recurse(
         } break;
 
         case AST_CONTEXT_QUALIFIER: {
-
+            if (nfa_compile_recurse(ast, ast->nodes[n].union_.child, nodes, fstack, qstack) < 0)return -1;
         } break;
     }
 

@@ -121,7 +121,7 @@ strlist_deinit(struct strlist* sl)
 int
 strlist_add(struct strlist* sl, struct str_view str)
 {
-    strlist_size insert_size = sizeof(struct strlist_str) + str.len;
+    strlist_size insert_size = sizeof(struct strlist_str) + (strlist_size)str.len;
     while (sl->m_used + insert_size + 1 > sl->m_alloc)
     {
         strlist_size old_alloc = sl->m_alloc;
@@ -140,11 +140,11 @@ strlist_add(struct strlist* sl, struct str_view str)
         sl->strs = (struct strlist_str*)(sl->data + sl->m_alloc) - 1;
     }
 
-    strlist_size insert_offset = sl->count ?
+    strlist_idx insert_offset = sl->count ?
         sl->strs[-(strlist_idx)sl->count + 1].off + sl->strs[-(strlist_idx)sl->count + 1].len :
         0;
 
-    memcpy(sl->data + insert_offset, str.data, str.len);
+    memcpy(sl->data + insert_offset, str.data, (size_t)str.len);
     sl->strs[-(strlist_idx)sl->count].off = insert_offset;
     sl->strs[-(strlist_idx)sl->count].len = str.len;
     sl->count++;

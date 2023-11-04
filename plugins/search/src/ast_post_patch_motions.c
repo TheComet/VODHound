@@ -1,4 +1,5 @@
 #include "search/ast.h"
+#include "search/ast_ops.h"
 #include "search/ast_post.h"
 
 #include "vh/db_ops.h"
@@ -8,7 +9,7 @@
 #include "vh/vec.h"
 
 int
-ast_post_patch_motions(struct ast* ast, struct db_interface* dbi, struct db* db, int fighter_id, struct hm* original_labels)
+ast_post_patch_motions(struct ast* ast, struct db_interface* dbi, struct db* db, int fighter_id)
 {
     int n, root;
     struct vec motions;
@@ -16,11 +17,11 @@ ast_post_patch_motions(struct ast* ast, struct db_interface* dbi, struct db* db,
 
     for (n = 0; n != ast->node_count; ++n)
     {
-        struct str_view label;
+        struct str_view label_view;
         if (ast->nodes[n].info.type != AST_LABEL)
             continue;
 
-        label = cstr_view(ast->nodes[n].labels.label);
+        label_view = strlist_to_view(&ast->labels, ast->nodes[n].labels.label);
 
         /*
          * If the label is a user-defined label, for example "nair", then it
@@ -30,12 +31,12 @@ ast_post_patch_motions(struct ast* ast, struct db_interface* dbi, struct db* db,
          * "nair".
          */
         vec_clear(&motions);
-        switch (dbi->motion_label.to_motions(db, fighter_id, label, &motions))
+        switch (dbi->motion_label.to_motions(db, fighter_id, label_view, &motions))
         {
             case 1  :
                 root = -1;
                 VEC_FOR_EACH(&motions, uint64_t, motion)
-                    char** plabel;
+                    struct strlist_str* hm_label;
                     int node = ast_motion(ast, *motion, (struct YYLTYPE*)&ast->nodes[n].info.loc);
                     if (node < 0)
                         goto error;
@@ -44,14 +45,9 @@ ast_post_patch_motions(struct ast* ast, struct db_interface* dbi, struct db* db,
                     if (root < 0)
                         goto error;
 
-                    switch (hm_insert(original_labels, motion, (void**)&plabel))
+                    switch (hm_insert(&ast->merged_labels, motion, (void**)&hm_label))
                     {
-                        case 1:
-                            *plabel = mem_alloc(label.len + 1);
-                            if (*plabel == NULL)
-                                goto error;
-                            strcpy(*plabel, label.data);
-                            break;
+                        case 1: *hm_label = ast->nodes[n].labels.label;
                         case 0: break;
                         default: goto error;
                     }

@@ -2,6 +2,7 @@
 #include "search/parser.y.h"
 #include "search/scanner.lex.h"
 #include "search/ast.h"
+#include "search/ast_post.h"
 
 int
 parser_init(struct parser* parser)
@@ -26,6 +27,17 @@ parser_deinit(struct parser* parser)
     yylex_destroy(parser->scanner);
 }
 
+static int
+ast_post(struct ast* ast)
+{
+    if (ast_post_sh(ast) < 0) return -1;
+    if (ast_post_fh(ast) < 0) return -1;
+    if (ast_post_dj(ast) < 0) return -1;
+    if (ast_post_fs(ast) < 0) return -1;
+    if (ast_post_idj(ast) < 0) return -1;
+    return 0;
+}
+
 int
 parser_parse(struct parser* parser, const char* text, struct ast* ast)
 {
@@ -35,8 +47,7 @@ parser_parse(struct parser* parser, const char* text, struct ast* ast)
     YYSTYPE pushed_value;
     YYLTYPE location = {1, 1};
 
-    if (ast_init(ast) < 0)
-        goto init_ast_failed;
+    yyset_extra(&ast->labels, parser->scanner);
 
     buffer = yy_scan_string(text, parser->scanner);
     if (buffer == NULL)
@@ -51,10 +62,11 @@ parser_parse(struct parser* parser, const char* text, struct ast* ast)
     if (parse_result == 0)
     {
         yy_delete_buffer(buffer, parser->scanner);
-        return 0;
+        yyset_extra(NULL, parser->scanner);
+        return ast_post(ast);
     }
 
 parse_failed       : yy_delete_buffer(buffer, parser->scanner);
-init_buffer_failed : ast_deinit(ast);
-init_ast_failed    : return -1;
+init_buffer_failed : yyset_extra(NULL, parser->scanner);
+    return -1;
 }

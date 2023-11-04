@@ -10,7 +10,7 @@ hash40_buf(const void* buf, int len)
 }
 
 uint64_t
-hash40_str(const char* str)
+hash40_cstr(const char* str)
 {
     return hash40_buf((const void*)str, (int)strlen(str));
 }

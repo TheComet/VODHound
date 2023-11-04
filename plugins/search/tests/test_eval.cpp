@@ -57,7 +57,7 @@ static union symbol
 h40_to_symbol(const char* str)
 {
     union symbol s;
-    uint64_t h40 = hash40_str(str);
+    uint64_t h40 = hash40_cstr(str);
     s.u64 = 0;
     s.motionl = h40 & 0xFFFFFFFF;
     s.motionh = h40 >> 32UL;

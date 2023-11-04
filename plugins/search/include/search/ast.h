@@ -5,6 +5,8 @@ extern "C" {
 #endif
 
 #include <stdint.h>
+#include "vh/hm.h"
+#include "vh/str.h"
 
 enum ast_type
 {
@@ -19,13 +21,23 @@ enum ast_type
 };
 
 enum ast_ctx_flags {
-    AST_CTX_OS      = 0x0001,
-    AST_CTX_OOS     = 0x0002,
-    AST_CTX_HIT     = 0x0004,
-    AST_CTX_WHIFF   = 0x0008,
-    AST_CTX_RISING  = 0x0010,
-    AST_CTX_FALLING = 0x0020,
-    AST_CTX_IDJ     = 0x0040
+    AST_CTX_OS      = (1 << 0),
+    AST_CTX_OOS     = (1 << 1),
+    AST_CTX_HIT     = (1 << 2),
+    AST_CTX_WHIFF   = (1 << 3),
+    AST_CTX_CLANK   = (1 << 4),
+    AST_CTX_TRADE   = (1 << 5),
+    AST_CTX_KILL    = (1 << 6),
+    AST_CTX_DIE     = (1 << 7),
+    AST_CTX_BURY    = (1 << 8),
+    AST_CTX_BURIED  = (1 << 9),
+    AST_CTX_RISING  = (1 << 10),
+    AST_CTX_FALLING = (1 << 11),
+    AST_CTX_SH      = (1 << 12),
+    AST_CTX_FH      = (1 << 13),
+    AST_CTX_DJ      = (1 << 14),
+    AST_CTX_FS      = (1 << 15),
+    AST_CTX_IDJ     = (1 << 16)
 };
 
 struct ast_location
@@ -77,15 +89,14 @@ union ast_node
         struct info info;
         int child;
         int _padding;
-        uint8_t flags;
+        enum ast_ctx_flags flags;
     } context_qualifier;
 
     struct labels {
         struct info info;
         int _padding1;
         int _padding2;
-        char* label;
-        char* opponent_label;
+        struct strlist_str label;
     } labels;
 
     struct motion {
@@ -99,29 +110,26 @@ union ast_node
 struct ast
 {
     union ast_node* nodes;
+    struct strlist labels;
+    struct hm merged_labels;
     int node_count;
     int node_capacity;
 };
 
 struct YYLTYPE;
 
-int ast_statement(struct ast* ast, int child, int next, struct YYLTYPE* loc);
-int ast_repetition(struct ast* ast, int child, int min_reps, int max_reps, struct YYLTYPE* loc);
-int ast_union(struct ast* ast, int child, int next, struct YYLTYPE* loc);
-int ast_inversion(struct ast* ast, int child, struct YYLTYPE* loc);
-int ast_wildcard(struct ast* ast, struct YYLTYPE* loc);
-int ast_context_qualifier(struct ast* ast, int child, uint8_t flags, struct YYLTYPE* loc);
-int ast_label_steal(struct ast* ast, char* label, struct YYLTYPE* loc);
-int ast_labels_steal(struct ast* ast, char* label, char* opponent_label, struct YYLTYPE* loc);
-int ast_motion(struct ast* ast, uint64_t motion, struct YYLTYPE* loc);
-
-void ast_set_root(struct ast* ast, int node);
-void ast_swap_nodes(struct ast* ast, int n1, int n2);
-void ast_collapse_into(struct ast* ast, int node, int target);
-
 int ast_init(struct ast* ast);
 void ast_deinit(struct ast* ast);
-void ast_deinit_node(struct ast* ast, int node);
+void ast_clear(struct ast* ast);
+
+int ast_statement(struct ast* ast, int child, int next, const struct YYLTYPE* loc);
+int ast_repetition(struct ast* ast, int child, int min_reps, int max_reps, const struct YYLTYPE* loc);
+int ast_union(struct ast* ast, int child, int next, const struct YYLTYPE* loc);
+int ast_inversion(struct ast* ast, int child, const struct YYLTYPE* loc);
+int ast_wildcard(struct ast* ast, const struct YYLTYPE* loc);
+int ast_label(struct ast* ast, struct strlist_str label, const struct YYLTYPE* loc);
+int ast_motion(struct ast* ast, uint64_t motion, const struct YYLTYPE* loc);
+int ast_context_qualifier(struct ast* ast, int child, enum ast_ctx_flags flags, const struct YYLTYPE* loc);
 
 int ast_export_dot(const struct ast* ast, const char* file_name);
 

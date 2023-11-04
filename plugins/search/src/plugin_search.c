@@ -26,18 +26,11 @@ struct plugin_ctx
     struct db* db;
     Ihandle* error_label;
     struct parser parser;
-    struct hm original_labels;
+    struct ast ast;
     struct asm_dfa asm_dfa;
     struct frame_data fdata;
     struct search_index index;
 };
-
-static hash32
-hash_hash40(const void* data, int len)
-{
-    const uint64_t* motion = data;
-    return *motion & 0xFFFFFFFF;
-}
 
 static struct plugin_ctx*
 create(struct db_interface* dbi, struct db* db)
@@ -47,7 +40,7 @@ create(struct db_interface* dbi, struct db* db)
     ctx->dbi = dbi;
     ctx->db = db;
     parser_init(&ctx->parser);
-    hm_init_with_options(&ctx->original_labels, sizeof(uint64_t), sizeof(char*), VH_HM_MIN_CAPACITY, hash_hash40, (hm_compare_func)memcmp);
+    ast_init(&ctx->ast);
     search_index_init(&ctx->index);
     return ctx;
 }
@@ -61,10 +54,7 @@ destroy(struct plugin_ctx* ctx)
         frame_data_free(&ctx->fdata);
 
     search_index_deinit(&ctx->index);
-    HM_FOR_EACH(&ctx->original_labels, uint64_t, char*, motion, label)
-        mem_free(*label);
-    HM_END_EACH
-    hm_deinit(&ctx->original_labels);
+    ast_deinit(&ctx->ast);
     parser_deinit(&ctx->parser);
     mem_free(ctx);
 }
@@ -94,13 +84,13 @@ sequence_clear(struct sequence* seq)
 #define SEQ_END_EACH VEC_END_EACH
 
 int
-sequence_from_search_result(struct sequence* seq, const union symbol* symbols, struct range range, const struct hm* labels)
+sequence_from_search_result(struct sequence* seq, const union symbol* symbols, struct range range, const struct ast* ast)
 {
     int s1, s2;
     for (s1 = range.start; s1 < range.end; ++s1)
     {
         uint64_t motion1 = ((uint64_t)symbols[s1].motionh << 32) | symbols[s1].motionl;
-        char** label1 = hm_find(labels, &motion1);
+        struct strlist_str* label1 = hm_find(&ast->merged_labels, &motion1);
 
         if (vec_push(&seq->idxs, &s1) < 0)
             return -1;
@@ -109,8 +99,10 @@ sequence_from_search_result(struct sequence* seq, const union symbol* symbols, s
             for (s2 = s1 + 1; s2 < range.end; ++s2)
             {
                 uint64_t motion2 = ((uint64_t)symbols[s2].motionh << 32) | symbols[s2].motionl;
-                char** label2 = hm_find(labels, &motion2);
-                if (label2 && strcmp(*label1, *label2) == 0)
+                struct strlist_str* label2 = hm_find(&ast->merged_labels, &motion2);
+                if (label2 && str_equal(
+                        strlist_to_view(&ast->labels, *label1),
+                        strlist_to_view(&ast->labels, *label2)))
                     s1++;
                 else
                     break;
@@ -161,7 +153,7 @@ run_search(struct plugin_ctx* ctx)
     fprintf(stderr, "Matching Sequences (window %d-%d):\n", window.start, window.end);
     VEC_FOR_EACH(&results, struct range, r)
         fprintf(stderr, "  %d-%d: ", r->start, r->end);
-        sequence_from_search_result(&seq, symbols, *r, &ctx->original_labels);
+        sequence_from_search_result(&seq, symbols, *r, &ctx->ast);
         SEQ_FOR_EACH(&seq, i)
             uint64_t motion = ((uint64_t)symbols[i].motionh << 32) | symbols[i].motionl;
         str_clear(&label);
@@ -182,7 +174,6 @@ run_search(struct plugin_ctx* ctx)
 static int
 on_search_text_changed(Ihandle* search_box, int c, char* new_value)
 {
-    struct ast ast;
     struct nfa_graph nfa;
     struct dfa_table dfa;
     struct plugin_ctx* ctx = (struct plugin_ctx*)IupGetAttribute(search_box, "plugin_ctx");
@@ -194,18 +185,16 @@ on_search_text_changed(Ihandle* search_box, int c, char* new_value)
         ctx->asm_dfa.next_state = NULL;
         ctx->asm_dfa.size = 0;
     }
-    HM_FOR_EACH(&ctx->original_labels, uint64_t, char*, motion, label)
-        mem_free(*label);
-    HM_END_EACH
-    hm_clear(&ctx->original_labels);
 
-    if (parser_parse(&ctx->parser, new_value, &ast) < 0)
+    ast_clear(&ctx->ast);
+
+    if (parser_parse(&ctx->parser, new_value, &ctx->ast) < 0)
         goto parse_failed;
-    ast_export_dot(&ast, "ast.dot");
-    if (ast_post_patch_motions(&ast, ctx->dbi, ctx->db, fighter_id, &ctx->original_labels) < 0)
+    ast_export_dot(&ctx->ast, "ast.dot");
+    if (ast_post_patch_motions(&ctx->ast, ctx->dbi, ctx->db, fighter_id) < 0)
         goto patch_motions_failed;
-    ast_export_dot(&ast, "ast.dot");
-    if (nfa_compile(&nfa, &ast))
+    ast_export_dot(&ctx->ast, "ast.dot");
+    if (nfa_compile(&nfa, &ctx->ast))
         goto nfa_compile_failed;
     nfa_export_dot(&nfa, "nfa.dot");
     if (dfa_compile(&dfa, &nfa))
@@ -219,7 +208,7 @@ on_search_text_changed(Ihandle* search_box, int c, char* new_value)
     assemble_failed      : dfa_deinit(&dfa);
     dfa_compile_failed   : nfa_deinit(&nfa);
     nfa_compile_failed   :
-    patch_motions_failed : ast_deinit(&ast);
+    patch_motions_failed :
     parse_failed         : return IUP_DEFAULT;
 }
 

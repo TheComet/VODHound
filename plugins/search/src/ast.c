@@ -1,12 +1,68 @@
 #include "search/ast.h"
 #include "search/parser.y.h"
 
-#include "vh/hm.h"
 #include "vh/mem.h"
 
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 #include <inttypes.h>
+
+static hash32
+hash_hash40(const void* data, int len)
+{
+    const uint64_t* motion = data;
+    return *motion & 0xFFFFFFFF;
+}
+
+int ast_init(struct ast* ast)
+{
+    ast->node_count = 0;
+    ast->node_capacity = 32;
+
+    ast->nodes = mem_alloc(sizeof(union ast_node) * ast->node_capacity);
+    if (ast->nodes == NULL)
+        return -1;
+
+    if (hm_init_with_options(&ast->merged_labels,
+        sizeof(uint64_t), sizeof(struct strlist_str), VH_HM_MIN_CAPACITY,
+        hash_hash40, (hm_compare_func)memcmp) < 0)
+    {
+        mem_free(ast->nodes);
+        return -1;
+    }
+
+    strlist_init(&ast->labels);
+
+    return 0;
+}
+
+void ast_deinit(struct ast* ast)
+{
+    int n;
+
+    strlist_deinit(&ast->labels);
+
+    /* NOTE: hashmap references strings stored in AST nodes! If it ever changes
+     * to where the hashmap owns the strings, the following code needs to be
+     * uncommented.
+    HM_FOR_EACH(&ast->merged_labels, uint64_t, char*, motion, label)
+        mem_free(*label);
+    HM_END_EACH*/
+    hm_deinit(&ast->merged_labels);
+
+    mem_free(ast->nodes);
+}
+
+void ast_clear(struct ast* ast)
+{
+    int n;
+
+    strlist_clear(&ast->labels);
+    hm_clear(&ast->merged_labels);
+
+    ast->node_count = 0;
+}
 
 #define NEW_NODE(ast, node_type, loc)                               \
     ast->node_count++;                                              \
@@ -22,7 +78,7 @@
     ast->nodes[ast->node_count-1].base.left = -1;                   \
     ast->nodes[ast->node_count-1].base.right = -1;
 
-int ast_statement(struct ast* ast, int child, int next, struct YYLTYPE* loc)
+int ast_statement(struct ast* ast, int child, int next, const struct YYLTYPE* loc)
 {
     int n = NEW_NODE(ast, AST_STATEMENT, loc);
     ast->nodes[n].statement.child = child;
@@ -30,7 +86,7 @@ int ast_statement(struct ast* ast, int child, int next, struct YYLTYPE* loc)
     return n;
 }
 
-int ast_repetition(struct ast* ast, int child, int min_reps, int max_reps, struct YYLTYPE* loc)
+int ast_repetition(struct ast* ast, int child, int min_reps, int max_reps, const struct YYLTYPE* loc)
 {
     int n = NEW_NODE(ast, AST_REPETITION, loc);
     ast->nodes[n].repetition.child = child;
@@ -39,7 +95,7 @@ int ast_repetition(struct ast* ast, int child, int min_reps, int max_reps, struc
     return n;
 }
 
-int ast_union(struct ast* ast, int child, int next, struct YYLTYPE* loc)
+int ast_union(struct ast* ast, int child, int next, const struct YYLTYPE* loc)
 {
     int n = NEW_NODE(ast, AST_UNION, loc);
     ast->nodes[n].union_.child = child;
@@ -47,116 +103,39 @@ int ast_union(struct ast* ast, int child, int next, struct YYLTYPE* loc)
     return n;
 }
 
-int ast_inversion(struct ast* ast, int child, struct YYLTYPE* loc)
+int ast_inversion(struct ast* ast, int child, const struct YYLTYPE* loc)
 {
     int n = NEW_NODE(ast, AST_INVERSION, loc);
     ast->nodes[n].inversion.child = child;
     return n;
 }
 
-int ast_wildcard(struct ast* ast, struct YYLTYPE* loc)
+int ast_wildcard(struct ast* ast, const struct YYLTYPE* loc)
 {
     int n = NEW_NODE(ast, AST_WILDCARD, loc);
     return n;
 }
 
-int ast_context_qualifier(struct ast* ast, int child, uint8_t flags, struct YYLTYPE* loc)
-{
-    int n = NEW_NODE(ast, AST_CONTEXT_QUALIFIER, loc);
-    ast->nodes[n].context_qualifier.child = child;
-    ast->nodes[n].context_qualifier.flags = flags;
-    return n;
-}
-
-int ast_label_steal(struct ast* ast, char* label, struct YYLTYPE* loc)
+int ast_label(struct ast* ast, struct strlist_str label, const struct YYLTYPE* loc)
 {
     int n = NEW_NODE(ast, AST_LABEL, loc);
     ast->nodes[n].labels.label = label;
-    ast->nodes[n].labels.opponent_label = NULL;
     return n;
 }
 
-int ast_labels_steal(struct ast* ast, char* label, char* opponent_label, struct YYLTYPE* loc)
-{
-    int n = NEW_NODE(ast, AST_LABEL, loc);
-    ast->nodes[n].labels.label = label;
-    ast->nodes[n].labels.opponent_label = opponent_label;
-    return n;
-}
-
-int ast_motion(struct ast* ast, uint64_t motion, struct YYLTYPE* loc)
+int ast_motion(struct ast* ast, uint64_t motion, const struct YYLTYPE* loc)
 {
     int n = NEW_NODE(ast, AST_MOTION, loc);
     ast->nodes[n].motion.motion = motion;
     return n;
 }
 
-void ast_swap_nodes(struct ast* ast, int n1, int n2)
+int ast_context_qualifier(struct ast* ast, int child, enum ast_ctx_flags flags, const struct YYLTYPE* loc)
 {
-    int n;
-    union ast_node tmp;
-
-    for (n = 0; n != ast->node_count; ++n)
-    {
-        if (ast->nodes[n].base.left == n1) ast->nodes[n].base.left = -2;
-        if (ast->nodes[n].base.right == n1) ast->nodes[n].base.right = -2;
-    }
-    for (n = 0; n != ast->node_count; ++n)
-    {
-        if (ast->nodes[n].base.left == n2) ast->nodes[n].base.left = n1;
-        if (ast->nodes[n].base.right == n2) ast->nodes[n].base.right = n1;
-    }
-    for (n = 0; n != ast->node_count; ++n)
-    {
-        if (ast->nodes[n].base.left == -2) ast->nodes[n].base.left = n2;
-        if (ast->nodes[n].base.right == -2) ast->nodes[n].base.right = n2;
-    }
-
-    tmp = ast->nodes[n1];
-    ast->nodes[n1] = ast->nodes[n2];
-    ast->nodes[n2] = tmp;
-}
-
-void ast_collapse_into(struct ast* ast, int node, int target)
-{
-    ast->node_count--;
-    ast_swap_nodes(ast, node, ast->node_count);
-    ast_deinit_node(ast, target);
-    ast->nodes[target] = ast->nodes[ast->node_count];
-}
-
-void ast_set_root(struct ast* ast, int node)
-{
-    ast_swap_nodes(ast, 0, node);
-}
-
-int ast_init(struct ast* ast)
-{
-    ast->node_count = 0;
-    ast->node_capacity = 32;
-    ast->nodes = mem_alloc(sizeof(union ast_node) * ast->node_capacity);
-    if (ast->nodes == NULL)
-        return -1;
-    return 0;
-}
-
-void ast_deinit_node(struct ast* ast, int n)
-{
-    if (ast->nodes[n].info.type == AST_LABEL)
-    {
-        mem_free(ast->nodes[n].labels.label);
-        if (ast->nodes[n].labels.opponent_label)
-            mem_free(ast->nodes[n].labels.opponent_label);
-    }
-}
-
-void ast_deinit(struct ast* ast)
-{
-    int n;
-    for (n = 0; n != ast->node_count; ++n)
-        ast_deinit_node(ast, n);
-
-    mem_free(ast->nodes);
+    int n = NEW_NODE(ast, AST_CONTEXT_QUALIFIER, loc);
+    ast->nodes[n].context_qualifier.child = child;
+    ast->nodes[n].context_qualifier.flags = flags;
+    return n;
 }
 
 static void write_nodes(const struct ast* ast, int n, FILE* fp)
@@ -179,14 +158,11 @@ static void write_nodes(const struct ast* ast, int n, FILE* fp)
         case AST_WILDCARD:
             fprintf(fp, "  n%d [shape=\"rectangle\",label=\".\"];\n", n);
             break;
-        case AST_LABEL:
-            if (ast->nodes[n].labels.opponent_label)
-                fprintf(fp, "  n%d [shape=\"rectangle\",label=\"%s [%s]\"];\n",
-                    n, ast->nodes[n].labels.label, ast->nodes[n].labels.opponent_label);
-            else
-                fprintf(fp, "  n%d [shape=\"rectangle\",label=\"%s\"];\n",
-                    n, ast->nodes[n].labels.label);
-            break;
+        case AST_LABEL: {
+            struct str_view label = strlist_to_view(&ast->labels, ast->nodes[n].labels.label);
+            fprintf(fp, "  n%d [shape=\"rectangle\",label=\"%.*s\"];\n",
+                n, label.len, label.data);
+        } break;
         case AST_MOTION:
             fprintf(fp, "  n%d [shape=\"rectangle\",label=\"0x%" PRIx64 "\"];\n",
                 n, ast->nodes[n].motion.motion);
@@ -199,14 +175,32 @@ static void write_nodes(const struct ast* ast, int n, FILE* fp)
                     fprintf(fp, str);        \
                 need_pipe = 1;               \
             }
+            #define APPEND(name)             \
+                if (ast->nodes[n].context_qualifier.flags & AST_CTX_##name) \
+                    APPEND_WITH_PIPE(#name)
 
             int need_pipe = 0;
             fprintf(fp, "  n%d [shape=\"record\",label=\"", n);
-            if (ast->nodes[n].context_qualifier.flags & AST_CTX_OS) APPEND_WITH_PIPE("OS")
-            if (ast->nodes[n].context_qualifier.flags & AST_CTX_HIT) APPEND_WITH_PIPE("HIT")
-            if (ast->nodes[n].context_qualifier.flags & AST_CTX_WHIFF) APPEND_WITH_PIPE("WHIFF")
+            APPEND(OS)
+            APPEND(OOS)
+            APPEND(HIT)
+            APPEND(WHIFF)
+            APPEND(CLANK)
+            APPEND(TRADE)
+            APPEND(KILL)
+            APPEND(DIE)
+            APPEND(BURY)
+            APPEND(BURIED)
+            APPEND(RISING)
+            APPEND(FALLING)
+            APPEND(SH)
+            APPEND(FH)
+            APPEND(DJ)
+            APPEND(FS)
+            APPEND(IDJ)
             fprintf(fp, "\"];\n");
 
+            #undef APPEND
             #undef APPEND_WITH_PIPE
         } break;
     }
