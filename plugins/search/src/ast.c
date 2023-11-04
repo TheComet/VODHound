@@ -39,8 +39,6 @@ int ast_init(struct ast* ast)
 
 void ast_deinit(struct ast* ast)
 {
-    int n;
-
     strlist_deinit(&ast->labels);
 
     /* NOTE: hashmap references strings stored in AST nodes! If it ever changes

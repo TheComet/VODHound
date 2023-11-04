@@ -47,6 +47,8 @@ parser_parse(struct parser* parser, const char* text, struct ast* ast)
     YYSTYPE pushed_value;
     YYLTYPE location = {1, 1};
 
+    TOK_CLANK;
+
     yyset_extra(&ast->labels, parser->scanner);
 
     buffer = yy_scan_string(text, parser->scanner);

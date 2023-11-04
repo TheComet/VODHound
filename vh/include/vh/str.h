@@ -261,7 +261,7 @@ strlist_init(struct strlist* sl)
 VH_PUBLIC_API void
 strlist_deinit(struct strlist* sl);
 
-int
+VH_PUBLIC_API int
 strlist_add(struct strlist* sl, struct str_view str);
 
 static inline void

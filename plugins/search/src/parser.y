@@ -18,6 +18,7 @@
     #include "search/parser.y.h"
     #include "search/scanner.lex.h"
     #include "search/ast.h"
+    #include "search/ast_ops.h"
     #include "vh/mem.h"
     #include <stdarg.h>
 
@@ -70,13 +71,13 @@
 %token DJ
 %token FS
 %token IDJ
-%token TIMING
+%token<integer_value> TIMING
 %token<integer_value> NUM
 %token<integer_value> PERCENT
 %token<string_value> LABEL
 %token<motion_value> MOTION
 
-%type<node_value> stmts stmt rep rep_short rep_range rep_range_braces union inversion label
+%type<node_value> stmts stmt timing_stmt rep rep_short rep_range rep_range_braces union inversion label
 %type<ctx_flags> pre_ctx_flags post_ctx_flags
 
 %right '|'
@@ -99,6 +100,9 @@ stmt
   ;
 timing_stmt
   : TIMING '-' NUM ',' stmt union       { $$ = ast_timing(ast, $6, $5, $1, $3, &@$); }
+  | TIMING '-' NUM union                { $$ = ast_timing(ast, $4, -1, $1, $3, &@$); }
+  | TIMING ',' stmt union               { $$ = ast_timing(ast, $4, $3, $1, -1, &@$); }
+  | TIMING union                        { $$ = ast_timing(ast, $2, -1, $1, -1, &@$); }
   | union                               { $$ = $1; }
   ;
 union
@@ -146,7 +150,6 @@ pre_ctx_flags
   | IDJ                                 { $$ = AST_CTX_IDJ; }
   | FALLING                             { $$ = AST_CTX_FALLING; }
   | RISING                              { $$ = AST_CTX_RISING; }
-  | TIMING                              { }
   ;
 post_ctx_flags
   : post_ctx_flags '|' post_ctx_flags   { $$ = $1; $$ |= $3; }
