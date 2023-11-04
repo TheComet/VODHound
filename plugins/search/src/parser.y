@@ -18,7 +18,6 @@
     #include "search/parser.y.h"
     #include "search/scanner.lex.h"
     #include "search/ast.h"
-    #include "search/ast_ops.h"
     #include "vh/mem.h"
     #include <stdarg.h>
 
@@ -71,13 +70,14 @@
 %token DJ
 %token FS
 %token IDJ
+%token TIMING
 %token<integer_value> NUM
 %token<integer_value> PERCENT
 %token<string_value> LABEL
 %token<motion_value> MOTION
 
-%type<node_value> stmnts stmnt rep rep_short rep_range rep_range_braces union inversion label
-%type<ctx_flags> pre_qual post_qual
+%type<node_value> stmts stmt rep rep_short rep_range rep_range_braces union inversion label
+%type<ctx_flags> pre_ctx_flags post_ctx_flags
 
 %right '|'
 
@@ -85,74 +85,80 @@
 
 %%
 query
-  : stmnts                        { ast_set_root(ast, $1); }
+  : stmts                               { ast_set_root(ast, $1); }
   ;
-stmnts
-  : stmnts INTO stmnt             { $$ = ast_statement(ast, $1, $3, &@$); }
-  | stmnt                         { $$ = $1; }
+stmts
+  : stmts INTO stmt                     { $$ = ast_statement(ast, $1, $3, &@$); }
+  | stmt                                { $$ = $1; }
   ;
-stmnt
-  : pre_qual union post_qual      { $$ = ast_context_qualifier(ast, $2, $1 | $3, &@$); }
-  | union post_qual               { $$ = ast_context_qualifier(ast, $1, $2, &@$); }
-  | pre_qual union                { $$ = ast_context_qualifier(ast, $2, $1, &@$); }
-  | union                         { $$ = $1; }
+stmt
+  : pre_ctx_flags timing_stmt post_ctx_flags { $$ = ast_context_qualifier(ast, $2, $1 | $3, &@$); }
+  | union post_ctx_flags                     { $$ = ast_context_qualifier(ast, $1, $2, &@$); }
+  | pre_ctx_flags union                      { $$ = ast_context_qualifier(ast, $2, $1, &@$); }
+  | union                               { $$ = $1; }
+  ;
+timing_stmt
+  : TIMING '-' NUM ',' stmt union       { $$ = ast_timing(ast, $6, $5, $1, $3, &@$); }
+  | union                               { $$ = $1; }
   ;
 union
-  : union '|' union               { $$ = ast_union(ast, $1, $3, &@$); }
-  | rep                           { $$ = $1; }
+  : union '|' union                     { $$ = ast_union(ast, $1, $3, &@$); }
+  | rep                                 { $$ = $1; }
   ;
 rep
-  : rep_short                     { $$ = $1; }
-  | rep_range                     { $$ = $1; }
-  | rep_range_braces              { $$ = $1; }
-  | inversion                     { $$ = $1; }
+  : rep_short                           { $$ = $1; }
+  | rep_range                           { $$ = $1; }
+  | rep_range_braces                    { $$ = $1; }
+  | inversion                           { $$ = $1; }
   ;
 rep_short
-  : inversion '+'                 { $$ = ast_repetition(ast, $1, 1, -1, &@$); }
-  | inversion '*'                 { $$ = ast_repetition(ast, $1, 0, -1, &@$); }
-  | inversion '?'                 { $$ = ast_repetition(ast, $1, 0, 1, &@$); }
+  : inversion '+'                       { $$ = ast_repetition(ast, $1, 1, -1, &@$); }
+  | inversion '*'                       { $$ = ast_repetition(ast, $1, 0, -1, &@$); }
+  | inversion '?'                       { $$ = ast_repetition(ast, $1, 0, 1, &@$); }
   ;
 rep_range_braces
-  : '{' rep_range '}'             { $$ = $2; }
+  : '{' rep_range '}'                   { $$ = $2; }
   ;
 rep_range
-  : inversion NUM                 { $$ = ast_repetition(ast, $1, $2, $2, &@$); }
-  | inversion NUM ',' NUM         { $$ = ast_repetition(ast, $1, $2, $4, &@$); }
-  | inversion NUM ',' '+'         { $$ = ast_repetition(ast, $1, $2, -1, &@$); }
-  | inversion NUM ',' '*'         { $$ = ast_repetition(ast, $1, $2, -1, &@$); }
+  : inversion NUM                       { $$ = ast_repetition(ast, $1, $2, $2, &@$); }
+  | inversion NUM '-' NUM               { $$ = ast_repetition(ast, $1, $2, $4, &@$); }
+  | inversion NUM '-'                   { $$ = ast_repetition(ast, $1, $2, -1, &@$); }
+  | inversion NUM '-' '+'               { $$ = ast_repetition(ast, $1, $2, -1, &@$); }
+  | inversion NUM '-' '*'               { $$ = ast_repetition(ast, $1, $2, -1, &@$); }
   ;
 inversion
-  : '!' label                     { $$ = ast_inversion(ast, $2, &@$); }
-  | label                         { $$ = $1; }
-  | '.'                           { $$ = ast_wildcard(ast, &@$); }
-  | '(' stmnts ')'                { $$ = $2; }
+  : '!' label                           { $$ = ast_inversion(ast, $2, &@$); }
+  | label                               { $$ = $1; }
+  | '.'                                 { $$ = ast_wildcard(ast, &@$); }
+  | '(' stmts ')'                       { $$ = $2; }
   ;
 label
-  : LABEL                         { $$ = ast_label(ast, $1, &@$); }
-  | MOTION                        { $$ = ast_motion(ast, $1, &@$); }
+  : LABEL                               { $$ = ast_label(ast, $1, &@$); }
+  | MOTION                              { $$ = ast_motion(ast, $1, &@$); }
   ;
-pre_qual
-  : pre_qual '|' pre_qual         { $$ = $1; $$ |= $3; }
-/*  | '(' pre_qual ')'              { $$ = $2; }*/
-  | SH                            { $$ = AST_CTX_SH; }
-  | FH                            { $$ = AST_CTX_FH; }
-  | DJ                            { $$ = AST_CTX_DJ; }
-  | FS                            { $$ = AST_CTX_FS; }
-  | IDJ                           { $$ = AST_CTX_IDJ; }
-  | FALLING                       { $$ = AST_CTX_FALLING; }
-  | RISING                        { $$ = AST_CTX_RISING; }
+pre_ctx_flags
+  : pre_ctx_flags '|' pre_ctx_flags     { $$ = $1; $$ |= $3; }
+/*  | '(' pre_qual ')'                    { $$ = $2; }*/
+  | SH                                  { $$ = AST_CTX_SH; }
+  | FH                                  { $$ = AST_CTX_FH; }
+  | DJ                                  { $$ = AST_CTX_DJ; }
+  | FS                                  { $$ = AST_CTX_FS; }
+  | IDJ                                 { $$ = AST_CTX_IDJ; }
+  | FALLING                             { $$ = AST_CTX_FALLING; }
+  | RISING                              { $$ = AST_CTX_RISING; }
+  | TIMING                              { }
   ;
-post_qual
-  : post_qual '|' post_qual       { $$ = $1; $$ |= $3; }
-/*  | '(' post_qual ')'             { $$ = $2; }*/
-  | OS                            { $$ = AST_CTX_OS; }
-  | OOS                           { $$ = AST_CTX_OOS; }
-  | HIT                           { $$ = AST_CTX_HIT; }
-  | WHIFF                         { $$ = AST_CTX_WHIFF; }
-  | CLANK                         { $$ = AST_CTX_CLANK; }
-  | TRADE                         { $$ = AST_CTX_TRADE; }
-  | KILL                          { $$ = AST_CTX_KILL; }
-  | DIE                           { $$ = AST_CTX_DIE; }
+post_ctx_flags
+  : post_ctx_flags '|' post_ctx_flags   { $$ = $1; $$ |= $3; }
+/*  | '(' post_qual ')'                 { $$ = $2; }*/
+  | OS                                  { $$ = AST_CTX_OS; }
+  | OOS                                 { $$ = AST_CTX_OOS; }
+  | HIT                                 { $$ = AST_CTX_HIT; }
+  | WHIFF                               { $$ = AST_CTX_WHIFF; }
+  | CLANK                               { $$ = AST_CTX_CLANK; }
+  | TRADE                               { $$ = AST_CTX_TRADE; }
+  | KILL                                { $$ = AST_CTX_KILL; }
+  | DIE                                 { $$ = AST_CTX_DIE; }
   ;
 %%
 

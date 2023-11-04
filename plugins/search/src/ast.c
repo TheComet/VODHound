@@ -119,7 +119,7 @@ int ast_wildcard(struct ast* ast, const struct YYLTYPE* loc)
 int ast_label(struct ast* ast, struct strlist_str label, const struct YYLTYPE* loc)
 {
     int n = NEW_NODE(ast, AST_LABEL, loc);
-    ast->nodes[n].labels.label = label;
+    ast->nodes[n].label.label = label;
     return n;
 }
 
@@ -135,6 +135,18 @@ int ast_context_qualifier(struct ast* ast, int child, enum ast_ctx_flags flags, 
     int n = NEW_NODE(ast, AST_CONTEXT_QUALIFIER, loc);
     ast->nodes[n].context_qualifier.child = child;
     ast->nodes[n].context_qualifier.flags = flags;
+    return n;
+}
+
+
+int ast_timing(struct ast* ast, int child, int rel_to, int start, int end, const struct YYLTYPE* loc)
+{
+    int n = NEW_NODE(ast, AST_TIMING, loc);
+    ast->nodes[n].timing.child = child;
+    ast->nodes[n].timing.rel_to = rel_to;
+    ast->nodes[n].timing.start = start;
+    ast->nodes[n].timing.end = end;
+    ast->nodes[n].timing.rel_to_ref = -1;
     return n;
 }
 
@@ -159,7 +171,7 @@ static void write_nodes(const struct ast* ast, int n, FILE* fp)
             fprintf(fp, "  n%d [shape=\"rectangle\",label=\".\"];\n", n);
             break;
         case AST_LABEL: {
-            struct str_view label = strlist_to_view(&ast->labels, ast->nodes[n].labels.label);
+            struct str_view label = strlist_to_view(&ast->labels, ast->nodes[n].label.label);
             fprintf(fp, "  n%d [shape=\"rectangle\",label=\"%.*s\"];\n",
                 n, label.len, label.data);
         } break;
@@ -203,6 +215,12 @@ static void write_nodes(const struct ast* ast, int n, FILE* fp)
             #undef APPEND
             #undef APPEND_WITH_PIPE
         } break;
+        case AST_TIMING:
+            fprintf(fp, "  n%d [shape=\"record\",label=\"f%d", n, ast->nodes[n].timing.start);
+            if (ast->nodes[n].timing.end >= 0)
+                fprintf(fp, "-%d", ast->nodes[n].timing.end);
+            fprintf(fp, "\"];\n");
+            break;
     }
 
     if (ast->nodes[n].base.left >= 0)
@@ -221,6 +239,12 @@ static void write_edges(const struct ast* ast, FILE* fp)
 
         if (ast->nodes[n].base.right >= 0)
             fprintf(fp, "  n%d -> n%d;\n", n, ast->nodes[n].base.right);
+
+        if (ast->nodes[n].info.type == AST_TIMING &&
+            ast->nodes[n].timing.rel_to >= 0)
+        {
+            fprintf(fp, "  n%d -> n%d [color=\"blue\"];\n", n, ast->nodes[n].timing.rel_to);
+        }
     }
 }
 

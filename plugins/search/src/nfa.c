@@ -435,7 +435,7 @@ nfa_compile_recurse(
             int in, out;
 
             /* Assume label is a hex value */
-            label = strlist_to_view(&ast->labels, ast->nodes[n].labels.label);
+            label = strlist_to_view(&ast->labels, ast->nodes[n].label.label);
             if (!cstr_starts_with(label, "0x") || str_hex_to_u64(label, &motion) != 0)
             {
                 /* Assume label is a hash40 string */

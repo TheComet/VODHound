@@ -49,6 +49,7 @@ static char* yytext_dup(const char* text);
 "dj"                       { return TOK_DJ; }
 "fs"                       { return TOK_FS; }
 "idj"                      { return TOK_IDJ; }
+"f"[0-9]+                  { yylval->integer_value = atoi(&yytext[1]); return TOK_TIMING; }
 "0x"[0-9a-fA-F]+           { str_hex_to_u64(cstr_view(yytext), &yylval->motion_value); return TOK_MOTION; }
 [0-9]+                     { yylval->integer_value = atoi(yytext); return TOK_NUM; }
 [a-zA-Z_][a-zA-Z0-9_]*     {

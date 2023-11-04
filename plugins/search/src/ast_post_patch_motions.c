@@ -21,7 +21,7 @@ ast_post_patch_motions(struct ast* ast, struct db_interface* dbi, struct db* db,
         if (ast->nodes[n].info.type != AST_LABEL)
             continue;
 
-        label_view = strlist_to_view(&ast->labels, ast->nodes[n].labels.label);
+        label_view = strlist_to_view(&ast->labels, ast->nodes[n].label.label);
 
         /*
          * If the label is a user-defined label, for example "nair", then it
@@ -47,7 +47,7 @@ ast_post_patch_motions(struct ast* ast, struct db_interface* dbi, struct db* db,
 
                     switch (hm_insert(&ast->merged_labels, motion, (void**)&hm_label))
                     {
-                        case 1: *hm_label = ast->nodes[n].labels.label;
+                        case 1: *hm_label = ast->nodes[n].label.label;
                         case 0: break;
                         default: goto error;
                     }
