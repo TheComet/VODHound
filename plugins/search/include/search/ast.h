@@ -113,7 +113,6 @@ union ast_node
         int rel_to;
         int start;
         int end;
-        int rel_to_ref;
     } timing;
 };
 

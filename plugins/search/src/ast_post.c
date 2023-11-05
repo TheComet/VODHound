@@ -232,6 +232,63 @@ ast_post_idj(struct ast* ast)
      *   fh = jump_b | jump_f
      *   dj = jump_aerial_b | jump_aerial_f
      */
+    int n;
+    for (n = 0; n != ast->node_count; ++n)
+        if (ast->nodes[n].info.type == AST_CONTEXT_QUALIFIER &&
+            (ast->nodes[n].context_qualifier.flags & AST_CTX_IDJ))
+        {
+            int jump_squat;
+            int jump_f, jump_b, jump_f_mini, jump_b_mini, sh, fh;
+            int jump_aerial_f, jump_aerial_b;
+            int jump, dj;
+            int f1;
+            int into1, into2, into3;
+            const struct YYLTYPE* loc = (const struct YYLTYPE*)&ast->nodes[n].info.loc;
+
+            /* hash40("jump_squat") = 0xad160bda8 */
+            jump_squat = ast_motion(ast, 0xad160bda8, loc);
+            if (jump_squat < 0) return -1;
+
+            /* hash40("jump_f") = 0x62dd02058 */
+            jump_f = ast_motion(ast, 0x62dd02058ul, loc);
+            if (jump_f < 0) return -1;
+            /* hash40("jump_b") = 0x62abde441 */
+            jump_b = ast_motion(ast, 0x62abde441ul, loc);
+            if (jump_b < 0) return -1;
+            /* hash40("jump_f_mini") = 0xb38c9ab48 */
+            jump_f_mini = ast_motion(ast, 0xb38c9ab48ul, loc);
+            if (jump_f_mini < 0) return -1;
+            /* hash40("jump_b_mini") = 0xba358e95e */
+            jump_b_mini = ast_motion(ast, 0xba358e95eul, loc);
+            if (jump_b_mini < 0) return -1;
+            sh = ast_union(ast, jump_f_mini, jump_b_mini, loc);
+            if (sh < 0) return -1;
+            fh = ast_union(ast, jump_f, jump_b, loc);
+            if (fh < 0) return -1;
+            jump = ast_union(ast, sh, fh, loc);
+            if (jump < 0) return -1;
+
+            /* hash40("jump_aerial_f") = 0xd0b71815b */
+            jump_aerial_f = ast_motion(ast, 0xd0b71815bul, loc);
+            if (jump_aerial_f < 0) return -1;
+            /* hash40("jump_aerial_b") = 0xd0c1c4542 */
+            jump_aerial_b = ast_motion(ast, 0xd0c1c4542ul, loc);
+            if (jump_aerial_b < 0) return -1;
+            dj = ast_union(ast, jump_aerial_f, jump_aerial_b, loc);
+            if (dj < 0) return -1;
+
+            /* With IDJs, the double jump has to occur frame 1 */
+            f1 = ast_timing(ast, dj, -1, 1, -1, loc);
+            if (f1 < 0) return -1;
+
+            into1 = ast_statement(ast, jump_squat, jump, loc);
+            if (into1 < 0) return -1;
+            into2 = ast_statement(ast, into1, f1, loc);
+            if (into2 < 0) return -1;
+
+            into3 = ast_statement(ast, into2, ast->nodes[n].context_qualifier.child, loc);
+            ast_collapse_into(ast, into3, n);
+        }
 
     return 0;
 }
@@ -269,6 +326,76 @@ ast_post_sh(struct ast* ast)
             ast_collapse_into(ast, dj_n, n);
         }
 
+    return 0;
+}
+
+int
+ast_post_timing(struct ast* ast)
+{
+    int n;
+    for (n = 0; n != ast->node_count; ++n)
+        if (ast->nodes[n].info.type == AST_TIMING)
+        {
+            if (ast->nodes[n].timing.end == -1)
+                ast->nodes[n].timing.end = ast->nodes[n].timing.start;
+
+            if (ast->nodes[n].timing.rel_to < 0)
+            {
+                int prev_stmt = n;
+                /* Travel up tree until we find the statement that owns the
+                 * current node */
+                while (1)
+                {
+                    int n2;
+                    for (n2 = 0; n2 != ast->node_count; ++n2)
+                    {
+                        if (ast->nodes[n2].base.right == prev_stmt)
+                        {
+                            prev_stmt = n2;
+
+                            /* If we came from the right side of a statement node, in all cases,
+                             * the "previous statement" will be on the left branch */
+                            if (ast->nodes[prev_stmt].info.type == AST_STATEMENT)
+                                goto found_top_most;
+                            break;
+                        }
+                        else if (ast->nodes[n2].base.left == prev_stmt)
+                        {
+                            /* Reached the top-most statement */
+                            if (ast->nodes[prev_stmt].info.type == AST_STATEMENT &&
+                                ast->nodes[n2].info.type != AST_STATEMENT)
+                            {
+                                goto found_top_most;
+                            }
+                            prev_stmt = n2;
+                            break;
+                        }
+                    }
+
+                    if (prev_stmt == 0)
+                        break;
+                } found_top_most:;
+
+                if (ast->nodes[prev_stmt].info.type != AST_STATEMENT)
+                {
+                    log_err("Timing isn't relative to anything! Need to have a previous statement\n");
+                    return -1;
+                }
+
+                /* Travel down right side of the statement's chain to find the final
+                 * "previous statement" */
+                prev_stmt = ast->nodes[prev_stmt].base.left;
+                while (ast->nodes[prev_stmt].info.type == AST_STATEMENT)
+                    prev_stmt = ast->nodes[prev_stmt].base.right;
+
+                ast->nodes[n].timing.rel_to = prev_stmt;
+            }
+            else
+            {
+                /* TODO */
+                return -1;
+            }
+        }
     return 0;
 }
 
@@ -315,7 +442,7 @@ ast_post_validate_params(struct ast* ast)
 
                 if (start > end)
                 {
-                    log_err("Invalid frame range '%d-%d': Start frame must be smaller than end frame\n", start, end);
+                    log_err("Invalid frame range '%d' - '%d': Start frame must be smaller than end frame\n", start, end);
                     return -1;
                 }
             } break;

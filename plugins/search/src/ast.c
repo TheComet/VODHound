@@ -144,7 +144,6 @@ int ast_timing(struct ast* ast, int child, int rel_to, int start, int end, const
     ast->nodes[n].timing.rel_to = rel_to;
     ast->nodes[n].timing.start = start;
     ast->nodes[n].timing.end = end;
-    ast->nodes[n].timing.rel_to_ref = -1;
     return n;
 }
 
@@ -232,17 +231,19 @@ static void write_edges(const struct ast* ast, FILE* fp)
     int n;
     for (n = 0; n != ast->node_count; ++n)
     {
+        if (ast->nodes[n].info.type == AST_TIMING)
+        {
+            fprintf(fp, "  n%d -> n%d;\n", n, ast->nodes[n].timing.child);
+            if (ast->nodes[n].timing.rel_to >= 0)
+                fprintf(fp, "  n%d -> n%d [color=\"blue\"];\n", n, ast->nodes[n].timing.rel_to);
+            continue;
+        }
+
         if (ast->nodes[n].base.left >= 0)
             fprintf(fp, "  n%d -> n%d;\n", n, ast->nodes[n].base.left);
 
         if (ast->nodes[n].base.right >= 0)
             fprintf(fp, "  n%d -> n%d;\n", n, ast->nodes[n].base.right);
-
-        if (ast->nodes[n].info.type == AST_TIMING &&
-            ast->nodes[n].timing.rel_to_ref >= 0)
-        {
-            fprintf(fp, "  n%d -> n%d [color=\"blue\"];\n", n, ast->nodes[n].timing.rel_to_ref);
-        }
     }
 }
 

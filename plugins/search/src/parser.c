@@ -30,12 +30,14 @@ parser_deinit(struct parser* parser)
 static int
 ast_post(struct ast* ast)
 {
+    if (ast_post_timing(ast) < 0) return -1;
     if (ast_post_sh(ast) < 0) return -1;
     if (ast_post_fh(ast) < 0) return -1;
     if (ast_post_dj(ast) < 0) return -1;
     if (ast_post_fs(ast) < 0) return -1;
     if (ast_post_idj(ast) < 0) return -1;
     if (ast_post_validate_params(ast) < 0) return -1;
+    ast_export_dot(ast, "ast.dot");
     return 0;
 }
 
@@ -64,6 +66,7 @@ parser_parse(struct parser* parser, const char* text, struct ast* ast)
     {
         yy_delete_buffer(buffer, parser->scanner);
         yyset_extra(NULL, parser->scanner);
+        ast_export_dot(ast, "ast.dot");
         return ast_post(ast);
     }
 

@@ -439,7 +439,11 @@ nfa_compile_recurse(
         } break;
 
         case AST_CONTEXT_QUALIFIER: {
-            if (nfa_compile_recurse(ast, ast->nodes[n].union_.child, nodes, fstack, qstack) < 0)return -1;
+            if (nfa_compile_recurse(ast, ast->nodes[n].union_.child, nodes, fstack, qstack) < 0) return -1;
+        } break;
+
+        case AST_TIMING: {
+            if (nfa_compile_recurse(ast, ast->nodes[n].timing.child, nodes, fstack, qstack) < 0) return -1;
         } break;
     }
 
