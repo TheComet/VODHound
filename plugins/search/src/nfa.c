@@ -201,13 +201,6 @@ nfa_compile_recurse(
             min_reps = ast->nodes[n].repetition.min_reps;
             max_reps = ast->nodes[n].repetition.max_reps;
 
-            /* Invalid values */
-            if (min_reps < 0)
-            {
-                log_err("Cannot repeat from \"%d\" times\n", min_reps);
-                return -1;
-            }
-
             /*
              * If the minimum repetition count is 0, then create a direct
              * connection from input to output.
@@ -293,13 +286,6 @@ nfa_compile_recurse(
             {
                 int n;
                 struct vec fragments;
-
-                /* Invalid values */
-                if (max_reps < 0 || min_reps > max_reps)
-                {
-                    log_err("Cannot repeat from \"%d\" to \"%d\" times\n", min_reps, max_reps);
-                    return -1;
-                }
 
                 /* Special case if maxreps is 0, remove all connections */
                 if (max_reps == 0)
@@ -428,33 +414,8 @@ nfa_compile_recurse(
         } break;
 
         case AST_LABEL: {
-            uint64_t motion;
-            struct nfa_node* node;
-            struct fragment* f;
-            struct str_view label;
-            int in, out;
-
-            /* Assume label is a hex value */
-            label = strlist_to_view(&ast->labels, ast->nodes[n].label.label);
-            if (!cstr_starts_with(label, "0x") || str_hex_to_u64(label, &motion) != 0)
-            {
-                /* Assume label is a hash40 string */
-                motion = hash40_str(label);
-            }
-
-            f = vec_emplace(fstack);
-            if (f == NULL)
-                return -1;
-            fragment_init(f);
-
-            in = vec_count(nodes);
-            out = vec_count(nodes);
-            if (vec_push(&f->in, &in) < 0) return -1;
-            if (vec_push(&f->out, &out) < 0) return -1;
-
-            if ((node = vec_emplace(nodes)) == NULL) return -1;
-            vec_init(&node->next, sizeof(int));
-            node->matcher = match_motion(motion);
+            log_err("AST_LABEL encountered while compiling NFA. This should not happen!\n");
+            return -1;
         } break;
 
         case AST_MOTION: {

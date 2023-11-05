@@ -35,6 +35,7 @@ ast_post(struct ast* ast)
     if (ast_post_dj(ast) < 0) return -1;
     if (ast_post_fs(ast) < 0) return -1;
     if (ast_post_idj(ast) < 0) return -1;
+    if (ast_post_validate_params(ast) < 0) return -1;
     return 0;
 }
 
@@ -46,8 +47,6 @@ parser_parse(struct parser* parser, const char* text, struct ast* ast)
     YY_BUFFER_STATE buffer;
     YYSTYPE pushed_value;
     YYLTYPE location = {1, 1};
-
-    TOK_CLANK;
 
     yyset_extra(&ast->labels, parser->scanner);
 

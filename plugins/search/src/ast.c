@@ -239,9 +239,9 @@ static void write_edges(const struct ast* ast, FILE* fp)
             fprintf(fp, "  n%d -> n%d;\n", n, ast->nodes[n].base.right);
 
         if (ast->nodes[n].info.type == AST_TIMING &&
-            ast->nodes[n].timing.rel_to >= 0)
+            ast->nodes[n].timing.rel_to_ref >= 0)
         {
-            fprintf(fp, "  n%d -> n%d [color=\"blue\"];\n", n, ast->nodes[n].timing.rel_to);
+            fprintf(fp, "  n%d -> n%d [color=\"blue\"];\n", n, ast->nodes[n].timing.rel_to_ref);
         }
     }
 }

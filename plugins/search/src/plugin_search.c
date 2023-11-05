@@ -191,7 +191,7 @@ on_search_text_changed(Ihandle* search_box, int c, char* new_value)
     if (parser_parse(&ctx->parser, new_value, &ctx->ast) < 0)
         goto parse_failed;
     ast_export_dot(&ctx->ast, "ast.dot");
-    if (ast_post_patch_motions(&ctx->ast, ctx->dbi, ctx->db, fighter_id) < 0)
+    if (ast_post_labels_to_motions(&ctx->ast, ctx->dbi, ctx->db, fighter_id) < 0)
         goto patch_motions_failed;
     ast_export_dot(&ctx->ast, "ast.dot");
     if (nfa_compile(&nfa, &ctx->ast))

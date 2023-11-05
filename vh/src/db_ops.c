@@ -16,6 +16,7 @@
 
 #define STMT_LIST                           \
     X(motion, add)                          \
+    X(motion, exists)                       \
                                             \
     X(motion_label, add_or_get_group)       \
     X(motion_label, add_or_get_layer)       \
@@ -350,6 +351,39 @@ motion_add(struct db* ctx, uint64_t hash40, struct str_view string)
     }
 
     return step_stmt_wrapper(ctx->db, ctx->motion_add);
+}
+
+static int
+motion_exists(struct db* ctx, uint64_t hash40, struct str_view string)
+{
+    int ret;
+    if (ctx->motion_exists == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->motion_exists, cstr_view(
+            "SELECT 1 FROM motions WHERE hash40=?;")) != 0)
+            return -1;
+
+    if ((ret = sqlite3_bind_int64(ctx->motion_exists, 1, (int64_t)hash40)) != SQLITE_OK)
+    {
+        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+        return -1;
+    }
+
+next_step:
+    ret = sqlite3_step(ctx->motion_exists);
+    switch (ret)
+    {
+        case SQLITE_BUSY: goto next_step;
+        case SQLITE_ROW:
+            sqlite3_reset(ctx->motion_exists);
+            return 1;
+        case SQLITE_DONE:
+            sqlite3_reset(ctx->motion_exists);
+            return 0;
+    }
+
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    sqlite3_reset(ctx->motion_exists);
+    return -1;
 }
 
 static int

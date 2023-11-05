@@ -77,7 +77,7 @@
 %token<string_value> LABEL
 %token<motion_value> MOTION
 
-%type<node_value> stmts stmt timing_stmt rep rep_short rep_range rep_range_braces union inversion label
+%type<node_value> stmts stmt timing_stmt rep rep_short rep_range union inversion label
 %type<ctx_flags> pre_ctx_flags post_ctx_flags
 
 %right '|'
@@ -94,9 +94,9 @@ stmts
   ;
 stmt
   : pre_ctx_flags timing_stmt post_ctx_flags { $$ = ast_context_qualifier(ast, $2, $1 | $3, &@$); }
-  | union post_ctx_flags                     { $$ = ast_context_qualifier(ast, $1, $2, &@$); }
-  | pre_ctx_flags union                      { $$ = ast_context_qualifier(ast, $2, $1, &@$); }
-  | union                               { $$ = $1; }
+  | timing_stmt post_ctx_flags          { $$ = ast_context_qualifier(ast, $1, $2, &@$); }
+  | pre_ctx_flags timing_stmt           { $$ = ast_context_qualifier(ast, $2, $1, &@$); }
+  | timing_stmt                         { $$ = $1; }
   ;
 timing_stmt
   : TIMING '-' NUM ',' stmt union       { $$ = ast_timing(ast, $6, $5, $1, $3, &@$); }
@@ -112,7 +112,6 @@ union
 rep
   : rep_short                           { $$ = $1; }
   | rep_range                           { $$ = $1; }
-  | rep_range_braces                    { $$ = $1; }
   | inversion                           { $$ = $1; }
   ;
 rep_short
@@ -120,15 +119,26 @@ rep_short
   | inversion '*'                       { $$ = ast_repetition(ast, $1, 0, -1, &@$); }
   | inversion '?'                       { $$ = ast_repetition(ast, $1, 0, 1, &@$); }
   ;
-rep_range_braces
-  : '{' rep_range '}'                   { $$ = $2; }
-  ;
 rep_range
   : inversion NUM                       { $$ = ast_repetition(ast, $1, $2, $2, &@$); }
   | inversion NUM '-' NUM               { $$ = ast_repetition(ast, $1, $2, $4, &@$); }
   | inversion NUM '-'                   { $$ = ast_repetition(ast, $1, $2, -1, &@$); }
   | inversion NUM '-' '+'               { $$ = ast_repetition(ast, $1, $2, -1, &@$); }
   | inversion NUM '-' '*'               { $$ = ast_repetition(ast, $1, $2, -1, &@$); }
+  | inversion NUM ',' NUM               { $$ = ast_repetition(ast, $1, $2, $4, &@$); }
+  | inversion NUM ','                   { $$ = ast_repetition(ast, $1, $2, -1, &@$); }
+  | inversion NUM ',' '+'               { $$ = ast_repetition(ast, $1, $2, -1, &@$); }
+  | inversion NUM ',' '*'               { $$ = ast_repetition(ast, $1, $2, -1, &@$); }
+  /* Be compatible with more traditional regex syntax */
+  | inversion '{' NUM '}'               { $$ = ast_repetition(ast, $1, $3, $3, &@$); }
+  | inversion '{' NUM '-' NUM '}'       { $$ = ast_repetition(ast, $1, $3, $5, &@$); }
+  | inversion '{' NUM '-' '}'           { $$ = ast_repetition(ast, $1, $3, -1, &@$); }
+  | inversion '{' NUM '-' '+' '}'       { $$ = ast_repetition(ast, $1, $3, -1, &@$); }
+  | inversion '{' NUM '-' '*' '}'       { $$ = ast_repetition(ast, $1, $3, -1, &@$); }
+  | inversion '{' NUM ',' NUM '}'       { $$ = ast_repetition(ast, $1, $3, $5, &@$); }
+  | inversion '{' NUM ',' '}'           { $$ = ast_repetition(ast, $1, $3, -1, &@$); }
+  | inversion '{' NUM ',' '+' '}'       { $$ = ast_repetition(ast, $1, $3, -1, &@$); }
+  | inversion '{' NUM ',' '*' '}'       { $$ = ast_repetition(ast, $1, $3, -1, &@$); }
   ;
 inversion
   : '!' label                           { $$ = ast_inversion(ast, $2, &@$); }

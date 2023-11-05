@@ -24,6 +24,7 @@ struct db_interface
 
     struct {
         int (*add)(struct db* db, uint64_t hash40, struct str_view string);
+        int (*exists)(struct db* db, uint64_t hash40);
     } motion;
 
     struct {
