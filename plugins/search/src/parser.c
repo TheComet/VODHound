@@ -16,8 +16,8 @@ parser_init(struct parser* parser)
 
     return 0;
 
-    init_parser_failed        : yylex_destroy(parser->scanner);
-    init_scanner_failed       : return -1;
+    init_parser_failed  : yylex_destroy(parser->scanner);
+    init_scanner_failed : return -1;
 }
 
 void
@@ -31,11 +31,7 @@ static int
 ast_post(struct ast* ast)
 {
     if (ast_post_timing(ast) < 0) return -1;
-    if (ast_post_sh(ast) < 0) return -1;
-    if (ast_post_fh(ast) < 0) return -1;
-    if (ast_post_dj(ast) < 0) return -1;
-    if (ast_post_fs(ast) < 0) return -1;
-    if (ast_post_idj(ast) < 0) return -1;
+    if (ast_post_jump_qualifiers(ast) < 0) return -1;
     if (ast_post_validate_params(ast) < 0) return -1;
     ast_export_dot(ast, "ast.dot");
     return 0;
@@ -70,7 +66,8 @@ parser_parse(struct parser* parser, const char* text, struct ast* ast)
         return ast_post(ast);
     }
 
-parse_failed       : yy_delete_buffer(buffer, parser->scanner);
-init_buffer_failed : yyset_extra(NULL, parser->scanner);
+    yy_delete_buffer(buffer, parser->scanner);
+init_buffer_failed:
+    yyset_extra(NULL, parser->scanner);
     return -1;
 }

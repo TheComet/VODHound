@@ -144,81 +144,170 @@ ast_post_hash40_remaining_labels(struct ast* ast)
     }
 }
 
-int
-ast_post_dj(struct ast* ast)
+static int
+create_fh_ast(struct ast* ast, const struct YYLTYPE* loc)
 {
-    int n;
-    for (n = 0; n != ast->node_count; ++n)
-        if (ast->nodes[n].info.type == AST_CONTEXT &&
-            (ast->nodes[n].context.flags & AST_CTX_DJ))
-        {
-            int jump_aerial_f, jump_aerial_b, union_, dj, dj_n;
-            const struct YYLTYPE* loc = (const struct YYLTYPE*)&ast->nodes[n].info.loc;
+    int jump_f, jump_b;
 
-            /* hash40("jump_aerial_f") = 0xd0b71815b */
-            jump_aerial_f = ast_motion(ast, 0xd0b71815bul, loc);
-            if (jump_aerial_f < 0) return -1;
+    /* hash40("jump_f") = 0x62dd02058 */
+    jump_f = ast_motion(ast, 0x62dd02058ul, loc);
+    if (jump_f < 0) return -1;
 
-            /* hash40("jump_aerial_b") = 0xd0c1c4542 */
-            jump_aerial_b = ast_motion(ast, 0xd0c1c4542ul, loc);
-            if (jump_aerial_b < 0) return -1;
+    /* hash40("jump_b") = 0x62abde441 */
+    jump_b = ast_motion(ast, 0x62abde441ul, loc);
+    if (jump_b < 0) return -1;
 
-            /* jump_aerial_f | jump_aerial_b */
-            union_ = ast_union(ast, jump_aerial_f, jump_aerial_b, loc);
-            if (union_ < 0) return -1;
+    /* jump_f | jump_b */
+    return ast_union(ast, jump_f, jump_b, loc);
+}
 
-            /* (jump_aerial_f | jump_aerial_b)+ */
-            dj = ast_repetition(ast, union_, 1, -1, loc);
-            if (dj < 0) return -1;
+static int
+create_sh_ast(struct ast* ast, const struct YYLTYPE* loc)
+{
+    int jump_f_mini, jump_b_mini;
 
-            dj_n = ast_statement(ast, dj, ast->nodes[n].context.child, loc);
-            if (dj_n < 0) return -1;
+    /* hash40("jump_f_mini") = 0xb38c9ab48 */
+    jump_f_mini = ast_motion(ast, 0xb38c9ab48ul, loc);
+    if (jump_f_mini < 0) return -1;
 
-            ast_collapse_into(ast, dj_n, n);
-        }
+    /* hash40("jump_b_mini") = 0xba358e95e */
+    jump_b_mini = ast_motion(ast, 0xba358e95eul, loc);
+    if (jump_b_mini < 0) return -1;
 
-    return 0;
+    /* jump_f_mini | jump_b_mini */
+    return ast_union(ast, jump_f_mini, jump_b_mini, loc);
+}
+
+static int
+create_dj_ast(struct ast* ast, const struct YYLTYPE* loc)
+{
+    int jump_aerial_f, jump_aerial_b;
+
+    /* hash40("jump_aerial_f") = 0xd0b71815b */
+    jump_aerial_f = ast_motion(ast, 0xd0b71815bul, loc);
+    if (jump_aerial_f < 0) return -1;
+
+    /* hash40("jump_aerial_b") = 0xd0c1c4542 */
+    jump_aerial_b = ast_motion(ast, 0xd0c1c4542ul, loc);
+    if (jump_aerial_b < 0) return -1;
+
+    /* jump_aerial_f | jump_aerial_b */
+    return ast_union(ast, jump_aerial_f, jump_aerial_b, loc);
+}
+
+static int
+create_fs_ast(struct ast* ast, const struct YYLTYPE* loc)
+{
+    return -1;
+}
+
+static int
+create_idj_ast(struct ast* ast, const struct YYLTYPE* loc)
+{
+    int jump_squat;
+    int jump_f, jump_b;
+    int jump_f_mini, jump_b_mini;
+    int jump_aerial_f, jump_aerial_b;
+    int sh, fh, jump, dj, idj;
+
+    /* hash40("jump_squat") = 0xad160bda8 */
+    jump_squat = ast_motion(ast, 0xad160bda8, loc);
+    if (jump_squat < 0) return -1;
+
+    /* hash40("jump_f") = 0x62dd02058 */
+    jump_f = ast_motion(ast, 0x62dd02058ul, loc);
+    if (jump_f < 0) return -1;
+    /* hash40("jump_b") = 0x62abde441 */
+    jump_b = ast_motion(ast, 0x62abde441ul, loc);
+    if (jump_b < 0) return -1;
+    /* hash40("jump_f_mini") = 0xb38c9ab48 */
+    jump_f_mini = ast_motion(ast, 0xb38c9ab48ul, loc);
+    if (jump_f_mini < 0) return -1;
+    /* hash40("jump_b_mini") = 0xba358e95e */
+    jump_b_mini = ast_motion(ast, 0xba358e95eul, loc);
+    if (jump_b_mini < 0) return -1;
+    sh = ast_union(ast, jump_f_mini, jump_b_mini, loc);
+    if (sh < 0) return -1;
+    fh = ast_union(ast, jump_f, jump_b, loc);
+    if (fh < 0) return -1;
+    jump = ast_union(ast, sh, fh, loc);
+    if (jump < 0) return -1;
+
+    /* hash40("jump_aerial_f") = 0xd0b71815b */
+    jump_aerial_f = ast_motion(ast, 0xd0b71815bul, loc);
+    if (jump_aerial_f < 0) return -1;
+    /* hash40("jump_aerial_b") = 0xd0c1c4542 */
+    jump_aerial_b = ast_motion(ast, 0xd0c1c4542ul, loc);
+    if (jump_aerial_b < 0) return -1;
+    dj = ast_union(ast, jump_aerial_f, jump_aerial_b, loc);
+    if (dj < 0) return -1;
+
+    /* With IDJs, the double jump has to occur frame 1 */
+    dj = ast_timing(ast, dj, -1, 1, 1, loc);
+    if (dj < 0) return -1;
+
+    idj = ast_statement(ast, jump_squat, jump, loc);
+    if (idj < 0) return -1;
+    return ast_statement(ast, idj, dj, loc);
+}
+
+static int
+insert_jump_stmt(struct ast* ast, int jump, enum ast_ctx flag, const struct YYLTYPE* loc)
+{
+
 }
 
 int
-ast_post_fh(struct ast* ast)
+ast_post_jump_qualifiers(struct ast* ast)
 {
-    int n;
+    int n, j;
+
+    struct entry {
+        enum ast_ctx_flags flag;
+        int (*create_ast)(struct ast* ast, const struct YYLTYPE* loc);
+    };
+
+    struct entry jumps[] = {
+        { AST_CTX_FH, create_fh_ast },
+        { AST_CTX_SH, create_sh_ast },
+        { AST_CTX_DJ, create_dj_ast },
+        { AST_CTX_IDJ, create_idj_ast },
+        { AST_CTX_FS, create_fs_ast }
+    };
+
     for (n = 0; n != ast->node_count; ++n)
-        if (ast->nodes[n].info.type == AST_CONTEXT &&
-            (ast->nodes[n].context.flags & AST_CTX_FH))
+        for (j = 0; j != sizeof(jumps) / sizeof(*jumps); ++j)
         {
-            int jump_f, jump_b, jump, stmt;
+            int jump;
             const struct YYLTYPE* loc = (const struct YYLTYPE*)&ast->nodes[n].info.loc;
 
-            /* hash40("jump_f") = 0x62dd02058 */
-            jump_f = ast_motion(ast, 0x62dd02058ul, loc);
-            if (jump_f < 0) return -1;
+            /* The node type can change */
+            if (ast->nodes[n].info.type != AST_CONTEXT)
+                break;
+            if (!(ast->nodes[n].context.flags & jumps[j].flag))
+                continue;
 
-            /* hash40("jump_b") = 0x62abde441 */
-            jump_b = ast_motion(ast, 0x62abde441ul, loc);
-            if (jump_b < 0) return -1;
+            jump = jumps[j].create_ast(ast, loc);
+            if (jump < 0)
+                return -1;
 
-            /* jump_f | jump_b */
-            jump = ast_union(ast, jump_f, jump_b, loc);
-            if (jump < 0) return -1;
-
-            /* 
-             * The fh flag is grouped together with other context flags,
+            /*
+             * The jump flag is grouped together with other context flags,
              * so the original node may still need to be kept around if this
              * wasn't the only flag.
              */
-            ast->nodes[n].context.flags &= ~AST_CTX_FH;
+            ast->nodes[n].context.flags &= ~jumps[j].flag;
             if (ast->nodes[n].context.flags == 0)
             {
-                stmt = ast_statement(ast, jump, ast->nodes[n].context.child, loc);
+                int stmt = ast_statement(ast, jump, ast->nodes[n].context.child, loc);
                 if (stmt < 0) return -1;
                 ast_collapse_into(ast, stmt, n);
             }
             else
             {
                 int parent = ast_find_parent(ast, n);
-                stmt = ast_statement(ast, jump, n, loc);  /* NOTE: Have to find parent before setting "jump" to be the new parent */
+                /* NOTE: Have to find parent before setting "dj" to be the new parent */
+                int stmt = ast_statement(ast, jump, n, loc);
                 if (stmt < 0) return -1;
                 if (parent < 0)
                     ast_set_root(ast, stmt);
@@ -230,119 +319,6 @@ ast_post_fh(struct ast* ast)
                         ast->nodes[parent].base.right = stmt;
                 }
             }
-        }
-
-    return 0;
-}
-
-int
-ast_post_fs(struct ast* ast)
-{
-    return 0;
-}
-
-int
-ast_post_idj(struct ast* ast)
-{
-    /*
-     * idj decomposes to jump_squat -> sh|fh -> f1 dj
-     * where:
-     *   sh = jump_b_mini | jump_f_mini
-     *   fh = jump_b | jump_f
-     *   dj = jump_aerial_b | jump_aerial_f
-     */
-    int n;
-    for (n = 0; n != ast->node_count; ++n)
-        if (ast->nodes[n].info.type == AST_CONTEXT &&
-            (ast->nodes[n].context.flags & AST_CTX_IDJ))
-        {
-            int jump_squat;
-            int jump_f, jump_b, jump_f_mini, jump_b_mini, sh, fh;
-            int jump_aerial_f, jump_aerial_b;
-            int jump, dj;
-            int f1;
-            int into1, into2, into3;
-            const struct YYLTYPE* loc = (const struct YYLTYPE*)&ast->nodes[n].info.loc;
-
-            /* hash40("jump_squat") = 0xad160bda8 */
-            jump_squat = ast_motion(ast, 0xad160bda8, loc);
-            if (jump_squat < 0) return -1;
-
-            /* hash40("jump_f") = 0x62dd02058 */
-            jump_f = ast_motion(ast, 0x62dd02058ul, loc);
-            if (jump_f < 0) return -1;
-            /* hash40("jump_b") = 0x62abde441 */
-            jump_b = ast_motion(ast, 0x62abde441ul, loc);
-            if (jump_b < 0) return -1;
-            /* hash40("jump_f_mini") = 0xb38c9ab48 */
-            jump_f_mini = ast_motion(ast, 0xb38c9ab48ul, loc);
-            if (jump_f_mini < 0) return -1;
-            /* hash40("jump_b_mini") = 0xba358e95e */
-            jump_b_mini = ast_motion(ast, 0xba358e95eul, loc);
-            if (jump_b_mini < 0) return -1;
-            sh = ast_union(ast, jump_f_mini, jump_b_mini, loc);
-            if (sh < 0) return -1;
-            fh = ast_union(ast, jump_f, jump_b, loc);
-            if (fh < 0) return -1;
-            jump = ast_union(ast, sh, fh, loc);
-            if (jump < 0) return -1;
-
-            /* hash40("jump_aerial_f") = 0xd0b71815b */
-            jump_aerial_f = ast_motion(ast, 0xd0b71815bul, loc);
-            if (jump_aerial_f < 0) return -1;
-            /* hash40("jump_aerial_b") = 0xd0c1c4542 */
-            jump_aerial_b = ast_motion(ast, 0xd0c1c4542ul, loc);
-            if (jump_aerial_b < 0) return -1;
-            dj = ast_union(ast, jump_aerial_f, jump_aerial_b, loc);
-            if (dj < 0) return -1;
-
-            /* With IDJs, the double jump has to occur frame 1 */
-            f1 = ast_timing(ast, dj, -1, 1, -1, loc);
-            if (f1 < 0) return -1;
-
-            into1 = ast_statement(ast, jump_squat, jump, loc);
-            if (into1 < 0) return -1;
-            into2 = ast_statement(ast, into1, f1, loc);
-            if (into2 < 0) return -1;
-
-            into3 = ast_statement(ast, into2, ast->nodes[n].context.child, loc);
-            ast_collapse_into(ast, into3, n);
-        }
-
-    return 0;
-}
-
-int
-ast_post_sh(struct ast* ast)
-{
-    int n;
-    for (n = 0; n != ast->node_count; ++n)
-        if (ast->nodes[n].info.type == AST_CONTEXT &&
-            (ast->nodes[n].context.flags & AST_CTX_SH))
-        {
-            int jump_f_mini, jump_b_mini, union_, dj, dj_n;
-            const struct YYLTYPE* loc = (const struct YYLTYPE*)&ast->nodes[n].info.loc;
-
-            /* hash40("jump_f_mini") = 0xb38c9ab48 */
-            jump_f_mini = ast_motion(ast, 0xb38c9ab48ul, loc);
-            if (jump_f_mini < 0) return -1;
-
-            /* hash40("jump_b_mini") = 0xba358e95e */
-            jump_b_mini = ast_motion(ast, 0xba358e95eul, loc);
-            if (jump_b_mini < 0) return -1;
-
-            /* jump_f_mini | jump_b_mini */
-            union_ = ast_union(ast, jump_f_mini, jump_b_mini, loc);
-            if (union_ < 0) return -1;
-
-            /* (jump_f_mini | jump_b_mini)+ */
-            dj = ast_repetition(ast, union_, 1, -1, loc);
-            if (dj < 0) return -1;
-
-            dj_n = ast_statement(ast, dj, ast->nodes[n].context.child, loc);
-            if (dj_n < 0) return -1;
-
-            ast_collapse_into(ast, dj_n, n);
         }
 
     return 0;
