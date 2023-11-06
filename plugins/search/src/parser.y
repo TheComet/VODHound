@@ -77,8 +77,8 @@
 %token<string_value> LABEL
 %token<motion_value> MOTION
 
-%type<node_value> stmts stmt timing_stmt rep rep_short rep_range union inversion label
-%type<ctx_flags> pre_ctx_flags post_ctx_flags
+%type<node_value> stmts stmt timing rep rep_short rep_range union inversion qual_label label
+%type<ctx_flags> pre_ctx post_ctx
 
 %right '|'
 
@@ -89,21 +89,18 @@ query
   : stmts                               { ast_set_root(ast, $1); }
   ;
 stmts
-  : stmts INTO stmt                     { $$ = ast_statement(ast, $1, $3, &@$); }
-  | stmt                                { $$ = $1; }
-  ;
-stmt
-  : pre_ctx_flags timing_stmt post_ctx_flags { $$ = ast_context_qualifier(ast, $2, $1 | $3, &@$); }
-  | timing_stmt post_ctx_flags          { $$ = ast_context_qualifier(ast, $1, $2, &@$); }
-  | pre_ctx_flags timing_stmt           { $$ = ast_context_qualifier(ast, $2, $1, &@$); }
-  | timing_stmt                         { $$ = $1; }
-  ;
-timing_stmt
-  : TIMING '-' NUM ',' stmt union       { $$ = ast_timing(ast, $6, $5, $1, $3, &@$); }
-  | TIMING '-' NUM union                { $$ = ast_timing(ast, $4, -1, $1, $3, &@$); }
-  | TIMING ',' stmt union               { $$ = ast_timing(ast, $4, $3, $1, -1, &@$); }
-  | TIMING union                        { $$ = ast_timing(ast, $2, -1, $1, -1, &@$); }
+  : stmts INTO union                    { $$ = ast_statement(ast, $1, $3, &@$); }
   | union                               { $$ = $1; }
+  ;
+/*
+stmt
+  : pre_ctx timing post_ctx { $$ = ast_context_qualifier(ast, $2, $1 | $3, &@$); }
+  | timing post_ctx          { $$ = ast_context_qualifier(ast, $1, $2, &@$); }
+  | pre_ctx timing           { $$ = ast_context_qualifier(ast, $2, $1, &@$); }
+  | timing                         { $$ = $1; }
+  ;*/
+stmt
+  : union                               { $$ = $1; }
   ;
 union
   : union '|' union                     { $$ = ast_union(ast, $1, $3, &@$); }
@@ -141,17 +138,31 @@ rep_range
   | inversion '{' NUM ',' '*' '}'       { $$ = ast_repetition(ast, $1, $3, -1, &@$); }
   ;
 inversion
-  : '!' label                           { $$ = ast_inversion(ast, $2, &@$); }
-  | label                               { $$ = $1; }
+  : '!' qual_label                      { $$ = ast_inversion(ast, $2, &@$); }
+  | qual_label                          { $$ = $1; }
   | '.'                                 { $$ = ast_wildcard(ast, &@$); }
+  | '(' stmts ')'                       { $$ = $2; }
+  ;
+qual_label
+  : pre_ctx timing post_ctx             { $$ = ast_context(ast, $2, $1 | $3, &@$); }
+  | pre_ctx timing                      { $$ = ast_context(ast, $2, $1, &@$); }
+  | timing post_ctx                     { $$ = ast_context(ast, $1, $2, &@$); }
+  | timing                              { $$ = $1; }
+  ;
+timing
+  : TIMING '-' NUM ',' stmt label       { $$ = ast_timing(ast, $6, $5, $1, $3, &@$); }
+  | TIMING '-' NUM label                { $$ = ast_timing(ast, $4, -1, $1, $3, &@$); }
+  | TIMING ',' stmt label               { $$ = ast_timing(ast, $4, $3, $1, -1, &@$); }
+  | TIMING label                        { $$ = ast_timing(ast, $2, -1, $1, -1, &@$); }
+  | label                               { $$ = $1; }
   | '(' stmts ')'                       { $$ = $2; }
   ;
 label
   : LABEL                               { $$ = ast_label(ast, $1, &@$); }
   | MOTION                              { $$ = ast_motion(ast, $1, &@$); }
   ;
-pre_ctx_flags
-  : pre_ctx_flags '|' pre_ctx_flags     { $$ = $1; $$ |= $3; }
+pre_ctx
+  : pre_ctx '|' pre_ctx     { $$ = $1; $$ |= $3; }
 /*  | '(' pre_qual ')'                    { $$ = $2; }*/
   | SH                                  { $$ = AST_CTX_SH; }
   | FH                                  { $$ = AST_CTX_FH; }
@@ -161,8 +172,8 @@ pre_ctx_flags
   | FALLING                             { $$ = AST_CTX_FALLING; }
   | RISING                              { $$ = AST_CTX_RISING; }
   ;
-post_ctx_flags
-  : post_ctx_flags '|' post_ctx_flags   { $$ = $1; $$ |= $3; }
+post_ctx
+  : post_ctx '|' post_ctx   { $$ = $1; $$ |= $3; }
 /*  | '(' post_qual ')'                 { $$ = $2; }*/
   | OS                                  { $$ = AST_CTX_OS; }
   | OOS                                 { $$ = AST_CTX_OOS; }

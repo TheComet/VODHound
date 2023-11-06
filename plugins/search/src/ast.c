@@ -54,8 +54,6 @@ void ast_deinit(struct ast* ast)
 
 void ast_clear(struct ast* ast)
 {
-    int n;
-
     strlist_clear(&ast->labels);
     hm_clear(&ast->merged_labels);
 
@@ -128,11 +126,11 @@ int ast_motion(struct ast* ast, uint64_t motion, const struct YYLTYPE* loc)
     return n;
 }
 
-int ast_context_qualifier(struct ast* ast, int child, enum ast_ctx_flags flags, const struct YYLTYPE* loc)
+int ast_context(struct ast* ast, int child, enum ast_ctx_flags flags, const struct YYLTYPE* loc)
 {
-    int n = NEW_NODE(ast, AST_CONTEXT_QUALIFIER, loc);
-    ast->nodes[n].context_qualifier.child = child;
-    ast->nodes[n].context_qualifier.flags = flags;
+    int n = NEW_NODE(ast, AST_CONTEXT, loc);
+    ast->nodes[n].context.child = child;
+    ast->nodes[n].context.flags = flags;
     return n;
 }
 
@@ -176,7 +174,7 @@ static void write_nodes(const struct ast* ast, int n, FILE* fp)
             fprintf(fp, "  n%d [shape=\"rectangle\",label=\"0x%" PRIx64 "\"];\n",
                 n, ast->nodes[n].motion.motion);
             break;
-        case AST_CONTEXT_QUALIFIER: {
+        case AST_CONTEXT: {
             #define APPEND_WITH_PIPE(str) {  \
                 if (need_pipe)               \
                     fprintf(fp, " | " str);  \
@@ -185,7 +183,7 @@ static void write_nodes(const struct ast* ast, int n, FILE* fp)
                 need_pipe = 1;               \
             }
             #define APPEND(name)             \
-                if (ast->nodes[n].context_qualifier.flags & AST_CTX_##name) \
+                if (ast->nodes[n].context.flags & AST_CTX_##name) \
                     APPEND_WITH_PIPE(#name)
 
             int need_pipe = 0;

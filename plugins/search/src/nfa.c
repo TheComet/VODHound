@@ -240,7 +240,7 @@ nfa_compile_recurse(
                 VEC_END_EACH
 
                 /* Wire up outputs among duplicates */
-                for (n = 1; n < vec_count(&fragments); ++n)
+                for (n = 1; n < (int)vec_count(&fragments); ++n)
                 {
                     struct fragment* f1 = vec_get(&fragments, n - 1);
                     struct fragment* f2 = vec_get(&fragments, n);
@@ -316,7 +316,7 @@ nfa_compile_recurse(
                 }
 
                 /* Wire up outputs among duplicates */
-                for (n = 1; n < vec_count(&fragments); ++n)
+                for (n = 1; n < (int)vec_count(&fragments); ++n)
                 {
                     struct fragment* f1 = vec_get(&fragments, n - 1);
                     struct fragment* f2 = vec_get(&fragments, n);
@@ -438,8 +438,8 @@ nfa_compile_recurse(
             node->matcher = match_motion(ast->nodes[n].motion.motion);
         } break;
 
-        case AST_CONTEXT_QUALIFIER: {
-            if (nfa_compile_recurse(ast, ast->nodes[n].union_.child, nodes, fstack, qstack) < 0) return -1;
+        case AST_CONTEXT: {
+            if (nfa_compile_recurse(ast, ast->nodes[n].context.child, nodes, fstack, qstack) < 0) return -1;
         } break;
 
         case AST_TIMING: {
@@ -492,7 +492,7 @@ nfa_compile(struct nfa_graph* nfa, const struct ast* ast)
     VEC_FOR_EACH(&nodes, struct nfa_node, node)
         int a, b;
         for (a = 0; a != vec_count(&node->next); ++a)
-            for (b = a + 1; b < vec_count(&node->next); ++b)
+            for (b = a + 1; b < (int)vec_count(&node->next); ++b)
                 if (*(int*)vec_get(&node->next, a) == *(int*)vec_get(&node->next, b))
                 {
                     vec_erase_index(&node->next, b);
@@ -582,7 +582,6 @@ nfa_export_dot(const struct nfa_graph* nfa, const char* file_name)
     fclose(fp);
     return 0;
 
-fail:
     fclose(fp);
 open_file_failed:
     return -1;

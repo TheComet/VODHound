@@ -17,7 +17,7 @@ enum ast_type
     AST_WILDCARD,
     AST_LABEL,
     AST_MOTION,
-    AST_CONTEXT_QUALIFIER,
+    AST_CONTEXT,
     AST_TIMING
 };
 
@@ -86,12 +86,12 @@ union ast_node
         int _padding;
     } inversion;
 
-    struct context_qualifier {
+    struct context {
         struct info info;
         int child;
         int _padding;
         enum ast_ctx_flags flags;
-    } context_qualifier;
+    } context;
 
     struct label {
         struct info info;
@@ -138,7 +138,7 @@ int ast_inversion(struct ast* ast, int child, const struct YYLTYPE* loc);
 int ast_wildcard(struct ast* ast, const struct YYLTYPE* loc);
 int ast_label(struct ast* ast, struct strlist_str label, const struct YYLTYPE* loc);
 int ast_motion(struct ast* ast, uint64_t motion, const struct YYLTYPE* loc);
-int ast_context_qualifier(struct ast* ast, int child, enum ast_ctx_flags flags, const struct YYLTYPE* loc);
+int ast_context(struct ast* ast, int child, enum ast_ctx_flags flags, const struct YYLTYPE* loc);
 int ast_timing(struct ast* ast, int child, int rel_to, int start, int end, const struct YYLTYPE* loc);
 
 int ast_export_dot(const struct ast* ast, const char* file_name);

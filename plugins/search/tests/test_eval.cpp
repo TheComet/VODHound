@@ -2,6 +2,7 @@
 
 #include "search/asm.h"
 #include "search/ast.h"
+#include "search/ast_post.h"
 #include "search/dfa.h"
 #include "search/nfa.h"
 #include "search/parser.h"
@@ -28,7 +29,9 @@ protected:
         struct asm_dfa asm_dfa;
 
         ASSERT_THAT(parser_init(&parser), Eq(0));
+        ASSERT_THAT(ast_init(&ast), Eq(0));
         ASSERT_THAT(parser_parse(&parser, text, &ast), Eq(0));
+        ast_post_hash40_remaining_labels(&ast);
         parser_deinit(&parser);
 
         ASSERT_THAT(nfa_compile(&nfa, &ast), Eq(0));

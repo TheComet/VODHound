@@ -1,5 +1,9 @@
 #pragma once
 
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
 struct ast;
 struct db;
 struct db_interface;
@@ -32,3 +36,7 @@ int ast_post_idj(struct ast* ast);
 int ast_post_sh(struct ast* ast);
 int ast_post_timing(struct ast* ast);
 int ast_post_validate_params(struct ast* ast);
+
+#if defined(__cplusplus)
+}
+#endif

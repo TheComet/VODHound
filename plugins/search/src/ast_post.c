@@ -32,12 +32,12 @@ try_patch_user_defined(
             int root = -1;
             VEC_FOR_EACH(motions, uint64_t, motion)
                 struct strlist_str* hm_label;
-                int node = ast_motion(ast, *motion, (struct YYLTYPE*)&ast->nodes[node].info.loc);
+                int n = ast_motion(ast, *motion, (struct YYLTYPE*)&ast->nodes[node].info.loc);
                 if (node < 0)
                     return -1;
 
-                root = root == -1 ? node :
-                    ast_union(ast, root, node, (struct YYLTYPE*)&ast->nodes[node].info.loc);
+                root = root == -1 ? n :
+                    ast_union(ast, root, n, (struct YYLTYPE*)&ast->nodes[node].info.loc);
                 if (root < 0)
                     return -1;
 
@@ -90,7 +90,7 @@ int
 ast_post_labels_to_motions(struct ast* ast, struct db_interface* dbi, struct db* db, int fighter_id)
 {
     struct vec motions;
-    int n, root;
+    int n;
 
     vec_init(&motions, sizeof(uint64_t));
 
@@ -149,8 +149,8 @@ ast_post_dj(struct ast* ast)
 {
     int n;
     for (n = 0; n != ast->node_count; ++n)
-        if (ast->nodes[n].info.type == AST_CONTEXT_QUALIFIER &&
-            (ast->nodes[n].context_qualifier.flags & AST_CTX_DJ))
+        if (ast->nodes[n].info.type == AST_CONTEXT &&
+            (ast->nodes[n].context.flags & AST_CTX_DJ))
         {
             int jump_aerial_f, jump_aerial_b, union_, dj, dj_n;
             const struct YYLTYPE* loc = (const struct YYLTYPE*)&ast->nodes[n].info.loc;
@@ -171,7 +171,7 @@ ast_post_dj(struct ast* ast)
             dj = ast_repetition(ast, union_, 1, -1, loc);
             if (dj < 0) return -1;
 
-            dj_n = ast_statement(ast, dj, ast->nodes[n].context_qualifier.child, loc);
+            dj_n = ast_statement(ast, dj, ast->nodes[n].context.child, loc);
             if (dj_n < 0) return -1;
 
             ast_collapse_into(ast, dj_n, n);
@@ -185,10 +185,10 @@ ast_post_fh(struct ast* ast)
 {
     int n;
     for (n = 0; n != ast->node_count; ++n)
-        if (ast->nodes[n].info.type == AST_CONTEXT_QUALIFIER &&
-            (ast->nodes[n].context_qualifier.flags & AST_CTX_FH))
+        if (ast->nodes[n].info.type == AST_CONTEXT &&
+            (ast->nodes[n].context.flags & AST_CTX_FH))
         {
-            int jump_f, jump_b, union_, dj, dj_n;
+            int jump_f, jump_b, jump, stmt;
             const struct YYLTYPE* loc = (const struct YYLTYPE*)&ast->nodes[n].info.loc;
 
             /* hash40("jump_f") = 0x62dd02058 */
@@ -200,17 +200,36 @@ ast_post_fh(struct ast* ast)
             if (jump_b < 0) return -1;
 
             /* jump_f | jump_b */
-            union_ = ast_union(ast, jump_f, jump_b, loc);
-            if (union_ < 0) return -1;
+            jump = ast_union(ast, jump_f, jump_b, loc);
+            if (jump < 0) return -1;
 
-            /* (jump_f | jump_b)+ */
-            dj = ast_repetition(ast, union_, 1, -1, loc);
-            if (dj < 0) return -1;
-
-            dj_n = ast_statement(ast, dj, ast->nodes[n].context_qualifier.child, loc);
-            if (dj_n < 0) return -1;
-
-            ast_collapse_into(ast, dj_n, n);
+            /* 
+             * The fh flag is grouped together with other context flags,
+             * so the original node may still need to be kept around if this
+             * wasn't the only flag.
+             */
+            ast->nodes[n].context.flags &= ~AST_CTX_FH;
+            if (ast->nodes[n].context.flags == 0)
+            {
+                stmt = ast_statement(ast, jump, ast->nodes[n].context.child, loc);
+                if (stmt < 0) return -1;
+                ast_collapse_into(ast, stmt, n);
+            }
+            else
+            {
+                int parent = ast_find_parent(ast, n);
+                stmt = ast_statement(ast, jump, n, loc);  /* NOTE: Have to find parent before setting "jump" to be the new parent */
+                if (stmt < 0) return -1;
+                if (parent < 0)
+                    ast_set_root(ast, stmt);
+                else
+                {
+                    if (ast->nodes[parent].base.left == n)
+                        ast->nodes[parent].base.left = stmt;
+                    if (ast->nodes[parent].base.right == n)
+                        ast->nodes[parent].base.right = stmt;
+                }
+            }
         }
 
     return 0;
@@ -234,8 +253,8 @@ ast_post_idj(struct ast* ast)
      */
     int n;
     for (n = 0; n != ast->node_count; ++n)
-        if (ast->nodes[n].info.type == AST_CONTEXT_QUALIFIER &&
-            (ast->nodes[n].context_qualifier.flags & AST_CTX_IDJ))
+        if (ast->nodes[n].info.type == AST_CONTEXT &&
+            (ast->nodes[n].context.flags & AST_CTX_IDJ))
         {
             int jump_squat;
             int jump_f, jump_b, jump_f_mini, jump_b_mini, sh, fh;
@@ -286,7 +305,7 @@ ast_post_idj(struct ast* ast)
             into2 = ast_statement(ast, into1, f1, loc);
             if (into2 < 0) return -1;
 
-            into3 = ast_statement(ast, into2, ast->nodes[n].context_qualifier.child, loc);
+            into3 = ast_statement(ast, into2, ast->nodes[n].context.child, loc);
             ast_collapse_into(ast, into3, n);
         }
 
@@ -298,8 +317,8 @@ ast_post_sh(struct ast* ast)
 {
     int n;
     for (n = 0; n != ast->node_count; ++n)
-        if (ast->nodes[n].info.type == AST_CONTEXT_QUALIFIER &&
-            (ast->nodes[n].context_qualifier.flags & AST_CTX_SH))
+        if (ast->nodes[n].info.type == AST_CONTEXT &&
+            (ast->nodes[n].context.flags & AST_CTX_SH))
         {
             int jump_f_mini, jump_b_mini, union_, dj, dj_n;
             const struct YYLTYPE* loc = (const struct YYLTYPE*)&ast->nodes[n].info.loc;
@@ -320,7 +339,7 @@ ast_post_sh(struct ast* ast)
             dj = ast_repetition(ast, union_, 1, -1, loc);
             if (dj < 0) return -1;
 
-            dj_n = ast_statement(ast, dj, ast->nodes[n].context_qualifier.child, loc);
+            dj_n = ast_statement(ast, dj, ast->nodes[n].context.child, loc);
             if (dj_n < 0) return -1;
 
             ast_collapse_into(ast, dj_n, n);
@@ -427,7 +446,7 @@ ast_post_validate_params(struct ast* ast)
                 }
             } break;
 
-            case AST_CONTEXT_QUALIFIER: {
+            case AST_CONTEXT: {
             } break;
 
             case AST_TIMING: {
