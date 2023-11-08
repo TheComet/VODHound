@@ -51,15 +51,21 @@ states_hm_compare(const void* a, const void* b, int size)
     return 0;
 }
 
-static void
-print_nfa(const struct table* tt, const struct vec* tf)
+#if defined(EXPORT_DOT)
+void
+nfa_export_table(const struct table* tt, const struct vec* tf, const char* file_name)
 {
+    FILE* fp;
     char buf[12];  /* -2147483648 */
     struct table tt_str;
     struct vec col_titles;
     struct vec col_widths;
     struct vec row_indices;
     int c, r;
+
+    fp = fopen(file_name, "w");
+    if (fp == NULL)
+        goto fopen_failed;
 
     if (table_init(&tt_str, tt->rows, tt->cols, sizeof(struct str)) < 0)
         goto table_init_failed;
@@ -129,42 +135,42 @@ print_nfa(const struct table* tt, const struct vec* tf)
             VEC_END_EACH
         }
 
-    fprintf(stderr, " State ");
+    fprintf(fp, " State ");
     for (c = 0; c != vec_count(&col_titles); ++c)
     {
         int w = *(int*)vec_get(&col_widths, c);
         struct str* s = vec_get(&col_titles, c);
-        fprintf(stderr, "| %*s%.*s ", w - s->len, "", s->len, s->data);
+        fprintf(fp, "| %*s%.*s ", w - s->len, "", s->len, s->data);
     }
-    fprintf(stderr, "\n");
-    fprintf(stderr, "-------");
+    fprintf(fp, "\n");
+    fprintf(fp, "-------");
     for (c = 0; c != vec_count(&col_titles); ++c)
     {
         int w = *(int*)vec_get(&col_widths, c);
-        fprintf(stderr, "+-");
+        fprintf(fp, "+-");
         for (r = 0; r != w; ++r)
-            fprintf(stderr, "-");
-        fprintf(stderr, "-");
+            fprintf(fp, "-");
+        fprintf(fp, "-");
     }
-    fprintf(stderr, "\n");
+    fprintf(fp, "\n");
     for (r = 0; r != tt_str.rows; ++r)
     {
         int* row_idx = vec_get(&row_indices, r);
         if (*row_idx < 0)
         {
             sprintf(buf, "%d", -*row_idx);
-            fprintf(stderr, " %*s*%s ", (int)(4 - strlen(buf)), "", buf);
+            fprintf(fp, " %*s*%s ", (int)(4 - strlen(buf)), "", buf);
         }
         else
-            fprintf(stderr, " %*d ", 5, *row_idx);
+            fprintf(fp, " %*d ", 5, *row_idx);
 
         for (c = 0; c != tt_str.cols; ++c)
         {
             int w = *(int*)vec_get(&col_widths, c);
             struct str* s = table_get(&tt_str, r, c);
-            fprintf(stderr, "| %*s%.*s ", w - s->len, "", s->len, s->data);
+            fprintf(fp, "| %*s%.*s ", w - s->len, "", s->len, s->data);
         }
-        fprintf(stderr, "\n");
+        fprintf(fp, "\n");
      }
 
 calc_text_failed:
@@ -180,18 +186,25 @@ calc_text_failed:
             str_deinit(table_get(&tt_str, r, c));
     table_deinit(&tt_str);
 table_init_failed:
+    fclose(fp);
+fopen_failed:
     return;
 }
 
-static void
-print_dfa(const struct table* tt, const struct vec* tf)
+void
+dfa_export_table(const struct table* tt, const struct vec* tf, const char* file_name)
 {
+    FILE* fp;
     char buf[12];  /* -2147483648 */
     struct table tt_str;
     struct vec col_titles;
     struct vec col_widths;
     struct vec row_indices;
     int c, r;
+
+    fp = fopen(file_name, "w");
+    if (fp == NULL)
+        goto fopen_failed;
 
     if (table_init(&tt_str, tt->rows, tt->cols, sizeof(struct str)) < 0)
         goto table_init_failed;
@@ -257,42 +270,42 @@ print_dfa(const struct table* tt, const struct vec* tf)
             }
         }
 
-    fprintf(stderr, " State ");
+    fprintf(fp, " State ");
     for (c = 0; c != vec_count(&col_titles); ++c)
     {
         int w = *(int*)vec_get(&col_widths, c);
         struct str* s = vec_get(&col_titles, c);
-        fprintf(stderr, "| %*s%.*s ", w - s->len, "", s->len, s->data);
+        fprintf(fp, "| %*s%.*s ", w - s->len, "", s->len, s->data);
     }
-    fprintf(stderr, "\n");
-    fprintf(stderr, "-------");
+    fprintf(fp, "\n");
+    fprintf(fp, "-------");
     for (c = 0; c != vec_count(&col_titles); ++c)
     {
         int w = *(int*)vec_get(&col_widths, c);
-        fprintf(stderr, "+-");
+        fprintf(fp, "+-");
         for (r = 0; r != w; ++r)
-            fprintf(stderr, "-");
-        fprintf(stderr, "-");
+            fprintf(fp, "-");
+        fprintf(fp, "-");
     }
-    fprintf(stderr, "\n");
+    fprintf(fp, "\n");
     for (r = 0; r != tt_str.rows; ++r)
     {
         int* row_idx = vec_get(&row_indices, r);
         if (*row_idx < 0)
         {
             sprintf(buf, "%d", -*row_idx);
-            fprintf(stderr, " %*s*%s ", (int)(4 - strlen(buf)), "", buf);
+            fprintf(fp, " %*s*%s ", (int)(4 - strlen(buf)), "", buf);
         }
         else
-            fprintf(stderr, " %*d ", 5, *row_idx);
+            fprintf(fp, " %*d ", 5, *row_idx);
 
         for (c = 0; c != tt_str.cols; ++c)
         {
             int w = *(int*)vec_get(&col_widths, c);
             struct str* s = table_get(&tt_str, r, c);
-            fprintf(stderr, "| %*s%.*s ", w - s->len, "", s->len, s->data);
+            fprintf(fp, "| %*s%.*s ", w - s->len, "", s->len, s->data);
         }
-        fprintf(stderr, "\n");
+        fprintf(fp, "\n");
     }
 
 calc_text_failed:
@@ -308,8 +321,11 @@ calc_text_failed:
             str_deinit(table_get(&tt_str, r, c));
     table_deinit(&tt_str);
 table_init_failed:
+    fclose(fp);
+fopen_failed:
     return;
 }
+#endif
 
 static int
 dfa_state_is_accept(const struct dfa_table* dfa, int state)
@@ -483,9 +499,7 @@ wildcard_swapped_to_end:;
                 goto build_nfa_table_failed;
         VEC_END_EACH
 
-    fprintf(stderr, "NFA:\n");
-    print_nfa(&nfa_tt, &dfa->tf);
-    fprintf(stderr, "\n");
+    nfa_export_table(&nfa_tt, &dfa->tf, "nfa.txt");
 
     /*
      * DFA cannot handle wildcards as-is, because it would require generating
@@ -515,9 +529,7 @@ wildcard_swapped_to_end:;
                 VEC_END_EACH
             }
         }
-    fprintf(stderr, "NFA (wildcards):\n");
-    print_nfa(&nfa_tt, &dfa->tf);
-    fprintf(stderr, "\n");
+    nfa_export_table(&nfa_tt, &dfa->tf, "nfa_wc.txt");
 
     /*
      * Unlike the NFA transition table, the DFA table's states are sets of
@@ -626,12 +638,9 @@ wildcard_swapped_to_end:;
             VEC_END_EACH
         }
 
-    fprintf(stderr, "DFA (duplicates):\n");
-    print_dfa(&dfa->tt, &dfa->tf);
+    dfa_export_table(&dfa->tt, &dfa->tf, "dfa_dups.txt");
     dfa_remove_duplicates(dfa);
-
-    fprintf(stderr, "DFA:\n");
-    print_dfa(&dfa->tt, &dfa->tf);
+    dfa_export_table(&dfa->tt, &dfa->tf, "dfa.txt");
 
     /* Success - This causes dfa->tf to not be freed */
     success = 0;
@@ -666,6 +675,7 @@ dfa_deinit(struct dfa_table* dfa)
     vec_deinit(&dfa->tf);
 }
 
+#if defined(EXPORT_DOT)
 int
 dfa_export_dot(const struct dfa_table* dfa, const char* file_name)
 {
@@ -714,6 +724,7 @@ dfa_export_dot(const struct dfa_table* dfa, const char* file_name)
 open_file_failed:
     return -1;
 }
+#endif
 
 static int
 do_match(const struct matcher* m, union symbol s)

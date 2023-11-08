@@ -327,6 +327,8 @@ ast_post_timing(struct ast* ast)
         {
             if (ast->nodes[n].timing.end == -1)
                 ast->nodes[n].timing.end = ast->nodes[n].timing.start;
+            if (ast->nodes[n].timing.rel_to_ref >= 0)
+                continue;
 
             if (ast->nodes[n].timing.rel_to < 0)
             {
@@ -449,6 +451,11 @@ ast_post_validate_params(struct ast* ast)
                     return -1;
                 }
 
+                if (ast->nodes[n].timing.rel_to_ref < 0)
+                {
+                    log_err("Timing has no reference!\n");
+                    return -1;
+                }
                 if (ast_is_in_subtree_of(ast, n, ast->nodes[n].timing.rel_to_ref))
                 {
                     log_err("Invalid timing reference\n");

@@ -333,9 +333,13 @@ asm_compile(struct asm_dfa* assembly, const struct dfa_table* dfa)
         assemble_transition_lookup_table(&code, dfa, c);
     }
 
-    FILE* fp = fopen("dump.bin", "w");
-    fwrite(vec_data(&code), vec_count(&code), 1, fp);
-    fclose(fp);
+#if defined(EXPORT_DOT)
+    {
+        FILE* fp = fopen("asm.bin", "w");
+        fwrite(vec_data(&code), vec_count(&code), 1, fp);
+        fclose(fp);
+    }
+#endif
 
     while (page_size < (int)vec_count(&code))
         page_size *= 2;

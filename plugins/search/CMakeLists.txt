@@ -43,6 +43,7 @@ vodhound_add_plugin (${PROJECT_NAME}
         IUP::iup)
 
 if (VODHOUND_${PLUGIN_NAME})
+    option (${PLUGIN_NAME}_EXPORT_DOT "Export AST/NFA/DFA of each stage as DOT format, and export transition tables" ON)
     option (${PLUGIN_NAME}_COUNTER_EXAMPLES "Have BISON generate counter examples" OFF)
 
     ###########################################################################
@@ -85,6 +86,9 @@ if (VODHOUND_${PLUGIN_NAME})
     target_include_directories (${PROJECT_NAME}
         PRIVATE
             $<BUILD_INTERFACE:$<$<AND:$<PLATFORM_ID:Windows>,$<NOT:$<BOOL:${HAVE_UNISTD_H}>>>:${PROJECT_SOURCE_DIR}/include/win32_unistd>>)
+    target_compile_definitions (${PROJECT_NAME}
+        PRIVATE
+            $<$<BOOL:${PLUGIN_NAME}_EXPORT_DOT>:EXPORT_DOT>)
 
     if (VODHOUND_TESTS)
         target_sources (${PROJECT_NAME}-tests

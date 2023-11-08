@@ -541,6 +541,7 @@ nfa_deinit(struct nfa_graph* nfa)
     mem_free(nfa->nodes);
 }
 
+#if defined(EXPORT_DOT)
 int
 nfa_export_dot(const struct nfa_graph* nfa, const char* file_name)
 {
@@ -586,6 +587,7 @@ nfa_export_dot(const struct nfa_graph* nfa, const char* file_name)
 open_file_failed:
     return -1;
 }
+#endif
 
 #if 0
 // ----------------------------------------------------------------------------

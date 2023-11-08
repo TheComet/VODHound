@@ -27,8 +27,12 @@ nfa_compile(struct nfa_graph* nfa, const struct ast* ast);
 void
 nfa_deinit(struct nfa_graph* nfa);
 
+#if defined(EXPORT_DOT)
 int
 nfa_export_dot(const struct nfa_graph* nfa, const char* file_name);
+#else
+#define nfa_export_dot(nfa, file_name)
+#endif
 
 #if defined(__cplusplus)
 }

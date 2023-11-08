@@ -32,6 +32,7 @@ ast_post(struct ast* ast)
 {
     if (ast_post_timing(ast) < 0) return -1;
     if (ast_post_jump_qualifiers(ast) < 0) return -1;
+    if (ast_post_timing(ast) < 0) return -1;
     if (ast_post_validate_params(ast) < 0) return -1;
     ast_export_dot(ast, "ast.dot");
     return 0;

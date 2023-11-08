@@ -142,6 +142,7 @@ int ast_timing(struct ast* ast, int child, int rel_to, int start, int end, const
     ast->nodes[n].timing.rel_to = rel_to;
     ast->nodes[n].timing.start = start;
     ast->nodes[n].timing.end = end;
+    ast->nodes[n].timing.rel_to_ref = -1;
     return n;
 }
 
@@ -241,6 +242,7 @@ static void write_edges(const struct ast* ast, FILE* fp)
     }
 }
 
+#if defined(EXPORT_DOT)
 int ast_export_dot(const struct ast* ast, const char* file_name)
 {
     FILE* fp = fopen(file_name, "w");
@@ -255,3 +257,4 @@ int ast_export_dot(const struct ast* ast, const char* file_name)
 
     return 0;
 }
+#endif

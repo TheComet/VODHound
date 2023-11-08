@@ -143,7 +143,11 @@ int ast_motion(struct ast* ast, uint64_t motion, const struct YYLTYPE* loc);
 int ast_context(struct ast* ast, int child, enum ast_ctx_flags flags, const struct YYLTYPE* loc);
 int ast_timing(struct ast* ast, int child, int rel_to, int start, int end, const struct YYLTYPE* loc);
 
+#if defined(EXPORT_DOT)
 int ast_export_dot(const struct ast* ast, const char* file_name);
+#else
+#define ast_export_dot(ast, file_name)
+#endif
 
 #if defined(__cplusplus)
 }

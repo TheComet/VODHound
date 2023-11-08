@@ -24,8 +24,18 @@ dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa);
 void
 dfa_deinit(struct dfa_table* dfa);
 
+#if defined(EXPORT_DOT)
 int
 dfa_export_dot(const struct dfa_table* dfa, const char* file_name);
+void
+nfa_export_table(const struct table* tt, const struct vec* tf, const char* file_name);
+void
+dfa_export_table(const struct table* tt, const struct vec* tf, const char* file_name);
+#else
+#define dfa_export_dot(dfa, file_name)
+#define nfa_export_table(tt, tf, file_name)
+#define dfa_export_table(tt, tf, file_name)
+#endif
 
 struct range
 dfa_find_first(const struct dfa_table* dfa, const union symbol* symbols, struct range window);
