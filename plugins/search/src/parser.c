@@ -45,6 +45,7 @@ parser_parse(struct parser* parser, const char* text, struct ast* ast)
     YY_BUFFER_STATE buffer;
     YYSTYPE pushed_value;
     YYLTYPE location = {1, 1};
+    enum ast_ctx_flags flags;
 
     yyset_extra(&ast->labels, parser->scanner);
 
@@ -55,9 +56,88 @@ parser_parse(struct parser* parser, const char* text, struct ast* ast)
     do
     {
         pushed_char = yylex(&pushed_value, &location, parser->scanner);
+        if (pushed_char == TOK_PRE_CTX)
+            goto pre_context_parser;
+        else if (pushed_char == TOK_POST_CTX)
+            goto post_context_parser;
         parse_result = yypush_parse(parser->parser, pushed_char, &pushed_value, &location, ast);
+main_parser:;
     } while (parse_result == YYPUSH_MORE);
+    goto main_parser_done;
 
+pre_context_parser:
+    flags = pushed_value.ctx_flag_value;
+    do
+    {
+        pushed_char = yylex(&pushed_value, &location, parser->scanner);
+        if (pushed_char != '|')
+        {
+            YYSTYPE flag_value;
+            flag_value.ctx_flag_value = flags;
+            if ((parse_result = yypush_parse(parser->parser, TOK_PRE_CTX, &flag_value, &location, ast)) != YYPUSH_MORE)
+                goto main_parser_done;
+            parse_result = yypush_parse(parser->parser, pushed_char, &pushed_value, &location, ast);
+            goto main_parser;
+        }
+
+        pushed_char = yylex(&pushed_value, &location, parser->scanner);
+        if (pushed_char != TOK_PRE_CTX)
+        {
+            YYSTYPE flag_value;
+            flag_value.ctx_flag_value = flags;
+            if ((parse_result = yypush_parse(parser->parser, TOK_PRE_CTX, &flag_value, &location, ast)) != YYPUSH_MORE)
+                goto main_parser_done;
+            if ((parse_result = yypush_parse(parser->parser, '|', &pushed_value, &location, ast)) != YYPUSH_MORE)
+                goto main_parser_done;
+            parse_result = yypush_parse(parser->parser, pushed_char, &pushed_value, &location, ast);
+            goto main_parser;
+        }
+
+        flags |= pushed_value.ctx_flag_value;
+    } while (1);
+
+post_context_parser:
+    flags = pushed_value.ctx_flag_value;
+    do
+    {
+        pushed_char = yylex(&pushed_value, &location, parser->scanner);
+        if (pushed_char != '|')
+        {
+            YYSTYPE flag_value;
+            flag_value.ctx_flag_value = flags;
+            if ((parse_result = yypush_parse(parser->parser, TOK_POST_CTX, &flag_value, &location, ast)) != YYPUSH_MORE)
+                goto main_parser_done;
+            parse_result = yypush_parse(parser->parser, pushed_char, &pushed_value, &location, ast);
+            goto main_parser;
+        }
+
+        pushed_char = yylex(&pushed_value, &location, parser->scanner);
+        if (pushed_char == TOK_PRE_CTX)
+        {
+            YYSTYPE flag_value;
+            flag_value.ctx_flag_value = flags;
+            if ((parse_result = yypush_parse(parser->parser, TOK_POST_CTX, &flag_value, &location, ast)) != YYPUSH_MORE)
+                goto main_parser_done;
+            if ((parse_result = yypush_parse(parser->parser, '|', &pushed_value, &location, ast)) != YYPUSH_MORE)
+                goto main_parser_done;
+            goto pre_context_parser;
+        }
+        else if (pushed_char != TOK_POST_CTX)
+        {
+            YYSTYPE flag_value;
+            flag_value.ctx_flag_value = flags;
+            if ((parse_result = yypush_parse(parser->parser, TOK_POST_CTX, &flag_value, &location, ast)) != YYPUSH_MORE)
+                goto main_parser_done;
+            if ((parse_result = yypush_parse(parser->parser, '|', &pushed_value, &location, ast)) != YYPUSH_MORE)
+                goto main_parser_done;
+            parse_result = yypush_parse(parser->parser, pushed_char, &pushed_value, &location, ast);
+            goto main_parser;
+        }
+
+        flags |= pushed_value.ctx_flag_value;
+    } while (1);
+
+main_parser_done:
     if (parse_result == 0)
     {
         yy_delete_buffer(buffer, parser->scanner);

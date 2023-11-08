@@ -268,3 +268,48 @@ TEST_F(NAME, parse_idj_0xa_os_with_parent)
     ASSERT_THAT(parser_parse(&parser, "0xb->idj 0xa os", &ast2), Eq(0));
     EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
 }
+
+TEST_F(NAME, post_ctx)
+{
+    ast_set_root(&ast1,
+        ast_union(&ast1,
+            ast_motion(&ast1, 0xa, &loc),
+            ast_context(&ast1,
+                ast_motion(&ast1, 0xb, &loc),
+                (enum ast_ctx_flags)(AST_CTX_OS | AST_CTX_HIT),
+                &loc),
+            &loc));
+    ASSERT_THAT(parser_parse(&parser, "0xa|0xb os|hit", &ast2), Eq(0));
+    EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+}
+
+TEST_F(NAME, pre_ctx)
+{
+    ast_set_root(&ast1,
+        ast_union(&ast1,
+            ast_context(&ast1,
+                ast_motion(&ast1, 0xa, &loc),
+                (enum ast_ctx_flags)(AST_CTX_RISING | AST_CTX_FALLING),
+                &loc),
+            ast_motion(&ast1, 0xb, &loc),
+            &loc));
+    ASSERT_THAT(parser_parse(&parser, "rising|falling 0xa|0xb", &ast2), Eq(0));
+    EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+}
+
+TEST_F(NAME, pre_and_post_ctx)
+{
+    ast_set_root(&ast1,
+        ast_union(&ast1,
+            ast_union(&ast1,
+                ast_motion(&ast1, 0xa, &loc),
+                ast_context(&ast1,
+                    ast_motion(&ast1, 0xb, &loc),
+                    (enum ast_ctx_flags)(AST_CTX_RISING | AST_CTX_FALLING | AST_CTX_OS | AST_CTX_WHIFF),
+                    &loc),
+                &loc),
+            ast_motion(&ast1, 0xc, &loc),
+            &loc));
+    ASSERT_THAT(parser_parse(&parser, "0xa | rising|falling 0xb os|whiff | 0xc", &ast2), Eq(0));
+    EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+}

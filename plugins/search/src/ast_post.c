@@ -251,12 +251,6 @@ create_idj_ast(struct ast* ast, const struct YYLTYPE* loc)
     return ast_statement(ast, idj, dj, loc);
 }
 
-static int
-insert_jump_stmt(struct ast* ast, int jump, enum ast_ctx flag, const struct YYLTYPE* loc)
-{
-
-}
-
 int
 ast_post_jump_qualifiers(struct ast* ast)
 {
@@ -383,7 +377,7 @@ ast_post_timing(struct ast* ast)
                 while (ast->nodes[prev_stmt].info.type == AST_STATEMENT)
                     prev_stmt = ast->nodes[prev_stmt].base.right;
 
-                ast->nodes[n].timing.rel_to = prev_stmt;
+                ast->nodes[n].timing.rel_to_ref = prev_stmt;
             }
             else
             {
@@ -423,6 +417,20 @@ ast_post_validate_params(struct ast* ast)
             } break;
 
             case AST_CONTEXT: {
+                const enum ast_ctx_flags invalid_flags =
+                    AST_CTX_OOS |
+                    AST_CTX_SH |
+                    AST_CTX_FH |
+                    AST_CTX_DJ |
+                    AST_CTX_FS |
+                    AST_CTX_IDJ |
+                    AST_CTX_KILL |
+                    AST_CTX_DIE;
+                if (ast->nodes[n].context.flags & invalid_flags)
+                {
+                    log_err("Invalid flags set in context qualifiers! Should not happen\n");
+                    return -1;
+                }
             } break;
 
             case AST_TIMING: {
@@ -438,6 +446,12 @@ ast_post_validate_params(struct ast* ast)
                 if (start > end)
                 {
                     log_err("Invalid frame range '%d' - '%d': Start frame must be smaller than end frame\n", start, end);
+                    return -1;
+                }
+
+                if (ast_is_in_subtree_of(ast, n, ast->nodes[n].timing.rel_to_ref))
+                {
+                    log_err("Invalid timing reference\n");
                     return -1;
                 }
             } break;

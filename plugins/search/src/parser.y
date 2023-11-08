@@ -48,29 +48,13 @@
     struct strlist_str string_value;
     int integer_value;
     uint64_t motion_value;
-    enum ast_ctx_flags ctx_flags;
+    enum ast_ctx_flags ctx_flag_value;
     int node_value;
 }
 
 %token '.' '*' '+' '?' '(' ')' '|' '!'
 %token INTO
-%token OS
-%token OOS
-%token HIT
-%token WHIFF
-%token CLANK
-%token TRADE
-%token KILL
-%token DIE
-%token BURY
-%token BURIED
-%token RISING
-%token FALLING
-%token SH
-%token FH
-%token DJ
-%token FS
-%token IDJ
+%token<ctx_flag_value> PRE_CTX POST_CTX
 %token<integer_value> TIMING
 %token<integer_value> NUM
 %token<integer_value> PERCENT
@@ -78,9 +62,8 @@
 %token<motion_value> MOTION
 
 %type<node_value> stmts stmt timing rep rep_short rep_range union inversion qual_label label
-%type<ctx_flags> pre_ctx post_ctx
 
-%right '|'
+%left '|'
 
 %start query
 
@@ -92,13 +75,6 @@ stmts
   : stmts INTO union                    { $$ = ast_statement(ast, $1, $3, &@$); }
   | union                               { $$ = $1; }
   ;
-/*
-stmt
-  : pre_ctx timing post_ctx { $$ = ast_context_qualifier(ast, $2, $1 | $3, &@$); }
-  | timing post_ctx          { $$ = ast_context_qualifier(ast, $1, $2, &@$); }
-  | pre_ctx timing           { $$ = ast_context_qualifier(ast, $2, $1, &@$); }
-  | timing                         { $$ = $1; }
-  ;*/
 stmt
   : union                               { $$ = $1; }
   ;
@@ -140,13 +116,11 @@ rep_range
 inversion
   : '!' qual_label                      { $$ = ast_inversion(ast, $2, &@$); }
   | qual_label                          { $$ = $1; }
-  | '.'                                 { $$ = ast_wildcard(ast, &@$); }
-  | '(' stmts ')'                       { $$ = $2; }
   ;
 qual_label
-  : pre_ctx timing post_ctx             { $$ = ast_context(ast, $2, $1 | $3, &@$); }
-  | pre_ctx timing                      { $$ = ast_context(ast, $2, $1, &@$); }
-  | timing post_ctx                     { $$ = ast_context(ast, $1, $2, &@$); }
+  : PRE_CTX timing POST_CTX             { $$ = ast_context(ast, $2, $1 | $3, &@$); }
+  | PRE_CTX timing                      { $$ = ast_context(ast, $2, $1, &@$); }
+  | timing POST_CTX                     { $$ = ast_context(ast, $1, $2, &@$); }
   | timing                              { $$ = $1; }
   ;
 timing
@@ -160,29 +134,7 @@ timing
 label
   : LABEL                               { $$ = ast_label(ast, $1, &@$); }
   | MOTION                              { $$ = ast_motion(ast, $1, &@$); }
-  ;
-pre_ctx
-  : pre_ctx '|' pre_ctx     { $$ = $1; $$ |= $3; }
-/*  | '(' pre_qual ')'                    { $$ = $2; }*/
-  | SH                                  { $$ = AST_CTX_SH; }
-  | FH                                  { $$ = AST_CTX_FH; }
-  | DJ                                  { $$ = AST_CTX_DJ; }
-  | FS                                  { $$ = AST_CTX_FS; }
-  | IDJ                                 { $$ = AST_CTX_IDJ; }
-  | FALLING                             { $$ = AST_CTX_FALLING; }
-  | RISING                              { $$ = AST_CTX_RISING; }
-  ;
-post_ctx
-  : post_ctx '|' post_ctx   { $$ = $1; $$ |= $3; }
-/*  | '(' post_qual ')'                 { $$ = $2; }*/
-  | OS                                  { $$ = AST_CTX_OS; }
-  | OOS                                 { $$ = AST_CTX_OOS; }
-  | HIT                                 { $$ = AST_CTX_HIT; }
-  | WHIFF                               { $$ = AST_CTX_WHIFF; }
-  | CLANK                               { $$ = AST_CTX_CLANK; }
-  | TRADE                               { $$ = AST_CTX_TRADE; }
-  | KILL                                { $$ = AST_CTX_KILL; }
-  | DIE                                 { $$ = AST_CTX_DIE; }
+  | '.'                                 { $$ = ast_wildcard(ast, &@$); }
   ;
 %%
 

@@ -6,19 +6,10 @@
     }
 
 #include "search/parser.y.h"
-#include "vh/mem.h"
+#include "search/ast.h"
 #include "vh/str.h"
-#include <string.h>
-#include <stdlib.h>
 
 #define labels ((struct strlist*)yyget_extra(yyg))
-
-static char* yytext_dup(const char* text);
-
-/*
-"fh"                    { return TOK_FH; }
-"sh"                    { return TOK_SH; }
-"dj"                    { return TOK_DJ; }*/
 
 %}
 
@@ -32,23 +23,27 @@ static char* yytext_dup(const char* text);
 %%
 [\.\(\)\|\?\+\*!\,\{\}]    { return yytext[0]; }
 "->"                       { return TOK_INTO; }
-"os"                       { return TOK_OS; }
-"oos"                      { return TOK_OOS; }
-"hit"                      { return TOK_HIT; }
-"whiff"                    { return TOK_WHIFF; }
-"clank"                    { return TOK_CLANK; }
-"trade"                    { return TOK_TRADE; }
-"kill"                     { return TOK_KILL; }
-"die"                      { return TOK_DIE; }
-"rising"                   { return TOK_RISING; }
-"ris"                      { return TOK_RISING; }
-"falling"                  { return TOK_FALLING; }
-"fal"                      { return TOK_FALLING; }
-"sh"                       { return TOK_SH; }
-"fh"                       { return TOK_FH; }
-"dj"                       { return TOK_DJ; }
-"fs"                       { return TOK_FS; }
-"idj"                      { return TOK_IDJ; }
+"os"                       { yylval->ctx_flag_value = AST_CTX_OS; return TOK_POST_CTX; }
+"oos"                      { yylval->ctx_flag_value = AST_CTX_OOS; return TOK_POST_CTX; }
+"hit"                      { yylval->ctx_flag_value = AST_CTX_HIT; return TOK_POST_CTX; }
+"whiff"                    { yylval->ctx_flag_value = AST_CTX_WHIFF; return TOK_POST_CTX; }
+"clank"                    { yylval->ctx_flag_value = AST_CTX_CLANK; return TOK_POST_CTX; }
+"trade"                    { yylval->ctx_flag_value = AST_CTX_TRADE; return TOK_POST_CTX; }
+"crossup"                  { yylval->ctx_flag_value = AST_CTX_CROSSUP; return TOK_POST_CTX; }
+"cross"                    { yylval->ctx_flag_value = AST_CTX_CROSSUP; return TOK_POST_CTX; }
+"kill"                     { yylval->ctx_flag_value = AST_CTX_KILL; return TOK_POST_CTX; }
+"die"                      { yylval->ctx_flag_value = AST_CTX_DIE; return TOK_POST_CTX; }
+"bury"                     { yylval->ctx_flag_value = AST_CTX_BURY; return TOK_POST_CTX; }
+"buried"                   { yylval->ctx_flag_value = AST_CTX_BURIED; return TOK_POST_CTX; }
+"rising"                   { yylval->ctx_flag_value = AST_CTX_RISING; return TOK_PRE_CTX; }
+"ris"                      { yylval->ctx_flag_value = AST_CTX_RISING; return TOK_PRE_CTX; }
+"falling"                  { yylval->ctx_flag_value = AST_CTX_FALLING; return TOK_PRE_CTX; }
+"fal"                      { yylval->ctx_flag_value = AST_CTX_FALLING; return TOK_PRE_CTX; }
+"sh"                       { yylval->ctx_flag_value = AST_CTX_SH; return TOK_PRE_CTX; }
+"fh"                       { yylval->ctx_flag_value = AST_CTX_FH; return TOK_PRE_CTX; }
+"dj"                       { yylval->ctx_flag_value = AST_CTX_DJ; return TOK_PRE_CTX; }
+"fs"                       { yylval->ctx_flag_value = AST_CTX_FS; return TOK_PRE_CTX; }
+"idj"                      { yylval->ctx_flag_value = AST_CTX_IDJ; return TOK_PRE_CTX; }
 "f"[0-9]+                  { yylval->integer_value = atoi(&yytext[1]); return TOK_TIMING; }
 "0x"[0-9a-fA-F]+           { str_hex_to_u64(cstr_view(yytext), &yylval->motion_value); return TOK_MOTION; }
 [0-9]+                     { yylval->integer_value = atoi(yytext); return TOK_NUM; }
@@ -60,13 +55,3 @@ static char* yytext_dup(const char* text);
 [ \t\r\n]
 .                          { return yytext[0]; }
 %%
-
-static char* yytext_dup(const char* text)
-{
-    int len = (int)strlen(text);
-    char* dup = mem_alloc(len + 1);
-    if (dup == NULL)
-        return NULL;
-    strcpy(dup, text);
-    return dup;
-}

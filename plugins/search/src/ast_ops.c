@@ -64,6 +64,21 @@ void ast_replace_into(struct ast* ast, int node, int target)
         ast->nodes[parent].base.right = node;
 }
 
+int ast_is_in_subtree_of(struct ast* ast, int node, int root)
+{
+    if (node == root)
+        return 1;
+
+    if (ast->nodes[root].base.left >= 0)
+        if (ast_is_in_subtree_of(ast, node, ast->nodes[root].base.left))
+            return 1;
+    if (ast->nodes[root].base.right >= 0)
+        if (ast_is_in_subtree_of(ast, node, ast->nodes[root].base.right))
+            return 1;
+
+    return 0;
+}
+
 int ast_trees_equal(struct ast* a1, int n1, struct ast* a2, int n2)
 {
     if (a1->nodes[n1].info.type != a2->nodes[n2].info.type)
