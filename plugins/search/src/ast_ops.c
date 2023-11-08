@@ -43,9 +43,9 @@ void ast_swap_nodes(struct ast* ast, int n1, int n2)
 
 void ast_collapse_into(struct ast* ast, int node, int target)
 {
+    ast_swap_nodes(ast, node, ast->node_count - 1);
+    ast->nodes[target] = ast->nodes[ast->node_count - 1];
     ast->node_count--;
-    ast_swap_nodes(ast, node, ast->node_count);
-    ast->nodes[target] = ast->nodes[ast->node_count];
 }
 
 int ast_find_parent(struct ast* ast, int node)

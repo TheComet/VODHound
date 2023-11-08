@@ -63,7 +63,8 @@ void ast_clear(struct ast* ast)
 #define NEW_NODE_NO_INIT(ast)                                       \
     ast->node_count++;                                              \
     if (ast->node_count >= ast->node_capacity) {                    \
-        union ast_node* new_nodes = mem_realloc(ast->nodes, ast->node_capacity * 2); \
+        union ast_node* new_nodes = mem_realloc(ast->nodes,         \
+            sizeof(union ast_node) * ast->node_capacity * 2);       \
         if (new_nodes == NULL)                                      \
             return -1;                                              \
         ast->nodes = new_nodes;                                     \

@@ -33,7 +33,7 @@ try_patch_user_defined(
             VEC_FOR_EACH(motions, uint64_t, motion)
                 struct strlist_str* hm_label;
                 int n = ast_motion(ast, *motion, (struct YYLTYPE*)&ast->nodes[node].info.loc);
-                if (node < 0)
+                if (n < 0)
                     return -1;
 
                 root = root == -1 ? n :
@@ -49,13 +49,15 @@ try_patch_user_defined(
                 }
             VEC_END_EACH
 
-            if (root >= 0)
+            /* Only need repetition if there is more than 1 label */
+            if (vec_count(motions) > 1)
             {
                 root = ast_repetition(ast, root, 1, -1, (struct YYLTYPE*)&ast->nodes[node].info.loc);
                 if (root < 0)
                     return -1;
-                ast_collapse_into(ast, root, node);
             }
+
+            ast_collapse_into(ast, root, node);
 
             return 1;
         }
