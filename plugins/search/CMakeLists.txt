@@ -98,6 +98,9 @@ if (VODHOUND_${PLUGIN_NAME})
         target_include_directories (${PROJECT_NAME}-tests
             PRIVATE
                 $<BUILD_INTERFACE:$<$<AND:$<PLATFORM_ID:Windows>,$<NOT:$<BOOL:${HAVE_UNISTD_H}>>>:${PROJECT_SOURCE_DIR}/include/win32_unistd>>)
+        target_compile_definitions (${PROJECT_NAME}-tests
+            PRIVATE
+                $<$<BOOL:${PLUGIN_NAME}_EXPORT_DOT>:EXPORT_DOT>)
     endif ()
 
     ###########################################################################

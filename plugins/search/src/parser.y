@@ -3,13 +3,13 @@
 {
     #include <stdint.h>
     #include "search/ast.h"
-
+    
+    #define YYLTYPE_IS_DECLARED
     typedef struct YYLTYPE YYLTYPE;
     struct YYLTYPE
     {
         int begin, end;
     };
-    #define YYLTYPE_IS_DECLARED
 
     typedef void* yyscan_t;
 }
@@ -43,7 +43,7 @@
 
 %parse-param {struct ast* ast}
 
-/* This is the union that will become known as QPSTYPE in the generated code */
+/* This is the union that will become known as YYSTYPE in the generated code */
 %union {
     struct strlist_str string_value;
     int integer_value;
@@ -52,7 +52,7 @@
     int node_value;
 }
 
-%token '.' '*' '+' '?' '(' ')' '|' '!'
+%token '.' '*' '+' '?' '(' ')' '|' '!' '{' '}'
 %token INTO
 %token<ctx_flag_value> PRE_CTX POST_CTX
 %token<integer_value> TIMING
@@ -124,10 +124,10 @@ qual_label
   | timing                              { $$ = $1; }
   ;
 timing
-  : TIMING '-' NUM ',' stmt label       { $$ = ast_timing(ast, $6, $5, $1, $3, &@$); }
-  | TIMING '-' NUM label                { $$ = ast_timing(ast, $4, -1, $1, $3, &@$); }
-  | TIMING ',' stmt label               { $$ = ast_timing(ast, $4, $3, $1, -1, &@$); }
-  | TIMING label                        { $$ = ast_timing(ast, $2, -1, $1, -1, &@$); }
+  : TIMING '-' NUM ',' stmt label       { $$ = ast_timing(ast, $5, $6, $1, $3, &@$); }
+  | TIMING '-' NUM label                { $$ = ast_timing(ast, $1, $4, $1, $3, &@$); }
+  | TIMING ',' stmt label               { $$ = ast_timing(ast, $3, $4, $1, -1, &@$); }
+  | TIMING label                        { $$ = ast_timing(ast, -1, $2, $1, -1, &@$); }
   | label                               { $$ = $1; }
   | '(' stmts ')'                       { $$ = $2; }
   ;

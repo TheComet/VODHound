@@ -202,39 +202,64 @@ TEST_F(NAME, parse_fs_0xa_os_with_parent)
 
 TEST_F(NAME, parse_idj_0xa_os)
 {
+    int jump = ast_union(&ast1,
+        ast_union(&ast1,
+            ast_motion(&ast1, hash40_cstr("jump_f_mini"), &loc),
+            ast_motion(&ast1, hash40_cstr("jump_b_mini"), &loc),
+            &loc),
+        ast_union(&ast1,
+            ast_motion(&ast1, hash40_cstr("jump_f"), &loc),
+            ast_motion(&ast1, hash40_cstr("jump_b"), &loc),
+            &loc),
+        &loc);
+    int dj = ast_union(&ast1,
+        ast_motion(&ast1, hash40_cstr("jump_aerial_f"), &loc),
+        ast_motion(&ast1, hash40_cstr("jump_aerial_b"), &loc),
+        &loc);
+    int timing = ast_timing(&ast1,
+        -1,
+        dj,
+        1, 1, &loc);
+    ast_timing_set_ref(&ast1, timing, jump);
     ast_set_root(&ast1,
         ast_statement(&ast1,
             ast_statement(&ast1,
                 ast_statement(&ast1,
                     ast_motion(&ast1, hash40_cstr("jump_squat"), &loc),
-                    ast_union(&ast1,
-                        ast_union(&ast1,
-                            ast_motion(&ast1, hash40_cstr("jump_f_mini"), &loc),
-                            ast_motion(&ast1, hash40_cstr("jump_b_mini"), &loc),
-                            &loc),
-                        ast_union(&ast1,
-                            ast_motion(&ast1, hash40_cstr("jump_f"), &loc),
-                            ast_motion(&ast1, hash40_cstr("jump_b"), &loc),
-                            &loc),
-                        &loc),
+                    jump,
                     &loc),
-                ast_timing(&ast1,
-                    ast_union(&ast1,
-                        ast_motion(&ast1, hash40_cstr("jump_aerial_f"), &loc),
-                        ast_motion(&ast1, hash40_cstr("jump_aerial_b"), &loc),
-                        &loc),
-                    -1, 1, 1, &loc),
+                timing,
                 &loc),
             ast_context(&ast1,
                 ast_motion(&ast1, 0xa, &loc),
                 AST_CTX_OS, &loc),
             &loc));
+    ast_export_dot(&ast1, "ast.dot");
     ASSERT_THAT(parser_parse(&parser, "idj 0xa os", &ast2), Eq(0));
     EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
 }
 
 TEST_F(NAME, parse_idj_0xa_os_with_parent)
 {
+    int jump = ast_union(&ast1,
+        ast_union(&ast1,
+            ast_motion(&ast1, hash40_cstr("jump_f_mini"), &loc),
+            ast_motion(&ast1, hash40_cstr("jump_b_mini"), &loc),
+            &loc),
+        ast_union(&ast1,
+            ast_motion(&ast1, hash40_cstr("jump_f"), &loc),
+            ast_motion(&ast1, hash40_cstr("jump_b"), &loc),
+            &loc),
+        &loc);
+    int dj = ast_union(&ast1,
+        ast_motion(&ast1, hash40_cstr("jump_aerial_f"), &loc),
+        ast_motion(&ast1, hash40_cstr("jump_aerial_b"), &loc),
+        &loc);
+    int timing = ast_timing(&ast1,
+        -1,
+        dj,
+        1, 1, &loc);
+    ast_timing_set_ref(&ast1, timing, jump);
     ast_set_root(&ast1,
         ast_statement(&ast1,
             ast_motion(&ast1, 0xb, &loc),
@@ -242,23 +267,9 @@ TEST_F(NAME, parse_idj_0xa_os_with_parent)
                 ast_statement(&ast1,
                     ast_statement(&ast1,
                         ast_motion(&ast1, hash40_cstr("jump_squat"), &loc),
-                        ast_union(&ast1,
-                            ast_union(&ast1,
-                                ast_motion(&ast1, hash40_cstr("jump_f_mini"), &loc),
-                                ast_motion(&ast1, hash40_cstr("jump_b_mini"), &loc),
-                                &loc),
-                            ast_union(&ast1,
-                                ast_motion(&ast1, hash40_cstr("jump_f"), &loc),
-                                ast_motion(&ast1, hash40_cstr("jump_b"), &loc),
-                                &loc),
-                            &loc),
+                        jump,
                         &loc),
-                    ast_timing(&ast1,
-                        ast_union(&ast1,
-                            ast_motion(&ast1, hash40_cstr("jump_aerial_f"), &loc),
-                            ast_motion(&ast1, hash40_cstr("jump_aerial_b"), &loc),
-                            &loc),
-                        -1, 1, 1, &loc),
+                    timing,
                     &loc),
                 ast_context(&ast1,
                     ast_motion(&ast1, 0xa, &loc),
@@ -311,5 +322,117 @@ TEST_F(NAME, pre_and_post_ctx)
             ast_motion(&ast1, 0xc, &loc),
             &loc));
     ASSERT_THAT(parser_parse(&parser, "0xa | rising|falling 0xb os|whiff | 0xc", &ast2), Eq(0));
+    EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+}
+
+TEST_F(NAME, timing_with_ref1)
+{
+    int ref = ast_motion(&ast1, 0xa, &loc);
+    int timing = ast_timing(&ast1,
+        ast_motion(&ast1, 0xa, &loc),
+        ast_motion(&ast1, 0xc, &loc),
+        1, 1, &loc);
+    ast_timing_set_ref(&ast1, timing, ref);
+    ast_set_root(&ast1,
+        ast_statement(&ast1,
+            ast_statement(&ast1,
+                ast_statement(&ast1,
+                    ast_statement(&ast1,
+                        ref,
+                        ast_motion(&ast1, 0xb, &loc),
+                        &loc),
+                    timing,
+                    &loc),
+                ast_motion(&ast1, 0xd, &loc),
+                &loc),
+            ast_motion(&ast1, 0xe, &loc),
+            &loc));
+    
+    ASSERT_THAT(parser_parse(&parser, "0xa->0xb->f1,0xa 0xc->0xd->0xe", &ast2), Eq(0));
+    EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+}
+
+TEST_F(NAME, timing_with_ref2)
+{
+    int ref = ast_motion(&ast1, 0xa, &loc);
+    int timing = ast_timing(&ast1,
+        ast_motion(&ast1, 0xa, &loc),
+        ast_motion(&ast1, 0xc, &loc),
+        1, 1, &loc);
+    ast_timing_set_ref(&ast1, timing, ref);
+    ast_set_root(&ast1,
+        ast_statement(&ast1,
+            ast_statement(&ast1,
+                ast_statement(&ast1,
+                    ast_statement(&ast1,
+                        ref,
+                        ast_motion(&ast1, 0xa, &loc),
+                        &loc),
+                    timing,
+                    &loc),
+                ast_motion(&ast1, 0xa, &loc),
+                &loc),
+            ast_motion(&ast1, 0xa, &loc),
+            &loc));
+    ASSERT_THAT(parser_parse(&parser, "0xa->0xa->f1,0xa 0xc->0xa->0xa", &ast2), Eq(0));
+    EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+}
+
+TEST_F(NAME, timing_with_ref3)
+{
+    int ref = ast_motion(&ast1, 0xa, &loc);
+    int timing = ast_timing(&ast1,
+        ast_motion(&ast1, 0xa, &loc),
+        ast_motion(&ast1, 0xa, &loc),
+        1, 1, &loc);
+    ast_timing_set_ref(&ast1, timing, ref);
+    ast_set_root(&ast1,
+        ast_statement(&ast1,
+            ast_statement(&ast1,
+                ast_statement(&ast1,
+                    ast_statement(&ast1,
+                        ref,
+                        ast_motion(&ast1, 0xa, &loc),
+                        &loc),
+                    timing,
+                    &loc),
+                ast_motion(&ast1, 0xa, &loc),
+                &loc),
+            ast_motion(&ast1, 0xa, &loc),
+            &loc));
+    ASSERT_THAT(parser_parse(&parser, "0xa->0xa->f1,0xa 0xa->0xa->0xa", &ast2), Eq(0));
+    EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+}
+
+TEST_F(NAME, timing_with_ref4)
+{
+    ASSERT_THAT(parser_parse(&parser, "0xa->0xb->f1,0xc 0xc->0xd->0xe", &ast2), Ne(0));
+}
+
+TEST_F(NAME, timing_with_ref5)
+{
+    ASSERT_THAT(parser_parse(&parser, "0xa->0xb->f1,0xc 0xc->0xc->0xc", &ast2), Ne(0));
+}
+
+TEST_F(NAME, timing_with_ref6)
+{
+    int ref = ast_statement(&ast1,
+        ast_motion(&ast1, 0xa, &loc),
+        ast_motion(&ast1, 0xa, &loc),
+        &loc);
+    int timing = ast_timing(&ast1,
+        ast_duplicate(&ast1, ref),
+        ast_motion(&ast1, 0xc, &loc),
+        1, 1, &loc);
+    ast_timing_set_ref(&ast1, timing, ref);
+    ast_set_root(&ast1,
+        ast_statement(&ast1,
+            ast_statement(&ast1,
+                ref,
+                timing,
+                &loc),
+            ast_motion(&ast1, 0xd, &loc),
+            &loc));
+    ASSERT_THAT(parser_parse(&parser, "0xa->0xa->f1,(0xa->0xa) 0xc->0xd", &ast2), Eq(0));
     EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
 }

@@ -243,7 +243,7 @@ create_idj_ast(struct ast* ast, const struct YYLTYPE* loc)
     if (dj < 0) return -1;
 
     /* With IDJs, the double jump has to occur frame 1 */
-    dj = ast_timing(ast, dj, -1, 1, 1, loc);
+    dj = ast_timing(ast, -1, dj, 1, 1, loc);
     if (dj < 0) return -1;
 
     idj = ast_statement(ast, jump_squat, jump, loc);
@@ -383,8 +383,28 @@ ast_post_timing(struct ast* ast)
             }
             else
             {
-                /* TODO */
-                return -1;
+                /* 
+                 * Iterate over all other subtrees in the ast that match the 
+                 * "rel_to" subtree. There could be multiple matches. The goal
+                 * is to find a match occuring as "early" as possible.
+                 */
+                int n2, stmt = -1;
+                for (n2 = 0; n2 != ast->node_count; ++n2)
+                {
+                    if (ast_is_in_subtree_of(ast, n2, n))
+                        continue;
+                    if (ast_trees_equal(ast, ast->nodes[n].timing.rel_to, ast, n2))
+                        if (ast_node_preceeds(ast, n2, stmt == -1 ? n : stmt))
+                            stmt = n2;
+                }
+
+                if (stmt == -1)
+                {
+                    log_err("Failed to find timing reference\n");
+                    return -1;
+                }
+
+                ast->nodes[n].timing.rel_to_ref = stmt;
             }
         }
     return 0;

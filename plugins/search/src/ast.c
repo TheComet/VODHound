@@ -60,7 +60,7 @@ void ast_clear(struct ast* ast)
     ast->node_count = 0;
 }
 
-#define NEW_NODE(ast, node_type, loc)                               \
+#define NEW_NODE_NO_INIT(ast)                                       \
     ast->node_count++;                                              \
     if (ast->node_count >= ast->node_capacity) {                    \
         union ast_node* new_nodes = mem_realloc(ast->nodes, ast->node_capacity * 2); \
@@ -68,6 +68,9 @@ void ast_clear(struct ast* ast)
             return -1;                                              \
         ast->nodes = new_nodes;                                     \
     }                                                               \
+
+#define NEW_NODE(ast, node_type, loc)                               \
+    NEW_NODE_NO_INIT(ast)                                           \
     ast->nodes[ast->node_count-1].base.info.type = node_type;       \
     ast->nodes[ast->node_count-1].base.info.loc.begin = loc->begin; \
     ast->nodes[ast->node_count-1].base.info.loc.end = loc->end;     \
@@ -135,15 +138,31 @@ int ast_context(struct ast* ast, int child, enum ast_ctx_flags flags, const stru
 }
 
 
-int ast_timing(struct ast* ast, int child, int rel_to, int start, int end, const struct YYLTYPE* loc)
+int ast_timing(struct ast* ast, int rel_to, int child, int start, int end, const struct YYLTYPE* loc)
 {
     int n = NEW_NODE(ast, AST_TIMING, loc);
-    ast->nodes[n].timing.child = child;
     ast->nodes[n].timing.rel_to = rel_to;
+    ast->nodes[n].timing.child = child;
     ast->nodes[n].timing.start = start;
     ast->nodes[n].timing.end = end;
     ast->nodes[n].timing.rel_to_ref = -1;
     return n;
+}
+
+int ast_duplicate(struct ast* ast, int node)
+{
+    int dup = NEW_NODE_NO_INIT(ast);
+    memcpy(&ast->nodes[dup], &ast->nodes[node], sizeof(union ast_node));
+
+    if (ast->nodes[node].base.left >= 0)
+        if ((ast->nodes[dup].base.left = ast_duplicate(ast, ast->nodes[node].base.left)) < 0)
+            return -1;
+
+    if (ast->nodes[node].base.right >= 0)
+        if ((ast->nodes[dup].base.right = ast_duplicate(ast, ast->nodes[node].base.right)) < 0)
+            return -1;
+
+    return dup;
 }
 
 static void write_nodes(const struct ast* ast, int n, FILE* fp)

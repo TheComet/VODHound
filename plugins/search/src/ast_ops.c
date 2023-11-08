@@ -15,16 +15,25 @@ void ast_swap_nodes(struct ast* ast, int n1, int n2)
     {
         if (ast->nodes[n].base.left == n1) ast->nodes[n].base.left = -2;
         if (ast->nodes[n].base.right == n1) ast->nodes[n].base.right = -2;
+        if (ast->nodes[n].info.type == AST_TIMING)
+            if (ast->nodes[n].timing.rel_to_ref == n1)
+                ast->nodes[n].timing.rel_to_ref = -2;
     }
     for (n = 0; n != ast->node_count; ++n)
     {
         if (ast->nodes[n].base.left == n2) ast->nodes[n].base.left = n1;
         if (ast->nodes[n].base.right == n2) ast->nodes[n].base.right = n1;
+        if (ast->nodes[n].info.type == AST_TIMING)
+            if (ast->nodes[n].timing.rel_to_ref == n2)
+                ast->nodes[n].timing.rel_to_ref = n1;
     }
     for (n = 0; n != ast->node_count; ++n)
     {
         if (ast->nodes[n].base.left == -2) ast->nodes[n].base.left = n2;
         if (ast->nodes[n].base.right == -2) ast->nodes[n].base.right = n2;
+        if (ast->nodes[n].info.type == AST_TIMING)
+            if (ast->nodes[n].timing.rel_to_ref == -2)
+                ast->nodes[n].timing.rel_to_ref = n2;
     }
 
     tmp = ast->nodes[n1];
@@ -36,7 +45,6 @@ void ast_collapse_into(struct ast* ast, int node, int target)
 {
     ast->node_count--;
     ast_swap_nodes(ast, node, ast->node_count);
-    //ast_deinit_node(ast, target);
     ast->nodes[target] = ast->nodes[ast->node_count];
 }
 
@@ -114,6 +122,10 @@ int ast_trees_equal(struct ast* a1, int n1, struct ast* a2, int n2)
                 return 0;
             if (a1->nodes[n1].timing.end != a2->nodes[n2].timing.end)
                 return 0;
+            if (!ast_trees_equal(
+                    a1, a1->nodes[n1].timing.rel_to_ref,
+                    a2, a2->nodes[n2].timing.rel_to_ref))
+                return 0;
             break;
     }
 
@@ -134,4 +146,23 @@ int ast_trees_equal(struct ast* a1, int n1, struct ast* a2, int n2)
             return 0;
 
     return 1;
+}
+
+int ast_node_preceeds(struct ast* ast, int n1, int n2)
+{
+    while (1)
+    {
+        do {
+            n2 = ast_find_parent(ast, n2);
+            if (n2 < 0)
+                return 0;
+        } while (ast->nodes[n2].info.type != AST_STATEMENT);
+
+        if (ast->nodes[n2].base.left >= 0)
+            if (ast_is_in_subtree_of(ast, n1, ast->nodes[n2].base.left))
+                return 1;
+        if (ast->nodes[n2].base.right >= 0)
+            if (ast_is_in_subtree_of(ast, n1, ast->nodes[n2].base.right))
+                return 0;
+    }
 }

@@ -4,9 +4,10 @@
 extern "C" {
 #endif
 
-#include <stdint.h>
 #include "vh/hm.h"
 #include "vh/str.h"
+#include <stdint.h>
+#include <assert.h>
 
 enum ast_type
 {
@@ -110,8 +111,8 @@ union ast_node
 
     struct timing {
         struct info info;
-        int child;
         int rel_to;
+        int child;
         int start;
         int end;
         int rel_to_ref;
@@ -141,7 +142,13 @@ int ast_wildcard(struct ast* ast, const struct YYLTYPE* loc);
 int ast_label(struct ast* ast, struct strlist_str label, const struct YYLTYPE* loc);
 int ast_motion(struct ast* ast, uint64_t motion, const struct YYLTYPE* loc);
 int ast_context(struct ast* ast, int child, enum ast_ctx_flags flags, const struct YYLTYPE* loc);
-int ast_timing(struct ast* ast, int child, int rel_to, int start, int end, const struct YYLTYPE* loc);
+int ast_timing(struct ast* ast, int rel_to, int child, int start, int end, const struct YYLTYPE* loc);
+#define ast_timing_set_ref(ast, timing, ref) { \
+    assert((ast)->nodes[timing].info.type == AST_TIMING); \
+   (ast)->nodes[timing].timing.rel_to_ref = ref; \
+}
+
+int ast_duplicate(struct ast* ast, int node);
 
 #if defined(EXPORT_DOT)
 int ast_export_dot(const struct ast* ast, const char* file_name);
