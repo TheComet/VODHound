@@ -436,3 +436,51 @@ TEST_F(NAME, timing_with_ref6)
     ASSERT_THAT(parser_parse(&parser, "0xa->0xa->f1,(0xa->0xa) 0xc->0xd", &ast2), Eq(0));
     EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
 }
+
+TEST_F(NAME, damage1)
+{
+    ASSERT_THAT(parser_parse(&parser, "0xa >20%", &ast2), Eq(0));
+    //EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+}
+
+TEST_F(NAME, damage2)
+{
+    ASSERT_THAT(parser_parse(&parser, "0xa >=20%", &ast2), Eq(0));
+    //EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+}
+
+TEST_F(NAME, damage3)
+{
+    ASSERT_THAT(parser_parse(&parser, "0xa <20%", &ast2), Eq(0));
+    //EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+}
+
+TEST_F(NAME, damage4)
+{
+    ASSERT_THAT(parser_parse(&parser, "0xa <=20%", &ast2), Eq(0));
+    //EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+}
+
+TEST_F(NAME, damage_range1)
+{
+    ASSERT_THAT(parser_parse(&parser, "0xa 20%-30%", &ast2), Eq(0));
+    //EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+}
+
+TEST_F(NAME, damage_range2)
+{
+    ASSERT_THAT(parser_parse(&parser, "0xa >20% <30%", &ast2), Eq(0));
+    //EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+}
+
+TEST_F(NAME, damage_range3)
+{
+    ASSERT_THAT(parser_parse(&parser, "0xa <30% >20%", &ast2), Eq(0));
+    //EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+}
+
+TEST_F(NAME, damage_range3)
+{
+    ASSERT_THAT(parser_parse(&parser, "0xa >30% <20%", &ast2), Eq(0));
+    //EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+}

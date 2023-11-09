@@ -54,14 +54,20 @@
 
 %token '.' '*' '+' '?' '(' ')' '|' '!' '{' '}'
 %token INTO
+%token GE LE
 %token<ctx_flag_value> PRE_CTX POST_CTX
 %token<integer_value> TIMING
 %token<integer_value> NUM
-%token<integer_value> PERCENT
+%token<integer_value> DAMAGE
 %token<string_value> LABEL
 %token<motion_value> MOTION
 
-%type<node_value> stmts stmt timing rep rep_short rep_range union inversion qual_label label
+%type<node_value> stmts stmt
+%type<node_value> timing
+%type<node_value> rep rep_short rep_range
+%type<node_value> union
+%type<node_value> inversion
+%type<node_value> dmg_label qual_label label
 
 %left '|'
 
@@ -114,7 +120,15 @@ rep_range
   | inversion '{' NUM ',' '*' '}'       { $$ = ast_repetition(ast, $1, $3, -1, &@$); }
   ;
 inversion
-  : '!' qual_label                      { $$ = ast_inversion(ast, $2, &@$); }
+  : '!' dmg_label                       { $$ = ast_inversion(ast, $2, &@$); }
+  | dmg_label                           { $$ = $1; }
+  ;
+dmg_label
+  : dmg_label '>' DAMAGE                { $$ = ast_damage(ast, $1, (float)$3 + 0.1f, 999.f, &@$); }
+  | dmg_label '<' DAMAGE                { $$ = ast_damage(ast, $1, 0.f, (float)$3 - 0.1f, &@$); }
+  | dmg_label GE DAMAGE                 { $$ = ast_damage(ast, $1, (float)$3, 999.f, &@$); }
+  | dmg_label LE DAMAGE                 { $$ = ast_damage(ast, $1, 0.f, (float)$3, &@$); }
+  | dmg_label DAMAGE '-' DAMAGE         { $$ = ast_damage(ast, $1, (float)$2, (float)$4, &@$); }
   | qual_label                          { $$ = $1; }
   ;
 qual_label

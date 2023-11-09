@@ -11,6 +11,16 @@
 
 #define labels ((struct strlist*)yyget_extra(yyg))
 
+static inline int dmg_to_int(char* s)
+{
+    int val;
+    int p = strlen(s) - 1;
+    s[p] = '\0';
+    val = atoi(s);
+    s[p] = '%';
+    return val;
+}
+
 %}
 
 %option nodefault
@@ -21,8 +31,9 @@
 %option extra-type="struct strlist*"
 
 %%
-[\.\(\)\|\?\+\*!\,\{\}]    { return yytext[0]; }
 "->"                       { return TOK_INTO; }
+">="                       { return TOK_GE; }
+"<="                       { return TOK_LE; }
 "os"                       { yylval->ctx_flag_value = AST_CTX_OS; return TOK_POST_CTX; }
 "oos"                      { yylval->ctx_flag_value = AST_CTX_OOS; return TOK_POST_CTX; }
 "hit"                      { yylval->ctx_flag_value = AST_CTX_HIT; return TOK_POST_CTX; }
@@ -45,6 +56,7 @@
 "fs"                       { yylval->ctx_flag_value = AST_CTX_FS; return TOK_PRE_CTX; }
 "idj"                      { yylval->ctx_flag_value = AST_CTX_IDJ; return TOK_PRE_CTX; }
 "f"[0-9]+                  { yylval->integer_value = atoi(&yytext[1]); return TOK_TIMING; }
+[0-9]+"%"                  { yylval->integer_value = dmg_to_int(yytext); return TOK_DAMAGE; }
 "0x"[0-9a-fA-F]+           { str_hex_to_u64(cstr_view(yytext), &yylval->motion_value); return TOK_MOTION; }
 [0-9]+                     { yylval->integer_value = atoi(yytext); return TOK_NUM; }
 [a-zA-Z_][a-zA-Z0-9_]*     {
@@ -52,6 +64,7 @@
         yyterminate();
     yylval->string_value = strlist_last(labels);
     return TOK_LABEL; }
+[\.\(\)\|\?\+\*!\,\{\}]    { return yytext[0]; }
 [ \t\r\n]
 .                          { return yytext[0]; }
 %%

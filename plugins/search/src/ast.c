@@ -150,6 +150,15 @@ int ast_timing(struct ast* ast, int rel_to, int child, int start, int end, const
     return n;
 }
 
+int ast_damage(struct ast* ast, int child, float from, float to, const struct YYLTYPE* loc)
+{
+    int n = NEW_NODE(ast, AST_DAMAGE, loc);
+    ast->nodes[n].damage.child = child;
+    ast->nodes[n].damage.from = from;
+    ast->nodes[n].damage.to = to;
+    return n;
+}
+
 int ast_duplicate(struct ast* ast, int node)
 {
     int dup = NEW_NODE_NO_INIT(ast);

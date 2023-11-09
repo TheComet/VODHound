@@ -19,7 +19,8 @@ enum ast_type
     AST_LABEL,
     AST_MOTION,
     AST_CONTEXT,
-    AST_TIMING
+    AST_TIMING,
+    AST_DAMAGE
 };
 
 enum ast_ctx_flags {
@@ -117,6 +118,14 @@ union ast_node
         int end;
         int rel_to_ref;
     } timing;
+
+    struct damage {
+        struct info info;
+        int child;
+        int _padding;
+        float from;
+        float to;
+    } damage;
 };
 
 struct ast
@@ -147,6 +156,7 @@ int ast_timing(struct ast* ast, int rel_to, int child, int start, int end, const
     assert((ast)->nodes[timing].info.type == AST_TIMING); \
    (ast)->nodes[timing].timing.rel_to_ref = ref; \
 }
+int ast_damage(struct ast* ast, int child, float from, float to, const struct YYLTYPE* loc);
 
 int ast_duplicate(struct ast* ast, int node);
 
