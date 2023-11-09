@@ -114,7 +114,7 @@ static int on_scan_plugin_any_video_driver(struct plugin plugin, void* user)
 }
 
 static struct plugin_ctx*
-create(void)
+create(struct db_interface* dbi, struct db* db)
 {
     struct strlist plugins;
     struct plugin_ctx* ctx = mem_alloc(sizeof(struct plugin_ctx));

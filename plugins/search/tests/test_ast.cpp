@@ -439,48 +439,92 @@ TEST_F(NAME, timing_with_ref6)
 
 TEST_F(NAME, damage1)
 {
+    ast_set_root(&ast1,
+        ast_damage(&ast1,
+            ast_motion(&ast1, 0xa, &loc),
+            20.1f, 999.f, &loc));
     ASSERT_THAT(parser_parse(&parser, "0xa >20%", &ast2), Eq(0));
-    //EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+    EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
 }
 
 TEST_F(NAME, damage2)
 {
+    ast_set_root(&ast1,
+        ast_damage(&ast1,
+            ast_motion(&ast1, 0xa, &loc),
+            20.f, 999.f, &loc));
     ASSERT_THAT(parser_parse(&parser, "0xa >=20%", &ast2), Eq(0));
-    //EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+    EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
 }
 
 TEST_F(NAME, damage3)
 {
+    ast_set_root(&ast1,
+        ast_damage(&ast1,
+            ast_motion(&ast1, 0xa, &loc),
+            0.f, 19.9f, &loc));
     ASSERT_THAT(parser_parse(&parser, "0xa <20%", &ast2), Eq(0));
-    //EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+    EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
 }
 
 TEST_F(NAME, damage4)
 {
+    ast_set_root(&ast1,
+        ast_damage(&ast1,
+            ast_motion(&ast1, 0xa, &loc),
+            0.f, 20.f, &loc));
     ASSERT_THAT(parser_parse(&parser, "0xa <=20%", &ast2), Eq(0));
-    //EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+    EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
 }
 
 TEST_F(NAME, damage_range1)
 {
+    ast_set_root(&ast1,
+        ast_damage(&ast1,
+            ast_motion(&ast1, 0xa, &loc),
+            20.f, 30.f, &loc));
     ASSERT_THAT(parser_parse(&parser, "0xa 20%-30%", &ast2), Eq(0));
-    //EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+    EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
 }
 
 TEST_F(NAME, damage_range2)
 {
+    ast_set_root(&ast1,
+        ast_damage(&ast1,
+            ast_motion(&ast1, 0xa, &loc),
+            20.1f, 29.9f, &loc));
     ASSERT_THAT(parser_parse(&parser, "0xa >20% <30%", &ast2), Eq(0));
-    //EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+    EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
 }
 
 TEST_F(NAME, damage_range3)
 {
+    ast_set_root(&ast1,
+        ast_damage(&ast1,
+            ast_motion(&ast1, 0xa, &loc),
+            20.1f, 29.9f, &loc));
     ASSERT_THAT(parser_parse(&parser, "0xa <30% >20%", &ast2), Eq(0));
-    //EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+    EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
 }
 
-TEST_F(NAME, damage_range3)
+TEST_F(NAME, damage_range4)
 {
+    ast_set_root(&ast1,
+        ast_damage(&ast1,
+            ast_motion(&ast1, 0xa, &loc),
+            20.1f, 29.9f, &loc));
+    ASSERT_THAT(parser_parse(&parser, "0xa <30% >20% >18% <32% <35%", &ast2), Eq(0));
+    EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+}
+
+TEST_F(NAME, damage_range5)
+{
+    ast_set_root(&ast1,
+        ast_damage(&ast1,
+            ast_damage(&ast1,
+                ast_motion(&ast1, 0xa, &loc),
+                30.1f, 999.f, &loc),
+            0.f, 19.9f, &loc));
     ASSERT_THAT(parser_parse(&parser, "0xa >30% <20%", &ast2), Eq(0));
-    //EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+    EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
 }

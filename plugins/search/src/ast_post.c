@@ -413,6 +413,88 @@ ast_post_timing(struct ast* ast)
 }
 
 int
+ast_post_damage(struct ast* ast)
+{
+    int n;
+retry:
+    for (n = 0; n != ast->node_count; ++n)
+    {
+        int n2;
+        if (ast->nodes[n].info.type != AST_DAMAGE)
+            continue;
+
+        /* Ensure the ranges are valid */
+        if (ast->nodes[n].damage.from > ast->nodes[n].damage.to)
+        {
+            log_err("Damage range invalid (%.1f%% - %.1f%%)\n",
+                ast->nodes[n].damage.from, ast->nodes[n].damage.to);
+            return -1;
+        }
+
+        /* Travel down chain of damage nodes */
+        n2 = n;
+        while (1)
+        {
+            float from1, from2, to1, to2, from, to;
+            n2 = ast->nodes[n2].damage.child;
+            if (ast->nodes[n2].info.type != AST_DAMAGE)
+                break;
+            if (ast->nodes[n2].damage.from > ast->nodes[n2].damage.to)
+            {
+                log_err("Damage range invalid (%.1f%% - %.1f%%)\n",
+                    ast->nodes[n2].damage.from, ast->nodes[n2].damage.to);
+                return -1;
+            }
+
+            /* Merge overlapping damage ranges, if possible */
+            from1 = ast->nodes[n].damage.from;
+            from2 = ast->nodes[n2].damage.from;
+            to1 = ast->nodes[n].damage.to;
+            to2 = ast->nodes[n2].damage.to;
+            from = from1 < 
+            if (from1 > 0.f && to1 < 999.f && from2 > 0.f && to1)
+            {
+                if (from1 == 0.f && to2 == 999.f)
+                    ast->nodes[n2].damage.to = to1;
+                else
+                    ast->nodes[n2].damage.from = from1;
+                ast_swap_node_values(ast, n2, ast->nodes[n].damage.child);
+                ast_collapse_into(ast, n2, n);
+                goto retry;
+            }
+            else if (to2 < 999.f && from1 > 0.f && to2 >= from1)
+            {
+                if (from2 == 0.f && to1 == 999.f)
+                    ast->nodes[n2].damage.from = from1;
+                else
+                    ast->nodes[n2].damage.to = to1;
+                ast_swap_node_values(ast, n2, ast->nodes[n].damage.child);
+                ast_collapse_into(ast, n2, n);
+                goto retry;
+            }
+            else if (from1 > 0.f)
+            {
+                if (from1 >= from2)
+                    ast->nodes[n2].damage.from = from2;
+                ast_swap_node_values(ast, n2, ast->nodes[n].damage.child);
+                ast_collapse_into(ast, n2, n);
+                goto retry;
+            }
+            else if (to1 < 999.f)
+            {
+                if (to1 >= to2)
+                    ast->nodes[n2].damage.to = to2;
+                ast_swap_node_values(ast, n2, ast->nodes[n].damage.child);
+                ast_collapse_into(ast, n2, n);
+                goto retry;
+            }
+        }
+    }
+
+    return 0;
+}
+
+int
 ast_post_validate_params(struct ast* ast)
 {
     int n;
@@ -481,6 +563,17 @@ ast_post_validate_params(struct ast* ast)
                 if (ast_is_in_subtree_of(ast, n, ast->nodes[n].timing.rel_to_ref))
                 {
                     log_err("Invalid timing reference\n");
+                    return -1;
+                }
+            } break;
+
+            case AST_DAMAGE: {
+                float from = ast->nodes[n].damage.from;
+                float to = ast->nodes[n].damage.to;
+
+                if (from > to)
+                {
+                    log_err("Damage range invalid (%.1f%% - %.1f%%)\n", from, to);
                     return -1;
                 }
             } break;

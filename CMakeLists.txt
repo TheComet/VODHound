@@ -44,6 +44,8 @@ endif ()
 if (VODHOUND_TESTS)
     set (INSTALL_GTEST OFF CACHE INTERNAL "")
     add_subdirectory ("thirdparty/googletest")
+    set_target_properties (gtest PROPERTIES MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>)
+    set_target_properties (gmock PROPERTIES MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>)
     add_subdirectory ("tests")
 endif ()
 

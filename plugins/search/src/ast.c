@@ -246,6 +246,10 @@ static void write_nodes(const struct ast* ast, int n, FILE* fp)
                 fprintf(fp, "-%d", ast->nodes[n].timing.end);
             fprintf(fp, "\"];\n");
             break;
+        case AST_DAMAGE:
+            fprintf(fp, "  n%d [shape=\"record\",label=\"%.1f%% - %.1f%%\"];\n",
+                n, ast->nodes[n].damage.from, ast->nodes[n].damage.to);
+            break;
     }
 
     if (ast->nodes[n].base.left >= 0)

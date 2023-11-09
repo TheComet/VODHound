@@ -31,6 +31,7 @@ ast_post_hash40_remaining_labels(struct ast* ast);
 /* These are called internally after parsing in parser_parse() */
 int ast_post_jump_qualifiers(struct ast* ast);
 int ast_post_timing(struct ast* ast);
+int ast_post_damage(struct ast* ast);
 int ast_post_validate_params(struct ast* ast);
 
 #if defined(__cplusplus)

@@ -7,7 +7,8 @@ extern "C" {
 struct ast;
 
 void ast_set_root(struct ast* ast, int node);
-void ast_swap_nodes(struct ast* ast, int n1, int n2);
+void ast_swap_node_idxs(struct ast* ast, int n1, int n2);
+void ast_swap_node_values(struct ast* ast, int n1, int n2);
 void ast_collapse_into(struct ast* ast, int node, int target);
 void ast_replace_into(struct ast* ast, int node, int target);
 
