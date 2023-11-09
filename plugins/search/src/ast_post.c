@@ -412,14 +412,94 @@ ast_post_timing(struct ast* ast)
     return 0;
 }
 
+static void
+ast_post_damage_tighten_bounds(struct ast* ast, int parent)
+{
+    /* Travel down chain of damage nodes */
+    int child = parent;
+    while (1)
+    {
+        float cfrom, cto;
+        float pfrom = ast->nodes[parent].damage.from;
+        float pto = ast->nodes[parent].damage.to;
+
+        child = ast->nodes[child].damage.child;
+        if (ast->nodes[child].info.type != AST_DAMAGE)
+            break;
+        cfrom = ast->nodes[child].damage.from;
+        cto = ast->nodes[child].damage.to;
+
+        /* 
+         * If the parent has specified ">x", then all children's lower bounds
+         * will need to be greater than x as well. Conversely, if the parent
+         * has specified "<x" then all children's upper bounds will need to be
+         * smaller than x as well.
+         */
+        if (pto >= 999.f && cfrom > 0.f && cfrom < pfrom)
+            ast->nodes[child].damage.from = pfrom;
+        if (pfrom <= 0.f && cto < 999.f && cto > pto)
+            ast->nodes[child].damage.to = pto;
+
+        /* Same, but with child and parent swapped */
+        if (cto >= 999.f && pfrom > 0.f && pfrom < cfrom)
+            ast->nodes[parent].damage.from = cfrom;
+        if (cfrom <= 0.f && pto < 999.f && pto > cto)
+            ast->nodes[parent].damage.to = cto;
+    }
+}
+
+static int
+ast_post_damage_merge_nodes(struct ast* ast, int parent)
+{
+    /* Travel down chain of damage nodes */
+    int child = parent;
+    while (1)
+    {
+        float from1, from2, to1, to2, from, to;
+        child = ast->nodes[child].damage.child;
+        if (ast->nodes[child].info.type != AST_DAMAGE)
+            break;
+        if (ast->nodes[child].damage.from > ast->nodes[child].damage.to)
+        {
+            log_err("Damage range invalid (%.1f%% - %.1f%%)\n",
+                ast->nodes[child].damage.from, ast->nodes[child].damage.to);
+            return -1;
+        }
+
+        /* Merge overlapping damage ranges, if possible */
+        from1 = ast->nodes[parent].damage.from;
+        from2 = ast->nodes[child].damage.from;
+        to1 = ast->nodes[parent].damage.to;
+        to2 = ast->nodes[child].damage.to;
+        from = from1 > from2 ? from1 : from2;
+        to = to1 < to2 ? to1 : to2;
+        if (from < to)
+        {
+            ast->nodes[child].damage.from = from;
+            ast->nodes[child].damage.to = to;
+            ast_swap_node_values(ast, child, ast->nodes[parent].damage.child);
+            ast_collapse_into(ast, ast->nodes[parent].damage.child, parent);
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 int
 ast_post_damage(struct ast* ast)
 {
     int n;
+    for (n = 0; n != ast->node_count; ++n)
+    {
+        if (ast->nodes[n].info.type != AST_DAMAGE)
+            continue;
+        ast_post_damage_tighten_bounds(ast, n);
+    }
+
 retry:
     for (n = 0; n != ast->node_count; ++n)
     {
-        int n2;
         if (ast->nodes[n].info.type != AST_DAMAGE)
             continue;
 
@@ -431,63 +511,11 @@ retry:
             return -1;
         }
 
-        /* Travel down chain of damage nodes */
-        n2 = n;
-        while (1)
+        switch (ast_post_damage_merge_nodes(ast, n))
         {
-            float from1, from2, to1, to2, from, to;
-            n2 = ast->nodes[n2].damage.child;
-            if (ast->nodes[n2].info.type != AST_DAMAGE)
-                break;
-            if (ast->nodes[n2].damage.from > ast->nodes[n2].damage.to)
-            {
-                log_err("Damage range invalid (%.1f%% - %.1f%%)\n",
-                    ast->nodes[n2].damage.from, ast->nodes[n2].damage.to);
-                return -1;
-            }
-
-            /* Merge overlapping damage ranges, if possible */
-            from1 = ast->nodes[n].damage.from;
-            from2 = ast->nodes[n2].damage.from;
-            to1 = ast->nodes[n].damage.to;
-            to2 = ast->nodes[n2].damage.to;
-            from = from1 < 
-            if (from1 > 0.f && to1 < 999.f && from2 > 0.f && to1)
-            {
-                if (from1 == 0.f && to2 == 999.f)
-                    ast->nodes[n2].damage.to = to1;
-                else
-                    ast->nodes[n2].damage.from = from1;
-                ast_swap_node_values(ast, n2, ast->nodes[n].damage.child);
-                ast_collapse_into(ast, n2, n);
-                goto retry;
-            }
-            else if (to2 < 999.f && from1 > 0.f && to2 >= from1)
-            {
-                if (from2 == 0.f && to1 == 999.f)
-                    ast->nodes[n2].damage.from = from1;
-                else
-                    ast->nodes[n2].damage.to = to1;
-                ast_swap_node_values(ast, n2, ast->nodes[n].damage.child);
-                ast_collapse_into(ast, n2, n);
-                goto retry;
-            }
-            else if (from1 > 0.f)
-            {
-                if (from1 >= from2)
-                    ast->nodes[n2].damage.from = from2;
-                ast_swap_node_values(ast, n2, ast->nodes[n].damage.child);
-                ast_collapse_into(ast, n2, n);
-                goto retry;
-            }
-            else if (to1 < 999.f)
-            {
-                if (to1 >= to2)
-                    ast->nodes[n2].damage.to = to2;
-                ast_swap_node_values(ast, n2, ast->nodes[n].damage.child);
-                ast_collapse_into(ast, n2, n);
-                goto retry;
-            }
+            case 1  : goto retry;
+            case 0  : break;
+            default : return -1;
         }
     }
 

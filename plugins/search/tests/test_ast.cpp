@@ -528,3 +528,27 @@ TEST_F(NAME, damage_range5)
     ASSERT_THAT(parser_parse(&parser, "0xa >30% <20%", &ast2), Eq(0));
     EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
 }
+
+TEST_F(NAME, damage_range6)
+{
+    ast_set_root(&ast1,
+        ast_damage(&ast1,
+            ast_damage(&ast1,
+                ast_motion(&ast1, 0xa, &loc),
+                15.f, 30.f, &loc),
+            50.f, 80.f, &loc));
+    ASSERT_THAT(parser_parse(&parser, "0xa 10%-30% 50%-80% >=15%", &ast2), Eq(0));
+    EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+}
+
+TEST_F(NAME, damage_range7)
+{
+    ast_set_root(&ast1,
+        ast_damage(&ast1,
+            ast_damage(&ast1,
+                ast_motion(&ast1, 0xa, &loc),
+                15.f, 30.f, &loc),
+            50.f, 80.f, &loc));
+    ASSERT_THAT(parser_parse(&parser, "0xa >=15% 10%-30% 50%-80%", &ast2), Eq(0));
+    EXPECT_THAT(ast_trees_equal(&ast1, 0, &ast2, 0), IsTrue());
+}
