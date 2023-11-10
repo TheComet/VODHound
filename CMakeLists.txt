@@ -24,14 +24,9 @@ set (VODHOUND_INSTALL_INCLUDEDIR "include")
 set (VODHOUND_INSTALL_CMAKEDIR "share/VODHound/cmake")
 set (VODHOUND_INSTALL_PLUGINDIR "share/VODHound/plugins")
 
+set (VODHOUND_UI "GTK4" CACHE STRING "Which UI toolkit to use")
+set_property (CACHE VODHOUND_UI PROPERTY STRINGS "GTK4;IUP;OFF")
 option (VODHOUND_TESTS "Compile unit tests" ON)
-
-# Configure IUP
-set (IUP_BUILD_BINDIR ${VODHOUND_BUILD_BINDIR} CACHE INTERNAL "")
-set (IUP_INSTALL_BINDIR ${VODHOUND_INSTALL_BINDIR} CACHE INTERNAL "")
-set (IUP_INSTALL_LIBDIR ${VODHOUND_INSTALL_LIBDIR} CACHE INTERNAL "")
-set (IUP_INSTALL_INCLUDEDIR ${VODHOUND_INSTALL_INCLUDEDIR} CACHE INTERNAL "")
-set (IUP_EXAMPLES OFF CACHE INTERNAL "")
 
 find_package (ZLIB)
 if (NOT ZLIB_FOUND AND NOT TARGET ZLIB::ZLIB)
@@ -51,17 +46,36 @@ endif ()
 
 add_subdirectory ("thirdparty/sqlite-3.43.1")
 add_subdirectory ("thirdparty/json-c")
-add_subdirectory ("thirdparty/iup-cmake")
 add_subdirectory ("vh")
-add_subdirectory ("iupgfx")
-add_subdirectory ("application")
-#add_subdirectory ("application-gtk4")
-add_subdirectory ("plugins")
 
-# "application" target should be the startup project in VS
-set_property(
-    DIRECTORY "${PROJECT_SOURCE_DIR}"
-    PROPERTY VS_STARTUP_PROJECT application)
+if (VODHOUND_UI MATCHES "IUP")
+    # Configure IUP
+    set (IUP_BUILD_BINDIR ${VODHOUND_BUILD_BINDIR} CACHE INTERNAL "")
+    set (IUP_INSTALL_BINDIR ${VODHOUND_INSTALL_BINDIR} CACHE INTERNAL "")
+    set (IUP_INSTALL_LIBDIR ${VODHOUND_INSTALL_LIBDIR} CACHE INTERNAL "")
+    set (IUP_INSTALL_INCLUDEDIR ${VODHOUND_INSTALL_INCLUDEDIR} CACHE INTERNAL "")
+    set (IUP_EXAMPLES OFF CACHE INTERNAL "")
+
+    add_subdirectory ("thirdparty/iup-cmake")
+    add_subdirectory ("iupgfx")
+    add_subdirectory ("application")
+
+    # "application" target should be the startup project in VS
+    set_property(
+        DIRECTORY "${PROJECT_SOURCE_DIR}"
+        PROPERTY VS_STARTUP_PROJECT application)
+elseif (VODHOUND_UI MATCHES "GTK4")
+    add_subdirectory ("application-gtk4")
+    
+    # "application" target should be the startup project in VS
+    set_property(
+        DIRECTORY "${PROJECT_SOURCE_DIR}"
+        PROPERTY VS_STARTUP_PROJECT application-gtk4)
+endif ()
+
+if (VODHOUND_UI)
+    #add_subdirectory ("plugins")
+endif ()
 
 # All subprojects have added targets to this export
 # group, so make sure to install it
