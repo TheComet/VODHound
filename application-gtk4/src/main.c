@@ -17,19 +17,19 @@ plugin_view_new(void)
     return gtk_button_new();
 }
 
-#define GAME_LIST_COLUMNS_LIST \
-    X(TIME, "Time")            \
-    X(TEAM1, "Team 1")         \
-    X(TEAM2, "Team 2")         \
-    X(ROUND, "Round")          \
-    X(FORMAT, "Format")        \
-    X(SCORE, "Score")          \
-    X(GAME, "Game")            \
-    X(STAGE, "Stage")
+#define GAME_LIST_COLUMNS_LIST   \
+    X(TIME,   left,   "Time")    \
+    X(TEAM1,  left,   "Team 1")  \
+    X(TEAM2,  left,   "Team 2")  \
+    X(ROUND,  center, "Round")   \
+    X(FORMAT, center, "Format")  \
+    X(SCORE,  center, "Score")   \
+    X(GAME,   center, "Game")    \
+    X(STAGE,  left,   "Stage")
 
 enum game_list_column
 {
-#define X(name, str) name,
+#define X(name, align, str) name,
     GAME_LIST_COLUMNS_LIST
 #undef X
 };
@@ -172,7 +172,15 @@ vhapp_game_list_append(VhAppGameList* self, VhAppGameListObject* item)
 }
 
 static void
-setup_label_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
+setup_left_label_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
+{
+    GtkWidget* label = gtk_label_new(NULL);
+    gtk_label_set_xalign(GTK_LABEL(label), 0);
+    gtk_list_item_set_child(item, label);
+}
+
+static void
+setup_center_label_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
 {
     GtkWidget* label = gtk_label_new(NULL);
     gtk_list_item_set_child(item, label);
@@ -225,7 +233,7 @@ static int on_game_list_query(
     str_split2(cstr_view(teams), ',', &team1, &team2);
     str_split2(cstr_view(fighters), ',', &fighter1, &fighter2);
     str_split2(cstr_view(scores), ',', &score1, &score2);
-    sprintf(scores_str, "%.*s - %.*s", score1.len, score1.data, score2.len, score2.data);
+    sprintf(scores_str, "%.*s-%.*s", score1.len, score1.data, score2.len, score2.data);
 
     str_dec_to_int(score1, &s1);
     str_dec_to_int(score2, &s2);
@@ -267,9 +275,9 @@ game_list_new(struct db_interface* dbi, struct db* db)
     //gtk_column_view_set_show_row_separators(GTK_COLUMN_VIEW(column_view), TRUE);
     gtk_widget_set_vexpand(column_view, TRUE);
 
-#define X(name, str)                                                        \
+#define X(name, align, str)                                                 \
         item_factory = gtk_signal_list_item_factory_new();                  \
-        g_signal_connect(item_factory, "setup", G_CALLBACK(setup_label_cb), NULL); \
+        g_signal_connect(item_factory, "setup", G_CALLBACK(setup_##align##_label_cb), NULL); \
         g_signal_connect(item_factory, "bind", G_CALLBACK(bind_column), (void*)(intptr_t)name); \
         column = gtk_column_view_column_new(str, item_factory);             \
         gtk_column_view_append_column(GTK_COLUMN_VIEW(column_view), column);\
@@ -345,7 +353,7 @@ activate(GtkApplication* app, gpointer user_data)
     gtk_paned_set_end_child(GTK_PANED(paned1), paned2);
     gtk_paned_set_resize_start_child(GTK_PANED(paned1), FALSE);
     gtk_paned_set_resize_end_child(GTK_PANED(paned1), TRUE);
-    gtk_paned_set_position(GTK_PANED(paned1), 500);
+    gtk_paned_set_position(GTK_PANED(paned1), 680);
 
     gtk_window_set_child(GTK_WINDOW(window), paned1);
     gtk_window_maximize(GTK_WINDOW(window));
