@@ -11,14 +11,18 @@ find_path (GTK4_glib_INCLUDE_DIR
 find_path (GTK4_glibconfig_INCLUDE_DIR
     NAMES "glibconfig.h"
     PATHS
-        "${GTK4_ROOT}/lib/glib-2.0/include")
+        "${GTK4_ROOT}/lib/"
+        "/usr/lib64"
+        "/usr/lib"
+    PATH_SUFFIXES "glib-2.0/include")
 set (GTK4_glib_INCLUDE_DIRS
     "${GTK4_glib_INCLUDE_DIR}"
     "${GTK4_glibconfig_INCLUDE_DIR}")
 find_path (GTK4_cairo_INCLUDE_DIRS
     NAMES "cairo.h"
     PATHS
-        "${GTK4_ROOT}/include/cairo")
+        "${GTK4_ROOT}/include"
+    PATH_SUFFIXES "cairo")
 find_path (GTK4_pango_INCLUDE_DIRS
     NAMES "pango/pango.h"
     PATHS
@@ -27,7 +31,8 @@ find_path (GTK4_pango_INCLUDE_DIRS
 find_path (GTK4_harfbuzz_INCLUDE_DIRS
     NAMES "hb.h"
     PATHS
-        "${GTK4_ROOT}/include/harfbuzz")
+        "${GTK4_ROOT}/include"
+    PATH_SUFFIXES "harfbuzz")
 find_path (GTK4_gdk-pixbuf_INCLUDE_DIRS
     NAMES "gdk-pixbuf/gdk-pixbuf.h"
     PATHS
@@ -36,11 +41,15 @@ find_path (GTK4_gdk-pixbuf_INCLUDE_DIRS
 find_path (GTK4_graphene_INCLUDE_DIR
     NAMES "graphene.h"
     PATHS
-        "${GTK4_ROOT}/include/graphene-1.0")
+        "${GTK4_ROOT}/include"
+    PATH_SUFFIXES "graphene-1.0")
 find_path (GTK4_graphene-config_INCLUDE_DIR
     NAMES "graphene-config.h"
     PATHS
-        "${GTK4_ROOT}/lib/graphene-1.0/include")
+        "${GTK4_ROOT}/lib"
+        "/usr/lib64"
+        "/usr/lib"
+    PATH_SUFFIXES "graphene-1.0/include")
 set (GTK4_graphene_INCLUDE_DIRS
     "${GTK4_graphene_INCLUDE_DIR}"
     "${GTK4_graphene-config_INCLUDE_DIR}")
@@ -223,6 +232,6 @@ foreach (_component IN LISTS GTK4_FIND_COMPONENTS)
     else ()
         message (FATAL_ERROR "Failed to find GTK4 component ${_component}\n"
             "lib: ${GTK4_${_component}_LIBRARY}\n"
-            "include: ${GTK4_${_component}_INCLUDE_DIRS}")
+            "include: ${GTK4_${_component}_INCLUDE_DIRS}\n")
     endif ()
 endforeach ()

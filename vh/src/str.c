@@ -122,6 +122,7 @@ int
 strlist_add(struct strlist* sl, struct str_view str)
 {
     strlist_size insert_size = sizeof(struct strlist_str) + (strlist_size)str.len;
+    /* Doing +1 here to reserve space for a potential null terminator */
     while (sl->m_used + insert_size + 1 > sl->m_alloc)
     {
         strlist_size old_alloc = sl->m_alloc;
@@ -149,5 +150,18 @@ strlist_add(struct strlist* sl, struct str_view str)
     sl->strs[-(strlist_idx)sl->count].len = str.len;
     sl->count++;
     sl->m_used += insert_size;
+    return 0;
+}
+
+int
+strlist_add_terminated(struct strlist* sl, struct str_view str)
+{
+    struct strlist_str* inserted;
+    if (strlist_add(sl, str) < 0)
+        return -1;
+    inserted = &sl->strs[1-(strlist_idx)sl->count];
+    sl->data[inserted->off + inserted->len] = '\0';
+    inserted->len++;
+    sl->m_used++;
     return 0;
 }

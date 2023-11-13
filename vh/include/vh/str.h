@@ -264,6 +264,9 @@ strlist_deinit(struct strlist* sl);
 VH_PUBLIC_API int
 strlist_add(struct strlist* sl, struct str_view str);
 
+VH_PUBLIC_API int
+strlist_add_terminated(struct strlist* sl, struct str_view str);
+
 static inline void
 strlist_clear(struct strlist* sl)
 {

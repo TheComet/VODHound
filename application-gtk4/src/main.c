@@ -1,8 +1,9 @@
 #include <gtk/gtk.h>
 
 #include "vh/db_ops.h"
-#include "vh/init.h"
 #include "vh/log.h"
+#include "vh/init.h"
+#include "vh/vec.h"
 
 static GtkWidget*
 property_panel_new(void)
@@ -16,191 +17,271 @@ plugin_view_new(void)
     return gtk_button_new();
 }
 
-static void
-replay_model_populate(GtkTreeStore* model)
-{
-    GtkTreeIter iter;
-    gtk_tree_store_append(model, &iter, NULL);
-    gtk_tree_store_set(model, &iter,
-        0, "1998-02-15",
-        -1);
-    {
-        GtkTreeIter child;
-        gtk_tree_store_append(model, &child, &iter);
-        gtk_tree_store_set(model, &child,
-            0, "19:45",
-            1, "",
-            2, "TheComet",
-            3, "",
-            4, "Stino",
-            5, "WR1",
-            6, "Bo5",
-            7, "0-0",
-            8, "1",
-            9, "Final Destination",
-            -1);
-        gtk_tree_store_append(model, &child, &iter);
-        gtk_tree_store_set(model, &child,
-            0, "19:51",
-            1, "",
-            2, "TheComet",
-            3, "",
-            4, "Stino",
-            5, "WR1",
-            6, "Bo5",
-            7, "0-1",
-            8, "2",
-            9, "Kalos",
-            -1);
-        gtk_tree_store_append(model, &child, &iter);
-        gtk_tree_store_set(model, &child,
-            0, "19:54",
-            1, "",
-            2, "TheComet",
-            3, "",
-            4, "Stino",
-            5, "WR1",
-            6, "Bo5",
-            7, "0-2",
-            8, "3",
-            9, "Kalos",
-            -1);
-    }
+#define GAME_LIST_COLUMNS_LIST \
+    X(TIME, "Time")            \
+    X(TEAM1, "Team 1")         \
+    X(TEAM2, "Team 2")         \
+    X(ROUND, "Round")          \
+    X(FORMAT, "Format")        \
+    X(SCORE, "Score")          \
+    X(GAME, "Game")            \
+    X(STAGE, "Stage")
 
-    gtk_tree_store_append(model, &iter, NULL);
-    gtk_tree_store_set(model, &iter,
-        0, "1998-02-17",
-        -1);
-    {
-        GtkTreeIter child;
-        gtk_tree_store_append(model, &child, &iter);
-        gtk_tree_store_set(model, &child,
-            0, "19:45",
-            1, "",
-            2, "TheComet",
-            3, "",
-            4, "Bongo",
-            5, "WR1",
-            6, "Bo3",
-            7, "0-0",
-            8, "1",
-            9, "Final Destination",
-            -1);
-        gtk_tree_store_append(model, &child, &iter);
-        gtk_tree_store_set(model, &child,
-            0, "19:51",
-            1, "",
-            2, "TheComet",
-            3, "",
-            4, "Stino",
-            5, "WR1",
-            6, "Bo5",
-            7, "0-1",
-            8, "2",
-            9, "Kalos",
-            -1);
-    }
+enum game_list_column
+{
+#define X(name, str) name,
+    GAME_LIST_COLUMNS_LIST
+#undef X
+};
+
+struct _VhAppGameListObject
+{
+    GObject parent_instance;
+    struct strlist columns;
+};
+
+#define VHAPP_TYPE_GAME_LIST_OBJECT (vhapp_game_list_object_get_type())
+G_DECLARE_FINAL_TYPE(VhAppGameListObject, vhapp_game_list_object, VHAPP, GAME_LIST_OBJECT, GObject);
+G_DEFINE_TYPE(VhAppGameListObject, vhapp_game_list_object, G_TYPE_OBJECT);
+
+static void
+vhapp_game_list_object_finalize(GObject* object)
+{
+    VhAppGameListObject* self = VHAPP_GAME_LIST_OBJECT(object);
+    strlist_deinit(&self->columns);
+    G_OBJECT_CLASS(vhapp_game_list_object_parent_class)->finalize(object);
 }
 
-static GtkTreeModel*
-replay_model_create(void)
+VhAppGameListObject*
+vhapp_game_list_object_new(
+    struct str_view time,
+    struct str_view team1,
+    struct str_view team2,
+    struct str_view round,
+    struct str_view format,
+    struct str_view score,
+    struct str_view game,
+    struct str_view stage)
 {
-    GtkTreeStore* model;
-
-    model = gtk_tree_store_new(10,
-        G_TYPE_STRING,     /* Time or Date + event/tournament */
-        G_TYPE_STRING,     /* Player 1 character */
-        G_TYPE_STRING,     /* Player 1 name */
-        G_TYPE_STRING,     /* Player 2 character */
-        G_TYPE_STRING,     /* Player 2 name */
-        G_TYPE_STRING,     /* Round */
-        G_TYPE_STRING,     /* Format */
-        G_TYPE_STRING,     /* Score */
-        G_TYPE_STRING,     /* Game */
-        G_TYPE_STRING);    /* Stage */
-
-    return GTK_TREE_MODEL(model);
+    VhAppGameListObject* obj = g_object_new(VHAPP_TYPE_GAME_LIST_OBJECT, NULL);
+    strlist_init(&obj->columns);
+    strlist_add_terminated(&obj->columns, time);
+    strlist_add_terminated(&obj->columns, team1);
+    strlist_add_terminated(&obj->columns, team2);
+    strlist_add_terminated(&obj->columns, round);
+    strlist_add_terminated(&obj->columns, format);
+    strlist_add_terminated(&obj->columns, score);
+    strlist_add_terminated(&obj->columns, game);
+    strlist_add_terminated(&obj->columns, stage);
+    return obj;
 }
 
 static void
-replay_columns_add(GtkTreeView* replays)
+vhapp_game_list_object_class_init(VhAppGameListObjectClass* class)
 {
-    GtkCellRenderer* renderer;
-    GtkTreeViewColumn* column;
-    GtkTreeModel* model;
-    int offset;
+    GObjectClass* object_class = G_OBJECT_CLASS(class);
+    object_class->finalize = vhapp_game_list_object_finalize;
+}
 
-    model = gtk_tree_view_get_model(replays);
+static void
+vhapp_game_list_object_init(VhAppGameListObject* class)
+{
+}
 
-    renderer = gtk_cell_renderer_text_new();
-    g_object_set(renderer, "xalign", 0.0, NULL);
-    offset = gtk_tree_view_insert_column_with_attributes(replays,
-        -1, "Time", renderer, "text", 0, NULL);
-    column = gtk_tree_view_get_column(replays, offset - 1);
-    gtk_tree_view_column_set_clickable(GTK_TREE_VIEW_COLUMN(column), TRUE);
+struct _VhAppGameList
+{
+    GObject parent_instance;
+    struct vec items;
+};
+struct _VhAppGameListClass
+{
+    GObject parent_class;
+};
 
-    renderer = gtk_cell_renderer_pixbuf_new();
-    g_object_set(renderer, "xalign", 0.0, NULL);
-    offset = gtk_tree_view_insert_column_with_attributes(replays,
-        -1, "", renderer, "icon-name", 1, NULL);
+#define VHAPP_TYPE_GAME_LIST (vhapp_game_list_get_type())
+G_DECLARE_FINAL_TYPE(VhAppGameList, vhapp_game_list, VHAPP, GAME_LIST, GObject);
 
-    renderer = gtk_cell_renderer_text_new();
-    g_object_set(renderer, "xalign", 0.0, NULL);
-    offset = gtk_tree_view_insert_column_with_attributes(replays,
-        -1, "Player 1", renderer, "text", 2, NULL);
-    column = gtk_tree_view_get_column(replays, offset - 1);
-    gtk_tree_view_column_set_clickable(GTK_TREE_VIEW_COLUMN(column), TRUE);
+static GType
+vhapp_game_list_get_item_type(GListModel *list)
+{
+    return G_TYPE_OBJECT;
+}
 
-    renderer = gtk_cell_renderer_pixbuf_new();
-    g_object_set(renderer, "xalign", 0.0, NULL);
-    offset = gtk_tree_view_insert_column_with_attributes(replays,
-        -1, "", renderer, "icon-name", 3, NULL);
+static guint
+vhapp_game_list_get_n_items(GListModel *list)
+{
+    VhAppGameList* self = VHAPP_GAME_LIST(list);
+    return vec_count(&self->items);
+}
 
-    renderer = gtk_cell_renderer_text_new();
-    g_object_set(renderer, "xalign", 0.0, NULL);
-    offset = gtk_tree_view_insert_column_with_attributes(replays,
-        -1, "Player 2", renderer, "text", 4, NULL);
-    column = gtk_tree_view_get_column(replays, offset - 1);
-    gtk_tree_view_column_set_clickable(GTK_TREE_VIEW_COLUMN(column), TRUE);
+static gpointer
+vhapp_game_list_get_item(GListModel* list, guint position)
+{
+    VhAppGameList* self = VHAPP_GAME_LIST(list);
+    if (position >= vec_count(&self->items))
+        return NULL;
+    return g_object_ref(*(GObject**)vec_get(&self->items, position));
+}
 
-    renderer = gtk_cell_renderer_text_new();
-    g_object_set(renderer, "xalign", 0.0, NULL);
-    offset = gtk_tree_view_insert_column_with_attributes(replays,
-        -1, "Round", renderer, "text", 5, NULL);
-    column = gtk_tree_view_get_column(replays, offset - 1);
-    gtk_tree_view_column_set_clickable(GTK_TREE_VIEW_COLUMN(column), TRUE);
+static void
+vhapp_game_list_model_init(GListModelInterface* iface)
+{
+    iface->get_item_type = vhapp_game_list_get_item_type;
+    iface->get_n_items = vhapp_game_list_get_n_items;
+    iface->get_item = vhapp_game_list_get_item;
+}
 
-    renderer = gtk_cell_renderer_text_new();
-    g_object_set(renderer, "xalign", 0.0, NULL);
-    offset = gtk_tree_view_insert_column_with_attributes(replays,
-        -1, "Format", renderer, "text", 6, NULL);
-    column = gtk_tree_view_get_column(replays, offset - 1);
-    gtk_tree_view_column_set_clickable(GTK_TREE_VIEW_COLUMN(column), TRUE);
+G_DEFINE_TYPE_WITH_CODE(VhAppGameList, vhapp_game_list, G_TYPE_OBJECT,
+    G_IMPLEMENT_INTERFACE(G_TYPE_LIST_MODEL, vhapp_game_list_model_init))
 
-    renderer = gtk_cell_renderer_text_new();
-    g_object_set(renderer, "xalign", 0.0, NULL);
-    offset = gtk_tree_view_insert_column_with_attributes(replays,
-        -1, "Score", renderer, "text", 7, NULL);
-    column = gtk_tree_view_get_column(replays, offset - 1);
-    gtk_tree_view_column_set_clickable(GTK_TREE_VIEW_COLUMN(column), TRUE);
+static void
+vhapp_game_list_dispose(GObject* object)
+{
+    VhAppGameList* self = VHAPP_GAME_LIST(object);
+    VEC_FOR_EACH(&self->items, GObject*, pobj)
+        g_object_unref(*pobj);
+    VEC_END_EACH
+    vec_deinit(&self->items);
+    G_OBJECT_CLASS(vhapp_game_list_parent_class)->dispose(object);
+}
 
-    renderer = gtk_cell_renderer_text_new();
-    g_object_set(renderer, "xalign", 0.0, NULL);
-    offset = gtk_tree_view_insert_column_with_attributes(replays,
-        -1, "Game", renderer, "text", 8, NULL);
-    column = gtk_tree_view_get_column(replays, offset - 1);
-    gtk_tree_view_column_set_clickable(GTK_TREE_VIEW_COLUMN(column), TRUE);
+static void
+vhapp_game_list_class_init(VhAppGameListClass* class)
+{
+    GObjectClass* object_class = G_OBJECT_CLASS(class);
+    object_class->dispose = vhapp_game_list_dispose;
+}
 
-    renderer = gtk_cell_renderer_text_new();
-    g_object_set(renderer, "xalign", 0.0, NULL);
-    offset = gtk_tree_view_insert_column_with_attributes(replays,
-        -1, "Stage", renderer, "text", 9, NULL);
-    column = gtk_tree_view_get_column(replays, offset - 1);
-    gtk_tree_view_column_set_clickable(GTK_TREE_VIEW_COLUMN(column), TRUE);
+static void
+vhapp_game_list_init(VhAppGameList* self)
+{
+    vec_init(&self->items, sizeof(GObject*));
+}
+
+VhAppGameList*
+vhapp_game_list_new(void)
+{
+    return g_object_new(VHAPP_TYPE_GAME_LIST, NULL);
+}
+
+void
+vhapp_game_list_append(VhAppGameList* self, VhAppGameListObject* item)
+{
+    vec_push(&self->items, &item);
+    g_list_model_items_changed(G_LIST_MODEL(self), vec_count(&self->items) - 1, 0, 1);
+}
+
+static void
+setup_label_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
+{
+    GtkWidget* label = gtk_label_new(NULL);
+    gtk_list_item_set_child(item, label);
+}
+
+static void
+bind_column(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
+{
+    GtkWidget* label = gtk_list_item_get_child(item);
+    VhAppGameListObject* game_object = gtk_list_item_get_item(item);
+    enum game_list_column column = (enum game_list_column)(intptr_t)user_data;
+    struct str_view str = strlist_view(&game_object->columns, column);
+    gtk_label_set_text(GTK_LABEL(label), str.data);
+}
+
+struct game_list_query_ctx
+{
+    VhAppGameList* game_list;
+};
+
+static int on_game_list_query(
+    int game_id,
+    uint64_t time_started,
+    int duration,
+    const char* tournament,
+    const char* event,
+    const char* stage,
+    const char* round,
+    const char* format,
+    const char* teams,
+    const char* scores,
+    const char* slots,
+    const char* sponsors,
+    const char* players,
+    const char* fighters,
+    const char* costumes,
+    void* user)
+{
+    struct game_list_query_ctx* ctx = user;
+    struct str_view team1, team2, fighter1, fighter2, score1, score2;
+    int s1, s2, game_number;
+
+    char datetime[17];
+    char scores_str[36];  /* -2147483648 - -2147483648 */
+    char game_str[12];    /* -2147483648 */
+
+    time_started = time_started / 1000;
+    strftime(datetime, sizeof(datetime), "%y-%m-%d %H:%M", localtime((time_t*)&time_started));
+
+    str_split2(cstr_view(teams), ',', &team1, &team2);
+    str_split2(cstr_view(fighters), ',', &fighter1, &fighter2);
+    str_split2(cstr_view(scores), ',', &score1, &score2);
+    sprintf(scores_str, "%.*s - %.*s", score1.len, score1.data, score2.len, score2.data);
+
+    str_dec_to_int(score1, &s1);
+    str_dec_to_int(score2, &s2);
+    game_number = s1 + s2 + 1;
+    sprintf(game_str, "%d", game_number);
+
+    vhapp_game_list_append(ctx->game_list,
+        vhapp_game_list_object_new(
+            cstr_view(datetime),
+            team1, team2,
+            cstr_view(round),
+            cstr_view(format),
+            cstr_view(scores_str),
+            cstr_view(game_str),
+            cstr_view(stage)));
+
+    return 0;
 }
 
 static GtkWidget*
-replay_browser_new(void)
+game_list_new(struct db_interface* dbi, struct db* db)
+{
+    VhAppGameList* game_list;
+    VhAppGameListObject* item;
+    GtkMultiSelection* selection_model;
+    GtkListItemFactory* item_factory;
+    GtkWidget* column_view;
+    GtkColumnViewColumn* column;
+    struct game_list_query_ctx query_ctx;
+
+    game_list = vhapp_game_list_new();
+    query_ctx.game_list = game_list;
+    log_dbg("Querying games...\n");
+    dbi->game.query(db, on_game_list_query, &query_ctx);
+    log_dbg("Loaded %d games\n", vhapp_game_list_get_n_items(G_LIST_MODEL(game_list)));
+
+    selection_model = gtk_multi_selection_new(G_LIST_MODEL(game_list));
+    column_view = gtk_column_view_new(GTK_SELECTION_MODEL(selection_model));
+    //gtk_column_view_set_show_row_separators(GTK_COLUMN_VIEW(column_view), TRUE);
+    gtk_widget_set_vexpand(column_view, TRUE);
+
+#define X(name, str)                                                        \
+        item_factory = gtk_signal_list_item_factory_new();                  \
+        g_signal_connect(item_factory, "setup", G_CALLBACK(setup_label_cb), NULL); \
+        g_signal_connect(item_factory, "bind", G_CALLBACK(bind_column), (void*)(intptr_t)name); \
+        column = gtk_column_view_column_new(str, item_factory);             \
+        gtk_column_view_append_column(GTK_COLUMN_VIEW(column_view), column);\
+        g_object_unref(column);
+    GAME_LIST_COLUMNS_LIST
+#undef X
+
+    return column_view;
+}
+
+static GtkWidget*
+replay_browser_new(struct db_interface* dbi, struct db* db)
 {
     GtkWidget* search;
     GtkWidget* replays;
@@ -208,21 +289,11 @@ replay_browser_new(void)
     GtkWidget* vbox;
     GtkWidget* groups;
     GtkWidget* paned;
-    GtkTreeModel* replay_model;
 
     search = gtk_entry_new();
     gtk_entry_set_icon_from_icon_name(GTK_ENTRY(search), GTK_ENTRY_ICON_PRIMARY, "edit-find-symbolic");
 
-    replay_model = replay_model_create();
-    replays = gtk_tree_view_new_with_model(replay_model);
-    gtk_widget_set_vexpand(replays, TRUE);
-    g_object_unref(replay_model);
-    gtk_tree_selection_set_mode(
-        gtk_tree_view_get_selection(GTK_TREE_VIEW(replays)),
-        GTK_SELECTION_MULTIPLE);
-    gtk_tree_view_expand_all(GTK_TREE_VIEW(replays));
-    replay_columns_add(GTK_TREE_VIEW(replays));
-
+    replays = game_list_new(dbi, db);
     scroll = gtk_scrolled_window_new();
     gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(scroll), TRUE);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
@@ -244,6 +315,12 @@ replay_browser_new(void)
     return paned;
 }
 
+struct app_activate_ctx
+{
+    struct db_interface* dbi;
+    struct db* db;
+};
+
 static void
 activate(GtkApplication* app, gpointer user_data)
 {
@@ -251,6 +328,7 @@ activate(GtkApplication* app, gpointer user_data)
     GtkWidget* replay_browser;
     GtkWidget* paned1;
     GtkWidget* paned2;
+    struct app_activate_ctx* ctx = user_data;
 
     window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window), "VODHound");
@@ -263,7 +341,7 @@ activate(GtkApplication* app, gpointer user_data)
     gtk_paned_set_resize_end_child(GTK_PANED(paned2), FALSE);
 
     paned1 = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
-    gtk_paned_set_start_child(GTK_PANED(paned1), replay_browser_new());
+    gtk_paned_set_start_child(GTK_PANED(paned1), replay_browser_new(ctx->dbi, ctx->db));
     gtk_paned_set_end_child(GTK_PANED(paned1), paned2);
     gtk_paned_set_resize_start_child(GTK_PANED(paned1), FALSE);
     gtk_paned_set_resize_end_child(GTK_PANED(paned1), TRUE);
@@ -277,6 +355,7 @@ activate(GtkApplication* app, gpointer user_data)
 int main(int argc, char** argv)
 {
     GtkApplication* app;
+    struct app_activate_ctx ctx;
     int status;
 
     if (vh_threadlocal_init() != 0)
@@ -291,7 +370,9 @@ int main(int argc, char** argv)
         goto open_db_failed;
 
     app = gtk_application_new("ch.thecomet.vodhound", G_APPLICATION_DEFAULT_FLAGS);
-    g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
+    ctx.dbi = dbi;
+    ctx.db = db;
+    g_signal_connect(app, "activate", G_CALLBACK(activate), &ctx);
     status = g_application_run(G_APPLICATION(app), argc, argv);
     g_object_unref(app);
 
