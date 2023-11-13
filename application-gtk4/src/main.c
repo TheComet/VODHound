@@ -3,6 +3,7 @@
 #include "vh/db_ops.h"
 #include "vh/import.h"
 #include "vh/log.h"
+#include "vh/mem.h"
 #include "vh/init.h"
 #include "vh/vec.h"
 
@@ -18,15 +19,15 @@ plugin_view_new(void)
     return gtk_button_new();
 }
 
-#define GAME_LIST_COLUMNS_LIST   \
-    X(TIME,   left,   "Time")    \
-    X(TEAM1,  left,   "Team 1")  \
-    X(TEAM2,  left,   "Team 2")  \
-    X(ROUND,  center, "Round")   \
-    X(FORMAT, center, "Format")  \
-    X(SCORE,  center, "Score")   \
-    X(GAME,   center, "Game")    \
-    X(STAGE,  left,   "Stage")
+#define GAME_LIST_COLUMNS_LIST    \
+    X(TIME,   column1, "Time")    \
+    X(TEAM1,  left,    "Team 1")  \
+    X(TEAM2,  left,    "Team 2")  \
+    X(ROUND,  center,  "Round")   \
+    X(FORMAT, center,  "Format")  \
+    X(SCORE,  center,  "Score")   \
+    X(GAME,   center,  "Game")    \
+    X(STAGE,  left,    "Stage")
 
 enum game_list_column
 {
@@ -39,6 +40,7 @@ struct _VhAppGameListObject
 {
     GObject parent_instance;
     struct strlist columns;
+    int event_id;
 };
 
 #define VHAPP_TYPE_GAME_LIST_OBJECT (vhapp_game_list_object_get_type())
@@ -54,7 +56,24 @@ vhapp_game_list_object_finalize(GObject* object)
 }
 
 VhAppGameListObject*
-vhapp_game_list_object_new(
+vhapp_game_list_object_new_event(
+    struct str_view date,
+    struct str_view event_name,
+    int event_id)
+{
+    VhAppGameListObject* obj = g_object_new(VHAPP_TYPE_GAME_LIST_OBJECT, NULL);
+
+    strlist_init(&obj->columns);
+    strlist_add_terminated(&obj->columns, date);
+    strlist_add_terminated(&obj->columns, event_name);
+
+    obj->event_id = event_id;
+    
+    return obj;
+}
+
+VhAppGameListObject*
+vhapp_game_list_object_new_game(
     struct str_view time,
     struct str_view team1,
     struct str_view team2,
@@ -65,6 +84,7 @@ vhapp_game_list_object_new(
     struct str_view stage)
 {
     VhAppGameListObject* obj = g_object_new(VHAPP_TYPE_GAME_LIST_OBJECT, NULL);
+
     strlist_init(&obj->columns);
     strlist_add_terminated(&obj->columns, time);
     strlist_add_terminated(&obj->columns, team1);
@@ -74,6 +94,9 @@ vhapp_game_list_object_new(
     strlist_add_terminated(&obj->columns, score);
     strlist_add_terminated(&obj->columns, game);
     strlist_add_terminated(&obj->columns, stage);
+
+    obj->event_id = INT_MIN;
+
     return obj;
 }
 
@@ -88,6 +111,8 @@ static void
 vhapp_game_list_object_init(VhAppGameListObject* class)
 {
 }
+
+#define vhapp_game_list_object_is_game(obj) ((obj)->event_id == INT_MIN)
 
 struct _VhAppGameList
 {
@@ -172,37 +197,12 @@ vhapp_game_list_append(VhAppGameList* self, VhAppGameListObject* item)
     g_list_model_items_changed(G_LIST_MODEL(self), vec_count(&self->items) - 1, 0, 1);
 }
 
-static void
-setup_left_label_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
-{
-    GtkWidget* label = gtk_label_new(NULL);
-    gtk_label_set_xalign(GTK_LABEL(label), 0);
-    gtk_list_item_set_child(item, label);
-}
-
-static void
-setup_center_label_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
-{
-    GtkWidget* label = gtk_label_new(NULL);
-    gtk_list_item_set_child(item, label);
-}
-
-static void
-bind_column_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
-{
-    GtkWidget* label = gtk_list_item_get_child(item);
-    VhAppGameListObject* game_object = gtk_list_item_get_item(item);
-    enum game_list_column column = (enum game_list_column)(intptr_t)user_data;
-    struct str_view str = strlist_view(&game_object->columns, column);
-    gtk_label_set_text(GTK_LABEL(label), str.data);
-}
-
-struct game_list_query_ctx
+struct on_game_ctx
 {
     VhAppGameList* game_list;
 };
 
-static int on_game_list_query(
+static int on_game(
     int game_id,
     uint64_t time_started,
     int duration,
@@ -220,10 +220,10 @@ static int on_game_list_query(
     const char* costumes,
     void* user)
 {
-    struct game_list_query_ctx* ctx = user;
-    struct str_view team1 = {0}, team2 = {0};
-    struct str_view fighter1 = {0}, fighter2 = {0};
-    struct str_view score1 = {0}, score2 = {0};
+    struct on_game_ctx* ctx = user;
+    struct str_view team1 = { 0 }, team2 = { 0 };
+    struct str_view fighter1 = { 0 }, fighter2 = { 0 };
+    struct str_view score1 = { 0 }, score2 = { 0 };
     int s1, s2, game_number;
 
     char datetime[17];
@@ -244,7 +244,7 @@ static int on_game_list_query(
     sprintf(game_str, "%d", game_number);
 
     vhapp_game_list_append(ctx->game_list,
-        vhapp_game_list_object_new(
+        vhapp_game_list_object_new_game(
             cstr_view(datetime),
             team1, team2,
             cstr_view(round),
@@ -256,28 +256,132 @@ static int on_game_list_query(
     return 0;
 }
 
+struct expand_node_ctx
+{
+    struct db_interface* dbi;
+    struct db* db;
+};
+
+static GListModel*
+expand_node_cb(gpointer item, gpointer user_data)
+{
+    struct str_view date;
+    VhAppGameList* list;
+    struct on_game_ctx on_game_ctx;
+    struct expand_node_ctx* ctx = user_data;
+    VhAppGameListObject* game_object = VHAPP_GAME_LIST_OBJECT(item);
+    if (vhapp_game_list_object_is_game(game_object))
+        return NULL;
+
+    date = strlist_view(&game_object->columns, 0);
+    /*event_name = strlist_view(&game_object->columns, 1); */
+
+    list = vhapp_game_list_new();
+    log_dbg("expand_node_cb()\n");
+    on_game_ctx.game_list = list;
+    ctx->dbi->game.get_all_in_event(ctx->db, date, game_object->event_id, on_game, &on_game_ctx);
+
+    return G_LIST_MODEL(list);
+}
+
+static void
+setup_column1_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
+{
+    GtkWidget* label = gtk_label_new(NULL);
+    GtkWidget* expander = gtk_tree_expander_new();
+    gtk_tree_expander_set_child(GTK_TREE_EXPANDER(expander), label);
+    gtk_label_set_xalign(GTK_LABEL(label), 0);
+    gtk_list_item_set_child(item, expander);
+}
+
+static void
+bind_column1_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
+{
+    GtkWidget* expander = gtk_list_item_get_child(item);
+    GtkTreeListRow* row = gtk_list_item_get_item(item);
+    GtkWidget* label = gtk_tree_expander_get_child(GTK_TREE_EXPANDER(expander));
+    VhAppGameListObject* game_object = gtk_tree_list_row_get_item(row);
+    enum game_list_column column = (enum game_list_column)(intptr_t)user_data;
+    struct str_view str = strlist_view(&game_object->columns, column);
+    
+    gtk_tree_expander_set_list_row(GTK_TREE_EXPANDER(expander), row);
+
+    gtk_label_set_text(GTK_LABEL(label), str.data);
+    g_object_unref(game_object);
+}
+
+static void
+setup_left_label_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
+{
+    GtkWidget* label = gtk_label_new(NULL);
+    gtk_label_set_xalign(GTK_LABEL(label), 0);
+    gtk_list_item_set_child(item, label);
+}
+
+static void
+setup_center_label_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
+{
+    GtkWidget* label = gtk_label_new(NULL);
+    gtk_list_item_set_child(item, label);
+}
+
+struct on_game_event_ctx
+{
+    VhAppGameList* event_list;
+};
+
+static int on_game_event(
+    const char* date,
+    const char* event_name,
+    int event_id,
+    void* user)
+{
+    struct on_game_event_ctx* ctx = user;
+
+    vhapp_game_list_append(ctx->event_list,
+        vhapp_game_list_object_new_event(
+            cstr_view(date), cstr_view(event_name), event_id));
+
+    return 0;
+}
+
 static GtkWidget*
 game_list_new(struct db_interface* dbi, struct db* db)
 {
-    VhAppGameList* game_list;
-    VhAppGameListObject* item;
+    VhAppGameList* root;
+    GtkTreeListModel* model;
     GtkMultiSelection* selection_model;
-    GtkListItemFactory* item_factory;
     GtkWidget* column_view;
+    GtkListItemFactory* item_factory;
     GtkColumnViewColumn* column;
-    struct game_list_query_ctx query_ctx;
+    struct on_game_event_ctx event_ctx;
+    struct expand_node_ctx* expand_node_ctx;
 
-    game_list = vhapp_game_list_new();
-    query_ctx.game_list = game_list;
-    log_dbg("Querying games...\n");
-    dbi->game.get_all(db, on_game_list_query, &query_ctx);
-    log_dbg("Loaded %d games\n", vhapp_game_list_get_n_items(G_LIST_MODEL(game_list)));
+    root = vhapp_game_list_new();
 
-    selection_model = gtk_multi_selection_new(G_LIST_MODEL(game_list));
+    event_ctx.event_list = root;
+    log_dbg("Querying game events...\n");
+    dbi->game.get_events(db, on_game_event, &event_ctx);
+    log_dbg("Loaded %d events\n", vhapp_game_list_get_n_items(G_LIST_MODEL(root)));
+
+    expand_node_ctx = mem_alloc(sizeof *expand_node_ctx);
+    expand_node_ctx->dbi = dbi;
+    expand_node_ctx->db = db;
+    model = gtk_tree_list_model_new(G_LIST_MODEL(root), FALSE, FALSE, expand_node_cb, expand_node_ctx, mem_free);
+
+    selection_model = gtk_multi_selection_new(G_LIST_MODEL(model));
     column_view = gtk_column_view_new(GTK_SELECTION_MODEL(selection_model));
     //gtk_column_view_set_show_row_separators(GTK_COLUMN_VIEW(column_view), TRUE);
     gtk_widget_set_vexpand(column_view, TRUE);
 
+    item_factory = gtk_signal_list_item_factory_new();
+    g_signal_connect(item_factory, "setup", G_CALLBACK(setup_column1_cb), NULL);
+    g_signal_connect(item_factory, "bind", G_CALLBACK(bind_column1_cb), NULL);
+    column = gtk_column_view_column_new("Time", item_factory);
+    gtk_column_view_append_column(GTK_COLUMN_VIEW(column_view), column);
+    g_object_unref(column);
+
+    /*
 #define X(name, align, str)                                                 \
         item_factory = gtk_signal_list_item_factory_new();                  \
         g_signal_connect(item_factory, "setup", G_CALLBACK(setup_##align##_label_cb), NULL); \
@@ -287,79 +391,13 @@ game_list_new(struct db_interface* dbi, struct db* db)
         g_object_unref(column);
     GAME_LIST_COLUMNS_LIST
 #undef X
-
-    return column_view;
-}
-
-static GListModel*
-expand_node_cb(gpointer item, gpointer user_data)
-{
-    static const char* const strings[] = { "child1", "child2", NULL };
-    GTK_STRING_OBJECT(item);
-    return G_LIST_MODEL(gtk_string_list_new(strings));
-}
-
-static void
-setup_label(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
-{
-    GtkWidget* label = gtk_label_new(NULL);
-    GtkWidget* expander = gtk_tree_expander_new();
-    gtk_tree_expander_set_child(GTK_TREE_EXPANDER(expander), label);
-    gtk_list_item_set_child(item, expander);
-}
-
-static void
-bind_column(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
-{
-    GtkWidget* expander = gtk_list_item_get_child(item);
-    GtkWidget* label = gtk_tree_expander_get_child(GTK_TREE_EXPANDER(expander));
-    GtkTreeListRow* row = gtk_list_item_get_item(item);
-    GtkStringObject* str = gtk_tree_list_row_get_item(row);
-    int column_idx = (int)(intptr_t)user_data;
-
-    if (column_idx == 0)
-        gtk_tree_expander_set_list_row(GTK_TREE_EXPANDER(expander), row);
-
-    gtk_label_set_text(GTK_LABEL(label), gtk_string_object_get_string(str));
-}
-
-static GtkWidget*
-game_tree_new(struct db_interface* dbi, struct db* db)
-{
-    GtkTreeListModel* model;
-    GtkStringList* root;
-    GtkMultiSelection* selection_model;
-    GtkWidget* column_view;
-    GtkListItemFactory* item_factory;
-    GtkColumnViewColumn* column;
-
-    static const char* const strings[] = { "one", "two", "three", NULL };
-    root = gtk_string_list_new(strings);
-    model = gtk_tree_list_model_new(G_LIST_MODEL(root), FALSE, FALSE, expand_node_cb, NULL, NULL);
-
-    selection_model = gtk_multi_selection_new(G_LIST_MODEL(model));
-    column_view = gtk_column_view_new(GTK_SELECTION_MODEL(selection_model));
-    gtk_widget_set_vexpand(column_view, TRUE);
-
-    item_factory = gtk_signal_list_item_factory_new();
-    g_signal_connect(item_factory, "setup", G_CALLBACK(setup_label), NULL);
-    g_signal_connect(item_factory, "bind", G_CALLBACK(bind_column), (void*)0);
-    column = gtk_column_view_column_new("Test", item_factory);
-    gtk_column_view_append_column(GTK_COLUMN_VIEW(column_view), column);
-    g_object_unref(column);
-
-    item_factory = gtk_signal_list_item_factory_new();
-    g_signal_connect(item_factory, "setup", G_CALLBACK(setup_label), NULL);
-    g_signal_connect(item_factory, "bind", G_CALLBACK(bind_column), (void*)1);
-    column = gtk_column_view_column_new("Test", item_factory);
-    gtk_column_view_append_column(GTK_COLUMN_VIEW(column_view), column);
-    g_object_unref(column);
+*/
 
     return column_view;
 }
 
 static GtkWidget*
-replay_browser_new(struct db_interface* dbi, struct db* db)
+game_browser_new(struct db_interface* dbi, struct db* db)
 {
     GtkWidget* search;
     GtkWidget* games;
@@ -371,7 +409,7 @@ replay_browser_new(struct db_interface* dbi, struct db* db)
     search = gtk_entry_new();
     gtk_entry_set_icon_from_icon_name(GTK_ENTRY(search), GTK_ENTRY_ICON_PRIMARY, "edit-find-symbolic");
 
-    games = game_tree_new(dbi, db);
+    games = game_list_new(dbi, db);
     scroll = gtk_scrolled_window_new();
     gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(scroll), TRUE);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
@@ -419,7 +457,7 @@ activate(GtkApplication* app, gpointer user_data)
     gtk_paned_set_resize_end_child(GTK_PANED(paned2), FALSE);
 
     paned1 = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
-    gtk_paned_set_start_child(GTK_PANED(paned1), replay_browser_new(ctx->dbi, ctx->db));
+    gtk_paned_set_start_child(GTK_PANED(paned1), game_browser_new(ctx->dbi, ctx->db));
     gtk_paned_set_end_child(GTK_PANED(paned1), paned2);
     gtk_paned_set_resize_start_child(GTK_PANED(paned1), FALSE);
     gtk_paned_set_resize_end_child(GTK_PANED(paned1), TRUE);

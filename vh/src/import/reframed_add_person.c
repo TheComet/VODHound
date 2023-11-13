@@ -14,6 +14,7 @@ static int
 on_person_add(int id, int sponsor_id, const char* name, const char* tag, const char* social, const char* pronouns, void* user)
 {
     struct person_add_or_get_ctx* ctx = user;
+    (void)sponsor_id;  (void)name; (void)tag;
 
     /*
      * If social or pronouns are empty, but we have read non-empty strings

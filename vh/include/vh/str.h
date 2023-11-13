@@ -292,6 +292,8 @@ strlist_view(const struct strlist* sl, strlist_idx i)
     strlist_idx off = sl->strs[-i].off;
     view.len = sl->strs[-i].len;
     view.data = &sl->data[off];
+    if (view.data[view.len-1] == '\0')
+        view.len--;
     return view;
 }
 

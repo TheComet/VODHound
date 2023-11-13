@@ -136,8 +136,8 @@ struct db_interface
         int (*get_events)(struct db* db,
             int (*on_game_event)(
                 const char* date,  /* Date string will be "YYYY-MM-DD" */
-                int event_id,      /* Event ID. Can be -1, indicating no association to an event. */
                 const char* name,  /* Name of the event, such as "Singles Bracket" */
+                int event_id,      /* Event ID. Can be -1, indicating no association to an event. */
                 void* user),
             void* user);
         int (*get_all_in_event)(struct db* db,

@@ -181,7 +181,8 @@ import_reframed_all(struct db_interface* dbi, struct db* db)
     path_deinit(&file_path);
     return 0;
 
-    fail                     : dbi->transaction.rollback(db);
-    transaction_begin_failed : path_deinit(&file_path);
+fail:
+    dbi->transaction.rollback(db);
+    path_deinit(&file_path);
     return -1;
 }

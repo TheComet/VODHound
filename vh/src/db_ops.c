@@ -1470,21 +1470,21 @@ static int
 game_get_events(struct db* ctx,
     int (*on_game_event)(
         const char* date,
-        int event_id,
         const char* name,
+        int event_id,
         void* user),
     void* user)
 {
     int ret;
     if (ctx->game_get_events == NULL)
         if (prepare_stmt_wrapper(ctx->db, &ctx->game_get_events, cstr_view(
-            "SELECT DATE(time_started/1000, 'unixepoch'), event_id, event_types.name "
+            "SELECT DATE(time_started/1000, 'unixepoch') date, IFNULL(event_types.name, ''), event_id "
             "FROM games "
             "LEFT JOIN event_games ON event_games.game_id=games.id "
             "LEFT JOIN events ON events.id=event_id "
             "LEFT JOIN event_types ON event_types.id=event_type_id "
             "GROUP BY date, event_types.name "
-            "SORT BY event_types.name;")) != 0)
+            "ORDER BY event_types.name;")) != 0)
             return -1;
 
 next_step:
@@ -1494,8 +1494,9 @@ next_step:
         case SQLITE_ROW:
             ret = on_game_event(
                 (const char*)sqlite3_column_text(ctx->game_get_events, 0),
-                sqlite3_column_int(ctx->game_get_events, 1),
-                (const char*)sqlite3_column_text(ctx->game_get_events, 2),
+                (const char*)sqlite3_column_text(ctx->game_get_events, 1),
+                sqlite3_column_type(ctx->game_get_events, 2) == SQLITE_NULL ?
+                    -1 : sqlite3_column_int(ctx->game_get_events, 2),
                 user);
             if (ret)
             {
@@ -1590,7 +1591,7 @@ game_get_all_in_event(struct db* ctx,
             "LEFT JOIN stages ON stages.id = grouped_games.stage_id "
             "LEFT JOIN round_types ON grouped_games.round_type_id = round_types.id "
             "INNER JOIN set_formats ON grouped_games.set_format_id = set_formats.id "
-            "WHERE DATE(time_started/1000, 'unixepoch')=? "
+            "WHERE DATE(time_started/1000, 'unixepoch') = ?  "
             "GROUP BY grouped_games.id "
             "ORDER BY time_started DESC;")) != 0)
             return -1;
