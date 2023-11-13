@@ -220,7 +220,9 @@ static int on_game_list_query(
     void* user)
 {
     struct game_list_query_ctx* ctx = user;
-    struct str_view team1, team2, fighter1, fighter2, score1, score2;
+    struct str_view team1 = {0}, team2 = {0};
+    struct str_view fighter1 = {0}, fighter2 = {0};
+    struct str_view score1 = {0}, score2 = {0};
     int s1, s2, game_number;
 
     char datetime[17];
