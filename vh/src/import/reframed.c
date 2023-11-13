@@ -186,3 +186,31 @@ fail:
     path_deinit(&file_path);
     return -1;
 }
+
+int
+import_reframed_path(struct db_interface* dbi, struct db* db, const char* path)
+{
+    struct on_game_path_file_ctx ctx;
+    ctx.dbi = dbi;
+    ctx.db = db;
+
+    if (dbi->transaction.begin(db) != 0)
+        return -1;
+
+    path_init(&ctx.path);
+    if (path_set(&ctx.path, cstr_view(path)) < 0)
+        goto import_error;
+    if (fs_list(cstr_view(path), on_game_path_file, &ctx) < 0)
+        goto import_error;
+
+    if (dbi->transaction.commit(db) != 0)
+        goto import_error;
+
+    path_deinit(&ctx.path);
+    return 0;
+
+import_error:
+    dbi->transaction.rollback(db);
+    path_deinit(&ctx.path);
+    return -1;
+}

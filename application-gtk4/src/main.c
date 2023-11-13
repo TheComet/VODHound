@@ -20,18 +20,18 @@ plugin_view_new(void)
 }
 
 #define GAME_LIST_COLUMNS_LIST    \
-    X(TIME,   column1, "Time")    \
-    X(TEAM1,  left,    "Team 1")  \
-    X(TEAM2,  left,    "Team 2")  \
-    X(ROUND,  center,  "Round")   \
-    X(FORMAT, center,  "Format")  \
-    X(SCORE,  center,  "Score")   \
-    X(GAME,   center,  "Game")    \
-    X(STAGE,  left,    "Stage")
+    X(TIME,   column1,       column_1, "Time")    \
+    X(TEAM1,  left_label,    column_n, "Team 1")  \
+    X(TEAM2,  left_label,    column_n, "Team 2")  \
+    X(ROUND,  center_label,  column_n, "Round")   \
+    X(FORMAT, center_label,  column_n, "Format")  \
+    X(SCORE,  center_label,  column_n, "Score")   \
+    X(GAME,   center_label,  column_n, "Game")    \
+    X(STAGE,  left_label,    column_n, "Stage")
 
 enum game_list_column
 {
-#define X(name, align, str) name,
+#define X(name, setup, bind, str) COL_##name,
     GAME_LIST_COLUMNS_LIST
 #undef X
 };
@@ -68,7 +68,7 @@ vhapp_game_list_object_new_event(
     strlist_add_terminated(&obj->columns, event_name);
 
     obj->event_id = event_id;
-    
+
     return obj;
 }
 
@@ -295,7 +295,7 @@ setup_column1_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointer use
 }
 
 static void
-bind_column1_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
+bind_column_1_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
 {
     GtkWidget* expander = gtk_list_item_get_child(item);
     GtkTreeListRow* row = gtk_list_item_get_item(item);
@@ -303,7 +303,7 @@ bind_column1_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user
     VhAppGameListObject* game_object = gtk_tree_list_row_get_item(row);
     enum game_list_column column = (enum game_list_column)(intptr_t)user_data;
     struct str_view str = strlist_view(&game_object->columns, column);
-    
+
     gtk_tree_expander_set_list_row(GTK_TREE_EXPANDER(expander), row);
 
     gtk_label_set_text(GTK_LABEL(label), str.data);
@@ -323,6 +323,23 @@ setup_center_label_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointe
 {
     GtkWidget* label = gtk_label_new(NULL);
     gtk_list_item_set_child(item, label);
+}
+
+static void
+bind_column_n_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
+{
+    enum game_list_column column = (enum game_list_column)(intptr_t)user_data;
+    GtkWidget* label = gtk_list_item_get_child(item);
+    GtkTreeListRow* row = gtk_list_item_get_item(item);
+    VhAppGameListObject* game_object = gtk_tree_list_row_get_item(row);
+
+    if (vhapp_game_list_object_is_game(game_object) || column < 2)
+    {
+        struct str_view str = strlist_view(&game_object->columns, column);
+        gtk_label_set_text(GTK_LABEL(label), str.data);
+    }
+
+    g_object_unref(game_object);
 }
 
 struct on_game_event_ctx
@@ -374,24 +391,15 @@ game_list_new(struct db_interface* dbi, struct db* db)
     //gtk_column_view_set_show_row_separators(GTK_COLUMN_VIEW(column_view), TRUE);
     gtk_widget_set_vexpand(column_view, TRUE);
 
-    item_factory = gtk_signal_list_item_factory_new();
-    g_signal_connect(item_factory, "setup", G_CALLBACK(setup_column1_cb), NULL);
-    g_signal_connect(item_factory, "bind", G_CALLBACK(bind_column1_cb), NULL);
-    column = gtk_column_view_column_new("Time", item_factory);
-    gtk_column_view_append_column(GTK_COLUMN_VIEW(column_view), column);
-    g_object_unref(column);
-
-    /*
-#define X(name, align, str)                                                 \
+#define X(name, setup, bind, str)                                           \
         item_factory = gtk_signal_list_item_factory_new();                  \
-        g_signal_connect(item_factory, "setup", G_CALLBACK(setup_##align##_label_cb), NULL); \
-        g_signal_connect(item_factory, "bind", G_CALLBACK(bind_column_cb), (void*)(intptr_t)name); \
+        g_signal_connect(item_factory, "setup", G_CALLBACK(setup_##setup##_cb), NULL); \
+        g_signal_connect(item_factory, "bind", G_CALLBACK(bind_##bind##_cb), (void*)(intptr_t)COL_##name); \
         column = gtk_column_view_column_new(str, item_factory);             \
         gtk_column_view_append_column(GTK_COLUMN_VIEW(column_view), column);\
         g_object_unref(column);
     GAME_LIST_COLUMNS_LIST
 #undef X
-*/
 
     return column_view;
 }
@@ -490,6 +498,7 @@ int main(int argc, char** argv)
         import_param_labels_csv(dbi, db, "ParamLabels.csv");
         import_reframed_mapping_info(dbi, db, "migrations/mappingInfo.json");
         import_reframed_all(dbi, db);
+        //import_reframed_path(dbi, db, "reframed");
     }
 
     app = gtk_application_new("ch.thecomet.vodhound", G_APPLICATION_DEFAULT_FLAGS);

@@ -11,6 +11,9 @@ VH_PUBLIC_API int
 import_reframed_all(struct db_interface* dbi, struct db* db);
 
 VH_PUBLIC_API int
+import_reframed_path(struct db_interface* dbi, struct db* db, const char* path);
+
+VH_PUBLIC_API int
 import_reframed_mapping_info(struct db_interface* dbi, struct db* db, const char* file_name);
 
 VH_PUBLIC_API int

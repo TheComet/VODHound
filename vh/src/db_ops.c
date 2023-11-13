@@ -1604,17 +1604,19 @@ next_step:
     switch (ret)
     {
         case SQLITE_ROW:
-            /* 
+            /*
              * Because the SQL statement would require a different syntax "IS NULL" for finding
              * games with no associated event vs "= id" for finding games with associated events,
              * it's simpler to return the event_id and compare it here, than to compile two
              * statements.
              */
-            if (event_id > 0 && sqlite3_column_type(ctx->game_get_all_in_event, 0) == SQLITE_NULL)
-                goto next_step;
+            if (event_id > 0)
+                if (sqlite3_column_type(ctx->game_get_all_in_event, 0) == SQLITE_NULL ||
+                    event_id != sqlite3_column_int(ctx->game_get_all_in_event, 0))
+                {
+                    goto next_step;
+                }
             if (event_id < 0 && sqlite3_column_type(ctx->game_get_all_in_event, 0) != SQLITE_NULL)
-                goto next_step;
-            if (event_id != sqlite3_column_int(ctx->game_get_all_in_event, 0))
                 goto next_step;
 
             ret = on_game(
