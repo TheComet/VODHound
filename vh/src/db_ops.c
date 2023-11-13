@@ -57,7 +57,9 @@
     X(person, set_pronouns)                 \
                                             \
     X(game, add_or_get)                     \
-    X(game, query)                          \
+    X(game, get_all)                        \
+    X(game, get_events)                     \
+    X(game, get_all_in_event)               \
     X(game, associate_tournament)           \
     X(game, associate_event)                \
     X(game, associate_video)                \
@@ -354,7 +356,7 @@ motion_add(struct db* ctx, uint64_t hash40, struct str_view string)
 }
 
 static int
-motion_exists(struct db* ctx, uint64_t hash40, struct str_view string)
+motion_exists(struct db* ctx, uint64_t hash40)
 {
     int ret;
     if (ctx->motion_exists == NULL)
@@ -1348,7 +1350,7 @@ done:
 }
 
 static int
-game_query(struct db* ctx,
+game_get_all(struct db* ctx,
     int (*on_game)(
         int game_id,
         uint64_t time_started,
@@ -1369,8 +1371,8 @@ game_query(struct db* ctx,
     void* user)
 {
     int ret;
-    if (ctx->game_query == NULL)
-        if (prepare_stmt_wrapper(ctx->db, &ctx->game_query, cstr_view(
+    if (ctx->game_get_all == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->game_get_all, cstr_view(
             "WITH grouped_games AS ( "
             "    SELECT "
             "        games.id, "
@@ -1427,40 +1429,224 @@ game_query(struct db* ctx,
             return -1;
 
 next_step:
-    ret = sqlite3_step(ctx->game_query);
+    ret = sqlite3_step(ctx->game_get_all);
     switch (ret)
     {
         case SQLITE_ROW:
             ret = on_game(
-                sqlite3_column_int(ctx->game_query, 0),
-                (uint64_t)sqlite3_column_int64(ctx->game_query, 1),
-                sqlite3_column_int(ctx->game_query, 2),
-                (const char*)sqlite3_column_text(ctx->game_query, 3),
-                (const char*)sqlite3_column_text(ctx->game_query, 4),
-                (const char*)sqlite3_column_text(ctx->game_query, 5),
-                (const char*)sqlite3_column_text(ctx->game_query, 6),
-                (const char*)sqlite3_column_text(ctx->game_query, 7),
-                (const char*)sqlite3_column_text(ctx->game_query, 8),
-                (const char*)sqlite3_column_text(ctx->game_query, 9),
-                (const char*)sqlite3_column_text(ctx->game_query, 10),
-                (const char*)sqlite3_column_text(ctx->game_query, 11),
-                (const char*)sqlite3_column_text(ctx->game_query, 12),
-                (const char*)sqlite3_column_text(ctx->game_query, 13),
-                (const char*)sqlite3_column_text(ctx->game_query, 14),
+                sqlite3_column_int(ctx->game_get_all, 0),
+                (uint64_t)sqlite3_column_int64(ctx->game_get_all, 1),
+                sqlite3_column_int(ctx->game_get_all, 2),
+                (const char*)sqlite3_column_text(ctx->game_get_all, 3),
+                (const char*)sqlite3_column_text(ctx->game_get_all, 4),
+                (const char*)sqlite3_column_text(ctx->game_get_all, 5),
+                (const char*)sqlite3_column_text(ctx->game_get_all, 6),
+                (const char*)sqlite3_column_text(ctx->game_get_all, 7),
+                (const char*)sqlite3_column_text(ctx->game_get_all, 8),
+                (const char*)sqlite3_column_text(ctx->game_get_all, 9),
+                (const char*)sqlite3_column_text(ctx->game_get_all, 10),
+                (const char*)sqlite3_column_text(ctx->game_get_all, 11),
+                (const char*)sqlite3_column_text(ctx->game_get_all, 12),
+                (const char*)sqlite3_column_text(ctx->game_get_all, 13),
+                (const char*)sqlite3_column_text(ctx->game_get_all, 14),
                 user);
             if (ret)
             {
-                sqlite3_reset(ctx->game_query);
+                sqlite3_reset(ctx->game_get_all);
                 return ret;
             }
         case SQLITE_BUSY : goto next_step;
         case SQLITE_DONE :
-            sqlite3_reset(ctx->game_query);
+            sqlite3_reset(ctx->game_get_all);
             return 0;
     }
 
     log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
-    sqlite3_reset(ctx->game_query);
+    sqlite3_reset(ctx->game_get_all);
+    return -1;
+}
+
+static int
+game_get_events(struct db* ctx,
+    int (*on_game_event)(
+        const char* date,
+        int event_id,
+        const char* name,
+        void* user),
+    void* user)
+{
+    int ret;
+    if (ctx->game_get_events == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->game_get_events, cstr_view(
+            "SELECT DATE(time_started/1000, 'unixepoch'), event_id, event_types.name "
+            "FROM games "
+            "LEFT JOIN event_games ON event_games.game_id=games.id "
+            "LEFT JOIN events ON events.id=event_id "
+            "LEFT JOIN event_types ON event_types.id=event_type_id "
+            "GROUP BY date, event_types.name "
+            "SORT BY event_types.name;")) != 0)
+            return -1;
+
+next_step:
+    ret = sqlite3_step(ctx->game_get_events);
+    switch (ret)
+    {
+        case SQLITE_ROW:
+            ret = on_game_event(
+                (const char*)sqlite3_column_text(ctx->game_get_events, 0),
+                sqlite3_column_int(ctx->game_get_events, 1),
+                (const char*)sqlite3_column_text(ctx->game_get_events, 2),
+                user);
+            if (ret)
+            {
+                sqlite3_reset(ctx->game_get_events);
+                return ret;
+            }
+        case SQLITE_BUSY: goto next_step;
+        case SQLITE_DONE:
+            sqlite3_reset(ctx->game_get_events);
+            return 0;
+    }
+
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    sqlite3_reset(ctx->game_get_events);
+    return -1;
+}
+
+static int
+game_get_all_in_event(struct db* ctx,
+    struct str_view date, int event_id,
+    int (*on_game)(
+        int game_id,
+        uint64_t time_started,
+        int duration,
+        const char* tournament,
+        const char* event,
+        const char* stage,
+        const char* round,
+        const char* format,
+        const char* teams,
+        const char* scores,
+        const char* slots,
+        const char* sponsors,
+        const char* players,
+        const char* fighters,
+        const char* costumes,
+        void* user),
+    void* user)
+{
+    int ret;
+    if (ctx->game_get_all_in_event == NULL)
+        if (prepare_stmt_wrapper(ctx->db, &ctx->game_get_all_in_event, cstr_view(
+            "WITH grouped_games AS ( "
+            "    SELECT "
+            "        games.id, "
+            "        time_started, "
+            "        duration, "
+            "        round_type_id, "
+            "        round_number, "
+            "        set_format_id, "
+            "        winner_team_id, "
+            "        stage_id, "
+            "        teams.name team_name, "
+            "        IFNULL(scores.score, '') scores, "
+            "        group_concat(game_players.slot, '+') slots, "
+            "        group_concat(REPLACE(IFNULL(sponsors.short_name, ''), '+', '\\+'), '+') sponsors, "
+            "        group_concat(REPLACE(people.name, '+', '\\+'), '+') players, "
+            "        group_concat(REPLACE(IFNULL(fighters.name, game_players.fighter_id), '+', '\\+'), '+') fighters, "
+            "        group_concat(game_players.costume, '+') costumes "
+            "    FROM game_players "
+            "    INNER JOIN games ON games.id = game_players.game_id "
+            "    INNER JOIN teams ON teams.id = game_players.team_id "
+            "    LEFT JOIN scores ON scores.team_id = game_players.team_id AND scores.game_id = game_players.game_id "
+            "    INNER JOIN people ON people.id = game_players.person_id "
+            "    LEFT JOIN fighters ON fighters.id = game_players.fighter_id "
+            "    LEFT JOIN sponsors ON sponsors.id = people.sponsor_id "
+            "    GROUP BY games.id, game_players.team_id "
+            "    ORDER BY game_players.slot) "
+            "SELECT "
+            "    event_id, "
+            "    grouped_games.id, "
+            "    time_started, "
+            "    duration, "
+            "    IFNULL(tournaments.name, '') tourney, "
+            "    IFNULL(event_types.name, '') event, "
+            "    IFNULL(stages.name, grouped_games.stage_id) stage, "
+            "    IFNULL(round_types.short_name, '') || IFNULL(round_number, '') round, "
+            "    set_formats.short_name format, "
+            "    group_concat(REPLACE(grouped_games.team_name, ',', '\\,')) teams, "
+            "    group_concat(grouped_games.scores) score, "
+            "    group_concat(grouped_games.slots) slots, "
+            "    group_concat(REPLACE(IFNULL(grouped_games.sponsors, ''), ',', '\\,')) sponsors, "
+            "    group_concat(REPLACE(grouped_games.players, ',', '\\,')) players, "
+            "    group_concat(REPLACE(grouped_games.fighters, ',', '\\,')) fighters, "
+            "    group_concat(grouped_games.costumes) costumes "
+            "FROM grouped_games "
+            "LEFT JOIN tournament_games ON tournament_games.game_id = grouped_games.id "
+            "LEFT JOIN tournaments ON tournament_games.tournament_id = tournaments.id "
+            "LEFT JOIN event_games ON event_games.game_id = grouped_games.id "
+            "LEFT JOIN events ON event_games.event_id = events.id "
+            "LEFT JOIN event_types ON event_types.id = events.event_type_id "
+            "LEFT JOIN stages ON stages.id = grouped_games.stage_id "
+            "LEFT JOIN round_types ON grouped_games.round_type_id = round_types.id "
+            "INNER JOIN set_formats ON grouped_games.set_format_id = set_formats.id "
+            "WHERE DATE(time_started/1000, 'unixepoch')=? "
+            "GROUP BY grouped_games.id "
+            "ORDER BY time_started DESC;")) != 0)
+            return -1;
+
+    if ((ret = sqlite3_bind_text(ctx->game_get_all_in_event, 1, date.data, date.len, SQLITE_STATIC)) != SQLITE_OK)
+        goto error;
+
+next_step:
+    ret = sqlite3_step(ctx->game_get_all_in_event);
+    switch (ret)
+    {
+        case SQLITE_ROW:
+            /* 
+             * Because the SQL statement would require a different syntax "IS NULL" for finding
+             * games with no associated event vs "= id" for finding games with associated events,
+             * it's simpler to return the event_id and compare it here, than to compile two
+             * statements.
+             */
+            if (event_id > 0 && sqlite3_column_type(ctx->game_get_all_in_event, 0) == SQLITE_NULL)
+                goto next_step;
+            if (event_id < 0 && sqlite3_column_type(ctx->game_get_all_in_event, 0) != SQLITE_NULL)
+                goto next_step;
+            if (event_id != sqlite3_column_int(ctx->game_get_all_in_event, 0))
+                goto next_step;
+
+            ret = on_game(
+                sqlite3_column_int(ctx->game_get_all_in_event, 1),
+                (uint64_t)sqlite3_column_int64(ctx->game_get_all_in_event, 2),
+                sqlite3_column_int(ctx->game_get_all_in_event, 3),
+                (const char*)sqlite3_column_text(ctx->game_get_all_in_event, 4),
+                (const char*)sqlite3_column_text(ctx->game_get_all_in_event, 5),
+                (const char*)sqlite3_column_text(ctx->game_get_all_in_event, 6),
+                (const char*)sqlite3_column_text(ctx->game_get_all_in_event, 7),
+                (const char*)sqlite3_column_text(ctx->game_get_all_in_event, 8),
+                (const char*)sqlite3_column_text(ctx->game_get_all_in_event, 9),
+                (const char*)sqlite3_column_text(ctx->game_get_all_in_event, 10),
+                (const char*)sqlite3_column_text(ctx->game_get_all_in_event, 11),
+                (const char*)sqlite3_column_text(ctx->game_get_all_in_event, 12),
+                (const char*)sqlite3_column_text(ctx->game_get_all_in_event, 13),
+                (const char*)sqlite3_column_text(ctx->game_get_all_in_event, 14),
+                (const char*)sqlite3_column_text(ctx->game_get_all_in_event, 15),
+                user);
+            if (ret)
+            {
+                sqlite3_reset(ctx->game_get_all_in_event);
+                return ret;
+            }
+        case SQLITE_BUSY: goto next_step;
+        case SQLITE_DONE:
+            sqlite3_reset(ctx->game_get_all_in_event);
+            return 0;
+    }
+
+error:
+    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    sqlite3_reset(ctx->game_get_all_in_event);
     return -1;
 }
 

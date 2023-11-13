@@ -133,9 +133,6 @@ import_reframed_all(struct db_interface* dbi, struct db* db)
     struct path file_path;
     path_init(&file_path);
 
-    if (dbi->transaction.begin(db) != 0)
-        goto transaction_begin_failed;
-
     /*
      * Begin with config file. This contains a list of all paths to all replays,
      * which we will gather and load
@@ -144,8 +141,13 @@ import_reframed_all(struct db_interface* dbi, struct db* db)
     if (path_join(&file_path, cstr_view("ReFramed")) < 0) goto fail;
     if (path_join(&file_path, cstr_view("config.json")) < 0) goto fail;
     path_terminate(&file_path);
-    if (import_reframed_config(dbi, db, file_path.str.data) < 0)
-        goto fail;
+    if (dbi->transaction.begin(db) == 0)
+    {
+        if (import_reframed_config(dbi, db, file_path.str.data) < 0)
+            dbi->transaction.rollback(db);
+        else if (dbi->transaction.commit(db) != 0)
+            goto fail;
+    }
 
     /*
      * Some information on players might still be in the player details json.
@@ -156,18 +158,25 @@ import_reframed_all(struct db_interface* dbi, struct db* db)
     if (path_join(&file_path, cstr_view("ReFramed")) < 0) goto fail;
     if (path_join(&file_path, cstr_view("playerDetails.json")) < 0) goto fail;
     path_terminate(&file_path);
-    if (import_reframed_player_details(dbi, db, file_path.str.data) < 0)
-        goto fail;
+    if (dbi->transaction.begin(db) == 0)
+    {
+        if (import_reframed_player_details(dbi, db, file_path.str.data) < 0)
+            dbi->transaction.rollback(db);
+        else if (dbi->transaction.commit(db) != 0)
+            goto fail;
+    }
 
     if (path_set(&file_path, fs_appdata_dir()) < 0) goto fail;
     if (path_join(&file_path, cstr_view("ReFramed")) < 0) goto fail;
     if (path_join(&file_path, cstr_view("motionLabels.dat")) < 0) goto fail;
     path_terminate(&file_path);
-    if (import_reframed_motion_labels(dbi, db, file_path.str.data) < 0)
-        goto fail;
-
-    if (dbi->transaction.commit(db) != 0)
-        goto fail;
+    if (dbi->transaction.begin(db) == 0)
+    {
+        if (import_reframed_motion_labels(dbi, db, file_path.str.data) < 0)
+            dbi->transaction.rollback(db);
+        else if (dbi->transaction.commit(db) != 0)
+            goto fail;
+    }
 
     path_deinit(&file_path);
     return 0;

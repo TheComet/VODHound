@@ -99,7 +99,10 @@ struct db_interface
 
     struct game {
         int (*add_or_get)(struct db* db, int round_type_id, int round_number, int set_format_id, int winner_team_id, int stage_id, uint64_t time_started, int duration);
-        int (*query)(struct db* db,
+        /*! 
+         * Iterates over all available games.
+         * Return 1 to successfuly stop iteration. Return -1 to stop iteration and return an error. Return 0 to continue iteration. */
+        int (*get_all)(struct db* db,
             int (*on_game)(
                 int game_id,
                 uint64_t time_started,
@@ -118,6 +121,47 @@ struct db_interface
                 const char* costumes,
                 void* user),
             void* user);
+        /*!
+         * Iterates over all unique events. Since events can be shared between games
+         * from different tournaments, the grouping is achieved by date and by event
+         * name. For example, date "2022-04-11" event "Singles Bracket" is a unique
+         * event.
+         * 
+         * Note that games exist that are not associated with any event or tournament.
+         * In this case, event_id is set to -1 in the callback.
+         * 
+         * Return 1 to successfuly stop iteration. Return -1 to stop iteration and
+         * return an error. Return 0 to continue iteration.
+         */
+        int (*get_events)(struct db* db,
+            int (*on_game_event)(
+                const char* date,  /* Date string will be "YYYY-MM-DD" */
+                int event_id,      /* Event ID. Can be -1, indicating no association to an event. */
+                const char* name,  /* Name of the event, such as "Singles Bracket" */
+                void* user),
+            void* user);
+        int (*get_all_in_event)(struct db* db,
+            struct str_view date,  /* Date of the event, formatted as "YYYY-MM-DD" */
+            int event_id,          /* Event ID. Can be -1, which will return all games NOT associated with any event. */
+            int (*on_game)(
+                int game_id,
+                uint64_t time_started,
+                int duration,
+                const char* tournament,
+                const char* event,
+                const char* stage,
+                const char* round,
+                const char* format,
+                const char* teams,
+                const char* scores,
+                const char* slots,
+                const char* sponsors,
+                const char* players,
+                const char* fighters,
+                const char* costumes,
+                void* user),
+            void* user);
+
         int (*associate_tournament)(struct db* db, int game_id, int tournament_id);
         int (*associate_event)(struct db* db, int game_id, int event_id);
         int (*associate_video)(struct db* db, int game_id, int video_id, int64_t frame_offset);

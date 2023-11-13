@@ -1,6 +1,7 @@
 #include <gtk/gtk.h>
 
 #include "vh/db_ops.h"
+#include "vh/import.h"
 #include "vh/log.h"
 #include "vh/init.h"
 #include "vh/vec.h"
@@ -187,7 +188,7 @@ setup_center_label_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointe
 }
 
 static void
-bind_column(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
+bind_column_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
 {
     GtkWidget* label = gtk_list_item_get_child(item);
     VhAppGameListObject* game_object = gtk_list_item_get_item(item);
@@ -269,7 +270,7 @@ game_list_new(struct db_interface* dbi, struct db* db)
     game_list = vhapp_game_list_new();
     query_ctx.game_list = game_list;
     log_dbg("Querying games...\n");
-    dbi->game.query(db, on_game_list_query, &query_ctx);
+    dbi->game.get_all(db, on_game_list_query, &query_ctx);
     log_dbg("Loaded %d games\n", vhapp_game_list_get_n_items(G_LIST_MODEL(game_list)));
 
     selection_model = gtk_multi_selection_new(G_LIST_MODEL(game_list));
@@ -280,7 +281,7 @@ game_list_new(struct db_interface* dbi, struct db* db)
 #define X(name, align, str)                                                 \
         item_factory = gtk_signal_list_item_factory_new();                  \
         g_signal_connect(item_factory, "setup", G_CALLBACK(setup_##align##_label_cb), NULL); \
-        g_signal_connect(item_factory, "bind", G_CALLBACK(bind_column), (void*)(intptr_t)name); \
+        g_signal_connect(item_factory, "bind", G_CALLBACK(bind_column_cb), (void*)(intptr_t)name); \
         column = gtk_column_view_column_new(str, item_factory);             \
         gtk_column_view_append_column(GTK_COLUMN_VIEW(column_view), column);\
         g_object_unref(column);
@@ -290,11 +291,78 @@ game_list_new(struct db_interface* dbi, struct db* db)
     return column_view;
 }
 
+static GListModel*
+expand_node_cb(gpointer item, gpointer user_data)
+{
+    static const char* const strings[] = { "child1", "child2", NULL };
+    GTK_STRING_OBJECT(item);
+    return G_LIST_MODEL(gtk_string_list_new(strings));
+}
+
+static void
+setup_label(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
+{
+    GtkWidget* label = gtk_label_new(NULL);
+    GtkWidget* expander = gtk_tree_expander_new();
+    gtk_tree_expander_set_child(GTK_TREE_EXPANDER(expander), label);
+    gtk_list_item_set_child(item, expander);
+}
+
+static void
+bind_column(GtkSignalListItemFactory* self, GtkListItem* item, gpointer user_data)
+{
+    GtkWidget* expander = gtk_list_item_get_child(item);
+    GtkWidget* label = gtk_tree_expander_get_child(GTK_TREE_EXPANDER(expander));
+    GtkTreeListRow* row = gtk_list_item_get_item(item);
+    GtkStringObject* str = gtk_tree_list_row_get_item(row);
+    int column_idx = (int)(intptr_t)user_data;
+
+    if (column_idx == 0)
+        gtk_tree_expander_set_list_row(GTK_TREE_EXPANDER(expander), row);
+
+    gtk_label_set_text(GTK_LABEL(label), gtk_string_object_get_string(str));
+}
+
+static GtkWidget*
+game_tree_new(struct db_interface* dbi, struct db* db)
+{
+    GtkTreeListModel* model;
+    GtkStringList* root;
+    GtkMultiSelection* selection_model;
+    GtkWidget* column_view;
+    GtkListItemFactory* item_factory;
+    GtkColumnViewColumn* column;
+
+    static const char* const strings[] = { "one", "two", "three", NULL };
+    root = gtk_string_list_new(strings);
+    model = gtk_tree_list_model_new(G_LIST_MODEL(root), FALSE, FALSE, expand_node_cb, NULL, NULL);
+
+    selection_model = gtk_multi_selection_new(G_LIST_MODEL(model));
+    column_view = gtk_column_view_new(GTK_SELECTION_MODEL(selection_model));
+    gtk_widget_set_vexpand(column_view, TRUE);
+
+    item_factory = gtk_signal_list_item_factory_new();
+    g_signal_connect(item_factory, "setup", G_CALLBACK(setup_label), NULL);
+    g_signal_connect(item_factory, "bind", G_CALLBACK(bind_column), (void*)0);
+    column = gtk_column_view_column_new("Test", item_factory);
+    gtk_column_view_append_column(GTK_COLUMN_VIEW(column_view), column);
+    g_object_unref(column);
+
+    item_factory = gtk_signal_list_item_factory_new();
+    g_signal_connect(item_factory, "setup", G_CALLBACK(setup_label), NULL);
+    g_signal_connect(item_factory, "bind", G_CALLBACK(bind_column), (void*)1);
+    column = gtk_column_view_column_new("Test", item_factory);
+    gtk_column_view_append_column(GTK_COLUMN_VIEW(column_view), column);
+    g_object_unref(column);
+
+    return column_view;
+}
+
 static GtkWidget*
 replay_browser_new(struct db_interface* dbi, struct db* db)
 {
     GtkWidget* search;
-    GtkWidget* replays;
+    GtkWidget* games;
     GtkWidget* scroll;
     GtkWidget* vbox;
     GtkWidget* groups;
@@ -303,11 +371,11 @@ replay_browser_new(struct db_interface* dbi, struct db* db)
     search = gtk_entry_new();
     gtk_entry_set_icon_from_icon_name(GTK_ENTRY(search), GTK_ENTRY_ICON_PRIMARY, "edit-find-symbolic");
 
-    replays = game_list_new(dbi, db);
+    games = game_tree_new(dbi, db);
     scroll = gtk_scrolled_window_new();
     gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(scroll), TRUE);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), replays);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), games);
 
     vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
     gtk_box_append(GTK_BOX(vbox), search);
@@ -378,6 +446,13 @@ int main(int argc, char** argv)
     struct db* db = dbi->open_and_prepare("vodhound.db", reinit_db);
     if (db == NULL)
         goto open_db_failed;
+
+    if (reinit_db)
+    {
+        import_param_labels_csv(dbi, db, "ParamLabels.csv");
+        import_reframed_mapping_info(dbi, db, "migrations/mappingInfo.json");
+        import_reframed_all(dbi, db);
+    }
 
     app = gtk_application_new("ch.thecomet.vodhound", G_APPLICATION_DEFAULT_FLAGS);
     ctx.dbi = dbi;

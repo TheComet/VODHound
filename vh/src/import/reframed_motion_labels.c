@@ -25,7 +25,10 @@ import_reframed_motion_labels(
     btree_init(&usage_ids, sizeof(int));
 
     if (mfile_map(&mf, file_name) != 0)
+    {
+        log_err("Failed to open file '%s'\n", file_name);
         goto map_file_failed;
+    }
 
     log_info("Importing motion labels from '%s'\n", file_name);
 
@@ -162,6 +165,7 @@ import_reframed_motion_labels(
     return 0;
 
 fail:
+    log_err("Invalid data found in file '%s'\n", file_name);
     mfile_unmap(&mf);
 map_file_failed:
     btree_deinit(&usage_ids);

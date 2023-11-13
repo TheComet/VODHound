@@ -22,6 +22,7 @@ import_reframed_player_details(
         log_err("Failed to open file '%s'\n", file_path);
         return -1;
     }
+    log_info("Loading player details from '%s'\n", file_path);
 
     struct json_object* players = json_object_object_get(root, "players");
     if (json_object_get_type(players) != json_type_object)
@@ -63,6 +64,7 @@ import_reframed_player_details(
     return 0;
 
 fail:
+    log_err("Invalid JSON encountered in file '%s'\n", file_path);
     json_object_put(root);
     return -1;
 }
