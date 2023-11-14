@@ -46,6 +46,7 @@ endif ()
 
 add_subdirectory ("thirdparty/sqlite-3.43.1")
 add_subdirectory ("thirdparty/json-c")
+add_subdirectory ("sqlgen")
 add_subdirectory ("vh")
 
 if (VODHOUND_UI MATCHES "IUP")
