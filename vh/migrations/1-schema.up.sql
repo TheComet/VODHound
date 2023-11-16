@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS motion_layers (
     group_id INTEGER NOT NULL,
     priority INTEGER NOT NULL,
     name TEXT NOT NULL,
-    UNIQUE(group_id, priority),
+    UNIQUE(group_id, name),
     FOREIGN KEY (group_id) REFERENCES motion_groups(id)
 );
 CREATE TABLE IF NOT EXISTS motion_categories (

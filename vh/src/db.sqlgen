@@ -1,25 +1,40 @@
-%option prefix="db"
+%option prefix="newdb"
+%option malloc="mem_alloc"
+%option free="mem_free"
 
 %header-preamble {
-    #include "vh/config.h"
-    #include "vh/fs.h"
+#include "vh/config.h"
+#include "vh/str.h"
+#include <stdint.h>
 
-    C_BEGIN
+C_BEGIN
+}
+
+%source-includes{
+#include "vh/db.h"
+#include "vh/log.h"
+#include "vh/mem.h"
+#include "vh/mfile.h"
+#include "sqlite/sqlite3.h"
+#include <ctype.h>
 }
 
 %header-postamble {
-    VH_PUBLIC_API struct db_interface*
-    db(const char* type);
+VH_PUBLIC_API struct newdb_interface*
+newdb(const char* type);
 
-    VH_PRIVATE_API int
-    db_init(void);
+VH_PRIVATE_API int
+newdb_init(void);
 
-    VH_PRIVATE_API void
-    db_deinit(void);
+VH_PRIVATE_API void
+newdb_deinit(void);
 
-    C_END
+C_END
 }
 
+%function migrate(int reinit_db) {
+    return check_version_and_migrate(ctx->db, reinit_db);
+}
 %query motion,add(uint64_t hash40, struct str_view string) {
     type insert-or-ignore
     table motions
@@ -31,236 +46,348 @@
 %query motion_label,add_or_get_group(struct str_view name) {
     type insert-or-get
     table motion_groups
-    return int id
-}
-%query motion_label,find_highest_priority() {
-    type get
-    stmt
-        WITH l(id) AS (VALUES(-1))
-        SELECT IFNULL(priority, 1) FROM motion_layers
-        JOIN motion_groups ON motion_groups.id = motion_layers.group_id
-        FULL OUTER JOIN l USING(id) ORDER BY priority DESC LIMIT 1;
-
-        SELECT priority + 1 FROM motion_layers
-        ORDER BY priority ASC LIMIT 1;
-    return int priority
+    return id
 }
 %query motion_label,add_or_get_layer(int group_id, struct str_view name) {
     type insert-or-get
-    table motion_layers
-        SELECT priority FROM motion_layers
-        JOIN motion_groups ON motion_groups.id = motion_layers.group_id
-        ORDER BY priority ASC LIMIT 1;
+    stmt {
+        WITH priorities AS (
+            WITH list(id) AS (VALUES(0))
+            SELECT IFNULL(priority, 0) + 1 priority FROM test
+            FULL OUTER JOIN list USING(id)
+            ORDER BY priority DESC LIMIT 1)
+        INSERT INTO motion_layers (group_id, priority, name)
+        VALUES (?, (SELECT priority FROM priorities), ?)
+        ON CONFLICT DO UPDATE SET group_id=excluded.group_id
+        RETURNING id;
+    }
+    return id
+}
+%query motion_label,add_or_get_category(struct str_view name) {
+    type insert-or-get
+    table motion_categories
+    return id
+}
+%query motion_label,add_or_get_usage(struct str_view name) {
+    type insert-or-get
+    table motion_usages
+    return id
+}
+%query motion_label,add_or_get_label(
+        uint64_t hash40,
+        int fighter_id,
+        int layer_id,
+        int category_id,
+        int usage_id,
+        struct str_view label) {
+    type insert-or-get
+    table motion_labels
+    return id
+}
+%query motion_label,to_motions(struct db* ctx, int fighter_id, struct str_view label, struct vec* motions_out) {
+    type select-multi
+    table motion_labels
+    return hash40
+}
+%query motion_label,to_notation_label(int fighter_id, uint64_t motion, struct str* label) {
+    type select-single
+    stmt {
+        SELECT label FROM motion_labels
+        JOIN motion_layers ON motion_layers.id=motion_labels.layer_id
+        WHERE hash40=? AND fighter_id=? AND usage_id=? AND label <> ''
+        ORDER BY priority ASC
+        LIMIT 1;
+    }
+    return label
+}
+%query fighter,add(int id, struct str_view name) {
+    type insert-or-ignore
+    table fighters
+}
+%query fighter,get_name(int id, struct str* name) {
+    type select-single
+    table fighters
+    return name
+}
+%query stage,add(int id, struct str_view name) {
+    type insert-or-ignore
+    table stages
+}
+%query status_enum,add(int fighter_id null, int value, struct str_view name) {
+    type insert-or-ignore
+    table status_enums
+}
+%query hit_status_enum,add(int id, struct str_view name) {
+    type insert-or-ignore
+    table hit_status_enums
+}
+%query tournament,add_or_get(struct str_view name, struct str_view website) {
+    type insert-or-get
+    table tournaments
+    return id
+}
+%query tournament,add_sponsor(int tournament_id, int sponsor_id) {
+    type insert-or-ignore
+    table tournament_sponsors
+}
+%query tournament,add_organizer(int tournament_id, int person_id) {
+    type insert-or-ignore
+    table tournament_organizers
+}
+%query tournament,add_commentator(int tournament_id, int person_id) {
+    type insert-or-ignore
+    table tournament_commentators
+}
+%query event,add_or_get_type(struct str_view name) {
+    type insert-or-get
+    table event_types
+    return id
+}
+%query event,add_or_get(int event_type_id, struct str_view url) {
+    type insert-or-get
+    table event_types
+    return id
+}
+%query round,add_or_get_type(struct str_view short_name, struct str_view long_name) {
+    type insert-or-get
+    table round_types
+    return id
+}
+%query set_format,add_or_get(struct str_view short_name, struct str_view long_name) {
+    type insert-or-get
+    table set_formats
+    return id
+}
+%query team,add_or_get(struct str_view short_name, struct str_view url) {
+    type insert-or-get
+    table teams
+    return id
+}
+%query team,add_member(int team_id, int person_id) {
+    type insert-or-ignore
+    table teams
+}
+%query sponsor,add_or_get(
+        int sponsor_id,
+        struct str_view name,
+        struct str_view tag,
+        struct str_view social,
+        struct str_view pronouns) {
+    type insert-or-get
+    table sponsors
+    return id
+}
+%query person,add_or_get(struct str_view short_name, struct str_view full_name, struct str_view website) {
+    type insert-or-get
+    table people
+    return id, sponsor_id, name, tag, social, pronouns
+}
+%query person,get_id_from_name(struct str_view name) {
+    type select-single
+    table people
+    return id
+}
+%query person,get_team_id_from_name(struct str_view name) {
+    type select-single
+    stmt {
+        SELECT team_id
+        FROM team_members
+        JOIN people ON team_members.person_id=people.id
+        WHERE name=?;
+    }
+    return team_id
+}
+%query person,set_tag(int id, struct str_view tag) {
+    type update-or-ignore tag
+    table people
+}
+%query person,set_social(int id, struct str_view social) {
+    type update-or-ignore social
+    table people
+}
+%query person,set_pronouns(int id, struct str_view pronouns) {
+    type update-or-ignore pronouns
+    table people
 }
 
-#include "vh/config.h"
-#include "vh/fs.h"
-
-C_BEGIN
-
-struct db;
-struct vec;
-
-struct db_interface
+%source-preamble {
+static int
+exec_sql_wrapper(sqlite3* db, const char* sql)
 {
-    struct db* (*open_and_prepare)(const char* uri, int reinit_db);
-    void (*close)(struct db* db);
+    char* error_message;
+    int ret = sqlite3_exec(db, sql, NULL, NULL, &error_message);
+    if (ret != SQLITE_OK)
+    {
+        log_sqlite_err(ret, error_message, sqlite3_errmsg(db));
+        sqlite3_free(error_message);
+        return -1;
+    }
+    return 0;
+}
 
-    struct {
-        int (*begin)(struct db* db);
-        int (*commit)(struct db* db);
-        int (*rollback)(struct db* db);
-        int (*begin_nested)(struct db* db, struct str_view name);
-        int (*commit_nested)(struct db* db, struct str_view name);
-        int (*rollback_nested)(struct db* db, struct str_view name);
-    } transaction;
+static int
+run_migration_script(sqlite3* db, const char* file_name)
+{
+    int ret;
+    struct mfile mf;
+    sqlite3_stmt* stmt;
+    const char* sql;
+    const char* sql_next;
+    int sql_len;
 
-    struct {
-        int (*add)(struct db* db, uint64_t hash40, struct str_view string);
-        int (*exists)(struct db* db, uint64_t hash40);
-    } motion;
+    if (mfile_map(&mf, file_name) != 0)
+        goto open_script_failed;
 
-    struct {
-        int (*add_or_get_group)(struct db* db, struct str_view name);
-        int (*add_or_get_layer)(struct db* db, int group_id, struct str_view name);
-        int (*add_or_get_category)(struct db* db, struct str_view name);
-        int (*add_or_get_usage)(struct db* db, struct str_view name);
-        int (*add_or_get_label)(struct db* db, uint64_t motion, int fighter_id, int layer_id, int category_id, int usage_id, struct str_view name);
-        int (*to_motions)(struct db* db, int fighter_id, struct str_view label, struct vec* motions_out);
-        int (*to_notation_label)(struct db* db, int fighter_id, uint64_t motion, struct str* label);
-    } motion_label;
+    sql = mf.address;
+    sql_len = mf.size;
 
-    struct {
-        int (*add)(struct db* db, int fighter_id, struct str_view name);
-        int (*get_name)(struct db* db, int fighter_id, struct str* name);
-    } fighter;
+    log_info("Running migration script '%s'\n", file_name);
 
-    struct {
-        int (*add)(struct db* db, int stage_id, struct str_view name);
-    } stage;
+next_step:
+    ret = sqlite3_prepare_v2(db, sql, sql_len, &stmt, &sql_next);
+    if (ret != SQLITE_OK)
+    {
+        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
+        goto prepare_failed;
+    }
+retry_step:
+    switch (ret = sqlite3_step(stmt))
+    {
+        case SQLITE_BUSY:
+            goto retry_step;
+        case SQLITE_ROW:
+        case SQLITE_DONE:
+            sql_len -= (int)(sql_next - sql);
+            sql = sql_next;
+            for (; sql_len && isspace(*sql); ++sql, --sql_len) {}
+            if (sql_len <= 0)
+                break;
+            sqlite3_finalize(stmt);
+            goto next_step;
+        default:
+            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
+            goto exec_failed;
+    }
 
-    struct {
-        int (*add)(struct db* db, int fighter_id, int status_id, struct str_view name);
-    } status_enum;
+    sqlite3_finalize(stmt);
+    mfile_unmap(&mf);
+    return 0;
 
-    struct {
-        int (*add)(struct db* db, int hit_status_id, struct str_view name);
-    } hit_status_enum;
+    exec_failed        : sqlite3_finalize(stmt);
+    prepare_failed     : mfile_unmap(&mf);
+    open_script_failed : return -1;
+}
 
-    struct {
-        int (*add_or_get)(struct db* db, struct str_view name, struct str_view website);
-        int (*add_sponsor)(struct db* db, int tournament_id, int sponsor_id);
-        int (*add_organizer)(struct db* db, int tournament_id, int person_id);
-        int (*add_commentator)(struct db* db, int tournament_id, int person_id);
-    } tournament;
+static int
+check_version_and_migrate(sqlite3* db, int reinit_db)
+{
+    int ret;
+    int version;
+    sqlite3_stmt* stmt;
 
-    struct {
-        int (*add_or_get_type)(struct db* db, struct str_view name);
-        int (*add_or_get)(struct db* db, int event_type_id, struct str_view url);
-    } event;
+    ret = sqlite3_prepare_v2(db, "PRAGMA user_version", -1, &stmt, NULL);
+    if (ret != SQLITE_OK)
+    {
+        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
+        return -1;
+    }
 
-    struct {
-        int (*add_or_get_type)(struct db* db, struct str_view short_name, struct str_view long_name);
-    } round;
+    ret = sqlite3_step(stmt);
+    if (ret != SQLITE_ROW)
+    {
+        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
+        sqlite3_finalize(stmt);
+        return -1;
+    }
 
-    struct {
-        int (*add_or_get)(struct db* db, struct str_view short_name, struct str_view long_name);
-    } set_format;
+    version = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+    log_dbg("db version: %d\n", version);
 
-    struct {
-        int (*add_or_get)(struct db* db, struct str_view name, struct str_view url);
-        int (*add_member)(struct db* db, int team_id, int person_id);
-    } team;
+    if (exec_sql_wrapper(db, "BEGIN TRANSACTION") != 0)
+        return -1;
 
-    struct {
-        int (*add_or_get)(struct db* db, struct str_view short_name, struct str_view full_name, struct str_view website);
-    } sponsor;
+    if (reinit_db)
+    {
+        log_note("Downgrading db to version 0\n");
+        switch (version)
+        {
+            case 1: if (run_migration_script(db, "migrations/1-schema.down.sql") != 0) goto migrate_failed;
+            case 0: break;
+        }
+        version = 0;
+    }
 
-    struct {
-        int (*add_or_get)(struct db* db,
-            int sponsor_id, struct str_view name, struct str_view tag, struct str_view social, struct str_view pronouns,
-            int (*on_person)(
-                int id, int sponsor_id, const char* name, const char* tag, const char* social, const char* pronouns,
-                void* user),
-            void* user);
-        int (*get_id_from_name)(struct db* db, struct str_view name);
-        int (*get_team_id_from_name)(struct db* db, struct str_view name);
-        int (*set_tag)(struct db* db, int person_id, struct str_view tag);
-        int (*set_social)(struct db* db, int person_id, struct str_view social);
-        int (*set_pronouns)(struct db* db, int person_id, struct str_view pronouns);
-    } person;
+    switch (version)
+    {
+        case 0: if (run_migration_script(db, "migrations/1-schema.up.sql") != 0) goto migrate_failed;
+        /*case 1: if (upgrade_to_v2(db) != 0) goto migrate_failed;
+        case 2: if (upgrade_to_v3(db) != 0) goto migrate_failed;*/
+        case 1: break;
 
-    struct game {
-        int (*add_or_get)(struct db* db, int round_type_id, int round_number, int set_format_id, int winner_team_id, int stage_id, uint64_t time_started, int duration);
-        /*! 
-         * Iterates over all available games.
-         * Return 1 to successfuly stop iteration. Return -1 to stop iteration and return an error. Return 0 to continue iteration. */
-        int (*get_all)(struct db* db,
-            int (*on_game)(
-                int game_id,
-                uint64_t time_started,
-                int duration,
-                const char* tournament,
-                const char* event,
-                const char* stage,
-                const char* round,
-                const char* format,
-                const char* teams,
-                const char* scores,
-                const char* slots,
-                const char* sponsors,
-                const char* players,
-                const char* fighters,
-                const char* costumes,
-                void* user),
-            void* user);
-        /*!
-         * Iterates over all unique events. Since events can be shared between games
-         * from different tournaments, the grouping is achieved by date and by event
-         * name. For example, date "2022-04-11" event "Singles Bracket" is a unique
-         * event.
-         * 
-         * Note that games exist that are not associated with any event or tournament.
-         * In this case, event_id is set to -1 in the callback.
-         * 
-         * Return 1 to successfuly stop iteration. Return -1 to stop iteration and
-         * return an error. Return 0 to continue iteration.
-         */
-        int (*get_events)(struct db* db,
-            int (*on_game_event)(
-                const char* date,  /* Date string will be "YYYY-MM-DD" */
-                const char* name,  /* Name of the event, such as "Singles Bracket" */
-                int event_id,      /* Event ID. Can be -1, indicating no association to an event. */
-                void* user),
-            void* user);
-        int (*get_all_in_event)(struct db* db,
-            struct str_view date,  /* Date of the event, formatted as "YYYY-MM-DD" */
-            int event_id,          /* Event ID. Can be -1, which will return all games NOT associated with any event. */
-            int (*on_game)(
-                int game_id,
-                uint64_t time_started,
-                int duration,
-                const char* tournament,
-                const char* event,
-                const char* stage,
-                const char* round,
-                const char* format,
-                const char* teams,
-                const char* scores,
-                const char* slots,
-                const char* sponsors,
-                const char* players,
-                const char* fighters,
-                const char* costumes,
-                void* user),
-            void* user);
+        default:
+            log_err("Unknown database version %d. Aborting all operations\n", version);
+            goto migrate_failed;
+    }
 
-        int (*associate_tournament)(struct db* db, int game_id, int tournament_id);
-        int (*associate_event)(struct db* db, int game_id, int event_id);
-        int (*associate_video)(struct db* db, int game_id, int video_id, int64_t frame_offset);
-        int (*unassociate_video)(struct db* db, int game_id, int video_id);
-        int (*get_videos)(struct db* db, int game_id,
-            int (*on_video)(
-                const char* file_name,
-                const char* path_hint,
-                int64_t frame_offset,
-                void* user),
-            void* user);
-        int (*add_player)(struct db* db, int person_id, int game_id, int slot, int team_id, int fighter_id, int costume, int is_loser_side);
-    } game;
+    if (exec_sql_wrapper(db, "PRAGMA user_version=1") != 0)
+        goto migrate_failed;
 
-    struct {
-        int (*add_or_get)(struct db* db, struct str_view name);
-        int (*add_game)(struct db* db, int group_id, int game_id);
-    } group;
+    if (exec_sql_wrapper(db, "COMMIT TRANSACTION") != 0)
+        goto migrate_failed;
 
-    struct {
-        int (*add_or_get)(struct db* db, struct str_view file_name, struct str_view path_hint);
-        int (*set_path_hint)(struct db* db, struct str_view file_name, struct str_view path_hint);
-        int (*add_path)(struct db* db, struct str_view path);
-        int (*query_paths)(struct db* db, int (*on_video_path)(const char* path, void* user), void* user);
-    } video;
+    log_note("Successfully migrated from version %d to version 1\n", version);
 
-    struct {
-        int (*add)(struct db* db, int game_id, int team_id, int score);
-    } score;
+    return 0;
 
-    struct {
-        int (*add)(struct db* db, struct str_view name, struct str_view ip, uint16_t port);
-    } switch_info;
+    migrate_failed : exec_sql_wrapper(db, "ROLLBACK TRANSACTION");
+    return -1;
+}
+}
 
-    struct {
-        int (*add)(struct db* db, struct str_view path, int frame_offset);
-    } stream_recording_sources;
+%source-postamble {
+struct newdb_interface* newdb(const char* type)
+{
+    if (strcmp("sqlite", type) == 0)
+        return &db_sqlite;
+    return NULL;
+}
+
+#if defined(VH_MEM_DEBUGGING)
+static int
+vh_mem_roundup(int size) { return size; }
+static int
+vh_mem_init(void* user) { (void)user; return 0; }
+static void
+vh_mem_deinit(void* user) { (void)user; }
+
+static struct sqlite3_mem_methods vh_mem_sqlite = {
+    mem_alloc,
+    mem_free,
+    mem_realloc,
+    mem_allocated_size,
+    vh_mem_roundup,
+    vh_mem_init,
+    vh_mem_deinit,
+    NULL
 };
+#endif
 
-VH_PUBLIC_API struct db_interface*
-db(const char* type);
+int
+newdb_init(void)
+{
+#if defined(VH_MEM_DEBUGGING)
+    sqlite3_config(SQLITE_CONFIG_MALLOC, &vh_mem_sqlite);
+#endif
 
-VH_PRIVATE_API int
-db_init(void);
+    if (sqlite3_initialize() != SQLITE_OK)
+        return -1;
+    return 0;
+}
 
-VH_PRIVATE_API void
-db_deinit(void);
-
-C_END
+void
+newdb_deinit(void)
+{
+    sqlite3_shutdown();
+}
+}

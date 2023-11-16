@@ -62,10 +62,10 @@ configure_file ("templates/config.h.in" "include/vh/config.h")
 # Generate db bindings
 ###############################################################################
 
-sqlgen_target (vhdb
-    INPUT "src/db.sqlgen"
-    OUTPUT_HEADER "include/vh/db.h"
-    BACKENDS sqlite)
+#sqlgen_target (vhdb
+#    INPUT "src/db.sqlgen"
+#    OUTPUT_HEADER "include/vh/db.h"
+#    BACKENDS sqlite)
 
 ###############################################################################
 # Library source files and settings
@@ -76,8 +76,7 @@ add_library (vh ${VH_LIB_TYPE}
     "${PROJECT_BINARY_DIR}/include/vh/config.h"
 
     "src/db.sqlgen"
-    "${PROJECT_BINARY_DIR}/include/vh/db.h"
-    "${SQLGEN_vhdb_OUTPUTS}"
+    #"${SQLGEN_vhdb_OUTPUTS}"
 
     "include/vh/backtrace.h"
     "include/vh/btree.h"

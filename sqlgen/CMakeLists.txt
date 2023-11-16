@@ -34,21 +34,28 @@ macro (sqlgen_target name)
         set (_output_header "${CMAKE_CURRENT_BINARY_DIR}/${_output_header}")
     endif ()
 
-    get_filename_component (_output_dir "${_input_file}" DIRECTORY)
+    get_filename_component (_input_name "${_input_file}" NAME)
+    set (_output_source "${CMAKE_CURRENT_BINARY_DIR}/${_input_name}.c")
 
     string (REPLACE ";" "," _backends ${sqlgen_target_arg_BACKENDS})
 
-    add_custom_command (OUTPUT "${_output_header}" "${_output_files}"
+    add_custom_command (OUTPUT "${_output_header}" "${_output_source}"
         COMMAND sqlgen
-        ARGS -i ${_input_file} -o ${_output_dir} -b ${_backends}
+        ARGS -b ${_backends} -i ${_input_file} --header ${_output_header} --source ${_output_source}
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         MAIN_DEPENDENCY ${_input_file}
         DEPENDS sqlgen
         COMMENT "[sqlgen][${name}] Generating SQL bindings for backends: ${_backends}"
         VERBATIM)
 
+    set (SQLGEN_${name}_DEFINED TRUE)
+    set (SQLGEN_${name}_OUTPUTS
+        "${_output_header}"
+        "${_output_source}")
+
     unset (_backends)
-    unset (_output_dir)
+    unset (_output_source)
+    unset (_input_name)
     unset (_output_header)
     unset (_input_file)
 endmacro ()
