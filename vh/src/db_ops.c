@@ -1269,7 +1269,7 @@ person_set_pronouns(struct db* ctx, int person_id, struct str_view pronouns)
     int ret;
     if (ctx->person_set_pronouns == NULL)
         if (prepare_stmt_wrapper(ctx->db, &ctx->person_set_pronouns, cstr_view(
-            "UPDATE OR IGNORE people SET social=? WHERE id=?;")) != 0)
+            "UPDATE OR IGNORE people SET pronouns=? WHERE id=?;")) != 0)
             return -1;
 
     if ((ret = sqlite3_bind_text(ctx->person_set_pronouns, 1, pronouns.data, pronouns.len, SQLITE_STATIC)) != SQLITE_OK ||

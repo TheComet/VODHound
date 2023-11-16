@@ -920,7 +920,7 @@ parse(struct parser* p, struct root* root)
                     return print_error("Error: Expected \"(\"\n");
 
                 /* Parse parameter list */
-                expect_next_param_func:
+            expect_next_param_func:
                 switch (scan_next_token(p))
                 {
                     case ')': break;
@@ -991,138 +991,6 @@ post_parse(struct root* root, const char* data)
 
 }
 
-static int
-gen_header(const struct root* root, const char* data, const char* file_name)
-{
-    struct query* q;
-    struct query_group* g;
-    struct function* f;
-    struct arg* a;
-    FILE* fp = fopen(file_name, "wb");
-    if (fp == NULL)
-        return print_error("Error: Failed to open file for writing \"%s\"\n", file_name);
-
-    if (root->header_preamble.len)
-        fprintf(fp, "%.*s" NL, root->header_preamble.len, data + root->header_preamble.off);
-
-    fprintf(fp, "struct %.*s;" NL, root->prefix.len, data + root->prefix.off);
-    fprintf(fp, "struct %.*s_interface" NL "{" NL, root->prefix.len, data + root->prefix.off);
-
-    /* Open and close functions are hard-coded */
-    fprintf(fp, "    struct %.*s* (*open)(const char* uri);" NL,
-            root->prefix.len, data + root->prefix.off);
-    fprintf(fp, "    void (*close)(struct %.*s* ctx);" NL NL,
-            root->prefix.len, data + root->prefix.off);
-
-    /* Functions */
-    f = root->functions;
-    while (f)
-    {
-        fprintf(fp, "    int (*%.*s)(struct %.*s* ctx",
-                f->name.len, data + f->name.off,
-                root->prefix.len, data + root->prefix.off);
-        a = f->args;
-        while (a)
-        {
-            fprintf(fp, ", ");
-            fprintf(fp, "%.*s %.*s",
-                a->type.len, data + a->type.off,
-                a->name.len, data + a->name.off);
-            a = a->next;
-        }
-        fprintf(fp, ");" NL);
-
-        f = f->next;
-    }
-
-    /* Global queries */
-    q = root->queries;
-    while (q)
-    {
-        fprintf(fp, "    int (*%.*s)(struct %.*s* ctx",
-                q->name.len, data + q->name.off,
-                root->prefix.len, data + root->prefix.off);
-        a = q->in_args;
-        while (a)
-        {
-            fprintf(fp, ", ");
-            fprintf(fp, "%.*s %.*s",
-                a->type.len, data + a->type.off,
-                a->name.len, data + a->name.off);
-            a = a->next;
-        }
-
-        if (q->cb_args)
-            fprintf(fp, ", int (*on_row)(");
-        a = q->cb_args;
-        while (a)
-        {
-            if (a != q->cb_args) fprintf(fp, ", ");
-            fprintf(fp, "%.*s %.*s",
-                a->type.len, data + a->type.off,
-                a->name.len, data + a->name.off);
-            a = a->next;
-        }
-        if (q->cb_args)
-            fprintf(fp, ", void* user_data), void* user_data");
-
-        fprintf(fp, ");" NL);
-
-        q = q->next;
-    }
-    fprintf(fp, NL);
-
-    /* Grouped queries */
-    g = root->query_groups;
-    while (g)
-    {
-        fprintf(fp, "    struct {" NL);
-        q = g->queries;
-        while (q)
-        {
-            fprintf(fp, "        int (*%.*s)(struct %.*s* ctx",
-                    q->name.len, data + q->name.off,
-                    root->prefix.len, data + root->prefix.off);
-            a = q->in_args;
-            while (a)
-            {
-                fprintf(fp, ", %.*s %.*s",
-                    a->type.len, data + a->type.off,
-                    a->name.len, data + a->name.off);
-                a = a->next;
-            }
-
-            if (q->cb_args)
-                fprintf(fp, ", int (*on_row)(");
-            a = q->cb_args;
-            while (a)
-            {
-                if (a != q->cb_args) fprintf(fp, ", ");
-                fprintf(fp, "%.*s %.*s",
-                    a->type.len, data + a->type.off,
-                    a->name.len, data + a->name.off);
-                a = a->next;
-            }
-            if (q->cb_args)
-                fprintf(fp, ", void* user_data), void* user_data");
-
-            fprintf(fp, ");" NL);
-
-            q = q->next;
-        }
-        fprintf(fp, "    } %.*s;" NL NL, g->name.len, data + g->name.off);
-
-        g = g->next;
-    }
-    fprintf(fp, "};" NL NL);
-
-    if (root->header_postamble.len)
-        fprintf(fp, "%.*s" NL, root->header_postamble.len, data + root->header_postamble.off);
-
-    fclose(fp);
-    return 0;
-}
-
 static void
 fprintf_func_name(FILE* fp, const struct query_group* g, const struct query* q, const char* data)
 {
@@ -1132,13 +1000,48 @@ fprintf_func_name(FILE* fp, const struct query_group* g, const struct query* q, 
 }
 
 static void
-fprintf_function_decl(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
+fprintf_func_decl(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
 {
     struct arg* a;
 
     fprintf(fp, "static int" NL);
-    fprintf_func_name(fp, g, q, data); 
+    fprintf_func_name(fp, g, q, data);
     fprintf(fp, "(struct %.*s* ctx",  root->prefix.len, data + root->prefix.off);
+
+    a = q->in_args;
+    while (a)
+    {
+        fprintf(fp, ", %.*s %.*s",
+            a->type.len, data + a->type.off,
+            a->name.len, data + a->name.off);
+        a = a->next;
+    }
+
+    if (q->cb_args)
+        fprintf(fp, ", int (*on_row)(");
+    a = q->cb_args;
+    while (a)
+    {
+        if (a != q->cb_args) fprintf(fp, ", ");
+        fprintf(fp, "%.*s %.*s",
+            a->type.len, data + a->type.off,
+            a->name.len, data + a->name.off);
+        a = a->next;
+    }
+    if (q->cb_args)
+        fprintf(fp, ", void* user_data), void* user_data");
+
+    fprintf(fp, ")");
+}
+
+static void
+fprintf_func_ptr_decl(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
+{
+    struct arg* a;
+
+    fprintf(fp, "int (*");
+    fprintf_func_name(fp, g, q, data);
+    fprintf(fp, ")(struct %.*s* ctx",  root->prefix.len, data + root->prefix.off);
 
     a = q->in_args;
     while (a)
@@ -1206,7 +1109,7 @@ fprintf_sqlite_prepare_stmt(FILE* fp, const struct root* root, const struct quer
                 fprintf(fp, "            \"INSERT INTO %.*s (", q->table_name.len, data + q->table_name.off);
             else
                 fprintf(fp, "            \"INSERT OR IGNORE INTO %.*s (", q->table_name.len, data + q->table_name.off);
-                    
+
             a = q->in_args;
             while (a) {
                 if (a != q->in_args) fprintf(fp, ", ");
@@ -1227,10 +1130,18 @@ fprintf_sqlite_prepare_stmt(FILE* fp, const struct root* root, const struct quer
                 struct str_view reinsert = q->return_name.len ?
                     q->return_name : q->cb_args->name;
                 fprintf(fp, " \"" NL);
-                fprintf(fp, "            \"ON CONFLICT DO UPDATE SET %.*s=excluded.%.*s RETURNING %.*s;\"," NL,
-                    reinsert.len, data + reinsert.off,
+                fprintf(fp, "            \"ON CONFLICT DO UPDATE SET %.*s=excluded.%.*s RETURNING ",
                     reinsert.len, data + reinsert.off,
                     reinsert.len, data + reinsert.off);
+                if (q->return_name.len)
+                    fprintf(fp, "%.*s", q->return_name.len, data + q->return_name.off);
+                a = q->cb_args;
+                while (a) {
+                    if (a != q->cb_args || q->return_name.len) fprintf(fp, ", ");
+                    fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+                    a = a->next;
+                }
+                fprintf(fp, ";\"," NL);
             }
             else
                 fprintf(fp, ";\"," NL);
@@ -1459,19 +1370,22 @@ fprintf_sqlite_exec(FILE* fp, const struct root* root, const struct query_group*
                 fprintf(fp, ", 0);" NL);
             }
 
-            fprintf_sqlite_exec_callback(fp, g, q, data);
+            if (q->cb_args)
+                fprintf_sqlite_exec_callback(fp, g, q, data);
 
-            if (q->type != QUERY_SELECT_FIRST)
+            if (q->type != QUERY_SELECT_FIRST && q->cb_args)
+            {
                 fprintf(fp, "            if (ret == 0) goto next_step;" NL);
 
-            fprintf(fp, "            sqlite3_reset(ctx->");
-            fprintf_func_name(fp, g, q, data);
-            fprintf(fp, ");" NL);
+                fprintf(fp, "            sqlite3_reset(ctx->");
+                fprintf_func_name(fp, g, q, data);
+                fprintf(fp, ");" NL);
 
-            if (q->return_name.len)
-                fprintf(fp, "            return %.*s;" NL, q->return_name.len, data + q->return_name.off);
-            else
-                fprintf(fp, "            return ret;" NL);
+                if (q->return_name.len)
+                    fprintf(fp, "            return %.*s;" NL, q->return_name.len, data + q->return_name.off);
+                else
+                    fprintf(fp, "            return ret;" NL);
+            }
 
             fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
             fprintf(fp, "        case SQLITE_DONE:" NL);
@@ -1492,6 +1406,86 @@ fprintf_sqlite_exec(FILE* fp, const struct root* root, const struct query_group*
             fprintf(fp, "    return -1;" NL);
             break;
     }
+}
+
+static int
+gen_header(const struct root* root, const char* data, const char* file_name)
+{
+    struct query* q;
+    struct query_group* g;
+    struct function* f;
+    struct arg* a;
+    FILE* fp = fopen(file_name, "wb");
+    if (fp == NULL)
+        return print_error("Error: Failed to open file for writing \"%s\"\n", file_name);
+
+    if (root->header_preamble.len)
+        fprintf(fp, "%.*s" NL, root->header_preamble.len, data + root->header_preamble.off);
+
+    fprintf(fp, "struct %.*s;" NL, root->prefix.len, data + root->prefix.off);
+    fprintf(fp, "struct %.*s_interface" NL "{" NL, root->prefix.len, data + root->prefix.off);
+
+    /* Open and close functions are hard-coded */
+    fprintf(fp, "    struct %.*s* (*open)(const char* uri);" NL,
+            root->prefix.len, data + root->prefix.off);
+    fprintf(fp, "    void (*close)(struct %.*s* ctx);" NL NL,
+            root->prefix.len, data + root->prefix.off);
+
+    /* Functions */
+    f = root->functions;
+    while (f)
+    {
+        fprintf(fp, "    int (*%.*s)(struct %.*s* ctx",
+                f->name.len, data + f->name.off,
+                root->prefix.len, data + root->prefix.off);
+        a = f->args;
+        while (a)
+        {
+            fprintf(fp, ", ");
+            fprintf(fp, "%.*s %.*s",
+                a->type.len, data + a->type.off,
+                a->name.len, data + a->name.off);
+            a = a->next;
+        }
+        fprintf(fp, ");" NL);
+
+        f = f->next;
+    }
+
+    /* Global queries */
+    q = root->queries;
+    while (q)
+    {
+        fprintf(fp, "    ");
+        fprintf_func_ptr_decl(fp, root, NULL, q, data);
+        fprintf(fp, ";" NL);
+        q = q->next;
+    }
+    fprintf(fp, NL);
+
+    /* Grouped queries */
+    g = root->query_groups;
+    while (g)
+    {
+        fprintf(fp, "    struct {" NL);
+        q = g->queries;
+        while (q)
+        {
+            fprintf(fp, "        ");
+            fprintf_func_ptr_decl(fp, root, NULL, q, data);
+            fprintf(fp, ";" NL);
+            q = q->next;
+        }
+        fprintf(fp, "    } %.*s;" NL NL, g->name.len, data + g->name.off);
+        g = g->next;
+    }
+    fprintf(fp, "};" NL NL);
+
+    if (root->header_postamble.len)
+        fprintf(fp, "%.*s" NL, root->header_postamble.len, data + root->header_postamble.off);
+
+    fclose(fp);
+    return 0;
 }
 
 static int
@@ -1577,7 +1571,7 @@ gen_source(const struct root* root, const char* data, const char* file_name)
         q = g->queries;
         while (q)
         {
-            fprintf_function_decl(fp, root, g, q, data);
+            fprintf_func_decl(fp, root, g, q, data);
             fprintf(fp, NL "{" NL);
 
             /* Local variables */

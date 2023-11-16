@@ -32,13 +32,6 @@ newdb_deinit(void);
 C_END
 }
 
-%query motion,add(uint64_t hash40, struct str_view string) {
-    type insert
-    table motions
-    return id
-}
-
-/*
 %function migrate(int reinit_db) {
     return check_version_and_migrate(ctx->db, reinit_db);
 }
@@ -205,15 +198,15 @@ C_END
     return team_id
 }
 %query person,set_tag(int id, struct str_view tag) {
-    type update-or-ignore tag
+    type update tag
     table people
 }
 %query person,set_social(int id, struct str_view social) {
-    type update-or-ignore social
+    type update social
     table people
 }
 %query person,set_pronouns(int id, struct str_view pronouns) {
-    type update-or-ignore pronouns
+    type update pronouns
     table people
 }
 
@@ -329,7 +322,7 @@ check_version_and_migrate(sqlite3* db, int reinit_db)
     {
         case 0: if (run_migration_script(db, "migrations/1-schema.up.sql") != 0) goto migrate_failed;
         /*case 1: if (upgrade_to_v2(db) != 0) goto migrate_failed;
-        case 2: if (upgrade_to_v3(db) != 0) goto migrate_failed;*
+        case 2: if (upgrade_to_v3(db) != 0) goto migrate_failed;*/
         case 1: break;
 
         default:
@@ -398,4 +391,3 @@ newdb_deinit(void)
     sqlite3_shutdown();
 }
 }
-*/
