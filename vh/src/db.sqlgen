@@ -63,14 +63,13 @@ C_END
     }
     return id
 }
-/*
 %query motion_label,add_or_get_category(struct str_view name) {
-    type insert-or-get
+    type insert
     table motion_categories
     return id
 }
 %query motion_label,add_or_get_usage(struct str_view name) {
-    type insert-or-get
+    type insert
     table motion_usages
     return id
 }
@@ -81,91 +80,90 @@ C_END
         int category_id,
         int usage_id,
         struct str_view label) {
-    type insert-or-get
+    type insert
     table motion_labels
     return id
 }
-%query motion_label,to_motions(struct db* ctx, int fighter_id, struct str_view label, struct vec* motions_out) {
-    type select-multi
+%query motion_label,to_motions(int fighter_id, struct str_view label) {
+    type select-first uint64_t hash40
     table motion_labels
-    return hash40
 }
-%query motion_label,to_notation_label(int fighter_id, uint64_t motion, struct str* label) {
-    type select-single
+%query motion_label,to_notation_label(int fighter_id, uint64_t hash40, int usage_id) {
+    type select-first const char* label
     stmt {
         SELECT label FROM motion_labels
         JOIN motion_layers ON motion_layers.id=motion_labels.layer_id
-        WHERE hash40=? AND fighter_id=? AND usage_id=? AND label <> ''
+        WHERE fighter_id=? AND hash40=? AND usage_id=? AND label <> ''
         ORDER BY priority ASC
         LIMIT 1;
     }
-    return label
 }
 %query fighter,add(int id, struct str_view name) {
-    type insert-or-ignore
+    type insert
     table fighters
 }
 %query fighter,get_name(int id, struct str* name) {
-    type select-single
+    type select-first
     table fighters
     return name
 }
 %query stage,add(int id, struct str_view name) {
-    type insert-or-ignore
+    type insert
     table stages
 }
+/*
 %query status_enum,add(int fighter_id null, int value, struct str_view name) {
-    type insert-or-ignore
+    type insert
     table status_enums
 }
 %query hit_status_enum,add(int id, struct str_view name) {
-    type insert-or-ignore
+    type insert
     table hit_status_enums
 }
 %query tournament,add_or_get(struct str_view name, struct str_view website) {
-    type insert-or-get
+    type insert
     table tournaments
     return id
 }
 %query tournament,add_sponsor(int tournament_id, int sponsor_id) {
-    type insert-or-ignore
+    type insert
     table tournament_sponsors
 }
 %query tournament,add_organizer(int tournament_id, int person_id) {
-    type insert-or-ignore
+    type insert
     table tournament_organizers
 }
 %query tournament,add_commentator(int tournament_id, int person_id) {
-    type insert-or-ignore
+    type insert
     table tournament_commentators
 }
 %query event,add_or_get_type(struct str_view name) {
-    type insert-or-get
+    type insert
     table event_types
     return id
 }
 %query event,add_or_get(int event_type_id, struct str_view url) {
-    type insert-or-get
+    type insert
     table event_types
     return id
 }
 %query round,add_or_get_type(struct str_view short_name, struct str_view long_name) {
-    type insert-or-get
+    type insert
     table round_types
     return id
 }
 %query set_format,add_or_get(struct str_view short_name, struct str_view long_name) {
-    type insert-or-get
+    type insert
     table set_formats
     return id
 }
 %query team,add_or_get(struct str_view short_name, struct str_view url) {
-    type insert-or-get
+    type insert
     table teams
     return id
 }
 %query team,add_member(int team_id, int person_id) {
-    type insert-or-ignore
+    type insert
     table teams
 }
 %query sponsor,add_or_get(
@@ -174,12 +172,12 @@ C_END
         struct str_view tag,
         struct str_view social,
         struct str_view pronouns) {
-    type insert-or-get
+    type insert
     table sponsors
     return id
 }
 %query person,add_or_get(struct str_view short_name, struct str_view full_name, struct str_view website) {
-    type insert-or-get
+    type insert
     table people
     return id, sponsor_id, name, tag, social, pronouns
 }
