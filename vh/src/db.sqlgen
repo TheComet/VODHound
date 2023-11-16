@@ -85,11 +85,12 @@ C_END
     return id
 }
 %query motion_label,to_motions(int fighter_id, struct str_view label) {
-    type select-first uint64_t hash40
+    type select-first
     table motion_labels
+    callback uint64_t hash40
 }
 %query motion_label,to_notation_label(int fighter_id, uint64_t hash40, int usage_id) {
-    type select-first const char* label
+    type select-first
     stmt {
         SELECT label FROM motion_labels
         JOIN motion_layers ON motion_layers.id=motion_labels.layer_id
@@ -97,21 +98,21 @@ C_END
         ORDER BY priority ASC
         LIMIT 1;
     }
+    callback const char* label
 }
 %query fighter,add(int id, struct str_view name) {
     type insert
     table fighters
 }
-%query fighter,get_name(int id, struct str* name) {
+%query fighter,get_name(int id) {
     type select-first
     table fighters
-    return name
+    callback const char* name
 }
 %query stage,add(int id, struct str_view name) {
     type insert
     table stages
 }
-/*
 %query status_enum,add(int fighter_id null, int value, struct str_view name) {
     type insert
     table status_enums
@@ -179,15 +180,16 @@ C_END
 %query person,add_or_get(struct str_view short_name, struct str_view full_name, struct str_view website) {
     type insert
     table people
-    return id, sponsor_id, name, tag, social, pronouns
+    callback int id, int sponsor_id, const char* name, const char* tag, const char* social, const char* pronouns
 }
+/*
 %query person,get_id_from_name(struct str_view name) {
-    type select-single
+    type select-first
     table people
     return id
 }
 %query person,get_team_id_from_name(struct str_view name) {
-    type select-single
+    type select-first
     stmt {
         SELECT team_id
         FROM team_members
@@ -196,6 +198,7 @@ C_END
     }
     return team_id
 }
+/*
 %query person,set_tag(int id, struct str_view tag) {
     type update-or-ignore tag
     table people

@@ -306,6 +306,7 @@ enum token
     TOK_TYPE,
     TOK_TABLE,
     TOK_STMT,
+    TOK_CALLBACK,
     TOK_RETURN
 };
 
@@ -434,15 +435,20 @@ scan_next_token(struct parser* p)
             p->off += sizeof("table") - 1;
             return TOK_TABLE;
         }
-        if (memcmp(p->data + p->off, "return", sizeof("return") - 1) == 0)
-        {
-            p->off += sizeof("return") - 1;
-            return TOK_RETURN;
-        }
         if (memcmp(p->data + p->off, "stmt", sizeof("stmt") - 1) == 0)
         {
             p->off += sizeof("stmt") - 1;
             return TOK_STMT;
+        }
+        if (memcmp(p->data + p->off, "callback", sizeof("callback") - 1) == 0)
+        {
+            p->off += sizeof("callback") - 1;
+            return TOK_CALLBACK;
+        }
+        if (memcmp(p->data + p->off, "return", sizeof("return") - 1) == 0)
+        {
+            p->off += sizeof("return") - 1;
+            return TOK_RETURN;
         }
         if (isalpha(p->data[p->off]))
         {
@@ -467,6 +473,7 @@ struct arg
     struct arg* next;
     struct str_view type;
     struct str_view name;
+    char nullable;
 };
 
 static struct arg*
@@ -676,8 +683,9 @@ parse(struct parser* p, struct root* root)
                 }
 
                 /* Parse parameter list */
-            expect_next_param:
-                switch (scan_next_token(p))
+            expect_next_param: tok = scan_next_token(p);
+            switch_next_param:
+                switch (tok)
                 {
                     case ')': break;
                     case ',':
@@ -687,10 +695,19 @@ parse(struct parser* p, struct root* root)
                             return print_error("Error: Expected parameter after \",\"\n");
                         /* fallthrough */
                     case TOK_LABEL: {
-                        struct arg* arg;
-
-                        arg = arg_alloc();
+                        struct arg* arg = arg_alloc();
                         arg->type = p->value.str;
+
+                        if (query->in_args == NULL)
+                            query->in_args = arg;
+                        else
+                        {
+                            struct arg* args = query->in_args;
+                            while (args->next)
+                                args = args->next;
+                            args->next = arg;
+                        }
+
                         /* Special case, struct -> expect another label */
                         if (str_view_eq("struct", arg->type, p->data))
                         {
@@ -710,18 +727,17 @@ parse(struct parser* p, struct root* root)
                             return print_error("Error: Missing parameter name\n");
                         arg->name = p->value.str;
 
-                        if (query->in_args == NULL)
-                            query->in_args = arg;
-                        else
+                        /* Param can have a "null" qualifier on the end */
+                        if ((tok = scan_next_token(p)) == TOK_LABEL)
                         {
-                            struct arg* args = query->in_args;
-                            while (args->next)
-                                args = args->next;
-                            args->next = arg;
+                            if (str_view_eq("null", p->value.str, p->data))
+                                arg->nullable = 1;
+                            else
+                                return print_error("Error: Unknown parameter qualifier \"%.*s\"\n",
+                                    p->value.str.len, p->data + p->value.str.off);
+                            goto expect_next_param;
                         }
-
-                        goto expect_next_param;
-                    } break;
+                    } goto switch_next_param;
 
                     default:
                         return print_error("Error: Expected parameter list\n");
@@ -731,7 +747,7 @@ parse(struct parser* p, struct root* root)
                     return print_error("Error: Expected \"{\"\n");
 
             expect_next_stmt: tok = scan_next_token(p);
-            switch_next_tok:
+            switch_next_stmt:
                 switch (tok) {
                     case TOK_TYPE: {
                         struct str_view t;
@@ -748,57 +764,6 @@ parse(struct parser* p, struct root* root)
                             query->type = QUERY_SELECT_ALL;
                         else
                             return print_error("Error: Unknown query type \"%.*s\"\n", t.len, p->data + t.off);
-
-                        if (query->type == QUERY_SELECT_FIRST || query->type == QUERY_SELECT_ALL)
-                        {
-                            /* There might be a parameter list */
-                        expect_next_select_param:
-                            switch ((tok = scan_next_token(p)))
-                            {
-                                case ',':
-                                    if (query->cb_args == NULL)
-                                        return print_error("Error: Expected parameter after \"select\"\n");
-                                    if (scan_next_token(p) != TOK_LABEL)
-                                        return print_error("Error: Expected parameter after \",\"\n");
-                                    /* fallthrough */
-                                case TOK_LABEL: {
-                                    struct arg* arg = arg_alloc();
-                                    arg->type = p->value.str;
-                                    /* Special case, struct -> expect another label */
-                                    if (str_view_eq("struct", arg->type, p->data))
-                                    {
-                                        if (scan_next_token(p) != TOK_LABEL)
-                                            return print_error("Error: Missing struct name after \"struct\"\n");
-                                        arg->type.len = p->value.str.off + p->value.str.len - arg->type.off;
-                                    }
-                                    /* Special case, const -> expect another label */
-                                    if (str_view_eq("const", arg->type, p->data))
-                                    {
-                                        if (scan_next_token(p) != TOK_LABEL)
-                                            return print_error("Error: const qualifier without type\n");
-                                        arg->type.len = p->value.str.off + p->value.str.len - arg->type.off;
-                                    }
-
-                                    if (scan_next_token(p) != TOK_LABEL)
-                                        return print_error("Error: Missing parameter name\n");
-                                    arg->name = p->value.str;
-
-                                    if (query->cb_args == NULL)
-                                        query->cb_args = arg;
-                                    else
-                                    {
-                                        struct arg* args = query->cb_args;
-                                        while (args->next)
-                                            args = args->next;
-                                        args->next = arg;
-                                    }
-
-                                    goto expect_next_select_param;
-                                } break;
-
-                                default: goto switch_next_tok;
-                            }
-                        }
                     } goto expect_next_stmt;
 
                     case TOK_TABLE: {
@@ -827,6 +792,66 @@ parse(struct parser* p, struct root* root)
                             return print_error("Error: Expected return value after \"return\"\n");
                         query->return_name = p->value.str;
                     } goto expect_next_stmt;
+
+                    case TOK_CALLBACK: {
+                    expect_next_cb_param: tok = scan_next_token(p);
+                    switch_next_cb_param:
+                        switch (tok)
+                        {
+                            case ',':
+                                if (query->cb_args == NULL)
+                                    return print_error("Error: Expected parameter after \"select\"\n");
+                                if (scan_next_token(p) != TOK_LABEL)
+                                    return print_error("Error: Expected parameter after \",\"\n");
+                                /* fallthrough */
+                            case TOK_LABEL: {
+                                struct arg* arg = arg_alloc();
+                                arg->type = p->value.str;
+
+                                if (query->cb_args == NULL)
+                                    query->cb_args = arg;
+                                else
+                                {
+                                    struct arg* args = query->cb_args;
+                                    while (args->next)
+                                        args = args->next;
+                                    args->next = arg;
+                                }
+
+                                /* Special case, struct -> expect another label */
+                                if (str_view_eq("struct", arg->type, p->data))
+                                {
+                                    if (scan_next_token(p) != TOK_LABEL)
+                                        return print_error("Error: Missing struct name after \"struct\"\n");
+                                    arg->type.len = p->value.str.off + p->value.str.len - arg->type.off;
+                                }
+                                /* Special case, const -> expect another label */
+                                if (str_view_eq("const", arg->type, p->data))
+                                {
+                                    if (scan_next_token(p) != TOK_LABEL)
+                                        return print_error("Error: const qualifier without type\n");
+                                    arg->type.len = p->value.str.off + p->value.str.len - arg->type.off;
+                                }
+
+                                if (scan_next_token(p) != TOK_LABEL)
+                                    return print_error("Error: Missing parameter name\n");
+                                arg->name = p->value.str;
+
+                                /* Param can have a "null" qualifier on the end */
+                                if ((tok = scan_next_token(p)) == TOK_LABEL)
+                                {
+                                    if (str_view_eq("null", p->value.str, p->data))
+                                        arg->nullable = 1;
+                                    else
+                                        return print_error("Error: Unknown parameter qualifier \"%.*s\"\n",
+                                            p->value.str.len, p->data + p->value.str.off);
+                                    goto expect_next_cb_param;
+                                }
+                            } goto switch_next_cb_param;
+
+                            default: goto switch_next_stmt;
+                        }
+                    }
 
                     case '}': break;
                     default:
@@ -1098,6 +1123,380 @@ gen_header(const struct root* root, const char* data, const char* file_name)
     return 0;
 }
 
+static void
+fprintf_func_name(FILE* fp, const struct query_group* g, const struct query* q, const char* data)
+{
+    if (g)
+        fprintf(fp, "%.*s_", g->name.len, data + g->name.off);
+    fprintf(fp, "%.*s", q->name.len, data + q->name.off);
+}
+
+static void
+fprintf_function_decl(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
+{
+    struct arg* a;
+
+    fprintf(fp, "static int" NL);
+    fprintf_func_name(fp, g, q, data); 
+    fprintf(fp, "(struct %.*s* ctx",  root->prefix.len, data + root->prefix.off);
+
+    a = q->in_args;
+    while (a)
+    {
+        fprintf(fp, ", %.*s %.*s",
+            a->type.len, data + a->type.off,
+            a->name.len, data + a->name.off);
+        a = a->next;
+    }
+
+    if (q->cb_args)
+        fprintf(fp, ", int (*on_row)(");
+    a = q->cb_args;
+    while (a)
+    {
+        if (a != q->cb_args) fprintf(fp, ", ");
+        fprintf(fp, "%.*s %.*s",
+            a->type.len, data + a->type.off,
+            a->name.len, data + a->name.off);
+        a = a->next;
+    }
+    if (q->cb_args)
+        fprintf(fp, ", void* user_data), void* user_data");
+
+    fprintf(fp, ")");
+}
+
+static void
+fprintf_sqlite_prepare_stmt(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
+{
+    struct arg* a;
+
+    fprintf(fp, "    if (ctx->");
+    fprintf_func_name(fp, g, q, data);
+    fprintf(fp, " == NULL)" NL);
+    fprintf(fp, "        if ((ret = sqlite3_prepare_v2(ctx->db," NL);
+
+    if (q->stmt.len)
+    {
+        int p = 0;
+        for (; p != q->stmt.len; ++p)
+            if (!isspace(data[q->stmt.off + p]) && data[q->stmt.off + p] != '\r' && data[q->stmt.off + p] != '\n')
+                break;
+
+        fprintf(fp, "            \"");
+        for (; p != q->stmt.len; ++p)
+        {
+            if (data[q->stmt.off + p] == '\n')
+            {
+                for (; p != q->stmt.len; ++p)
+                    if (!isspace(data[q->stmt.off + p + 1]))
+                        break;
+                if (p + 1 < q->stmt.len)
+                    fprintf(fp, " \"" NL "            \"");
+            }
+            else if (data[q->stmt.off + p] != '\r')
+                fprintf(fp, "%c", data[q->stmt.off + p]);
+        }
+        fprintf(fp, "\"," NL);
+    }
+    else switch (q->type)
+    {
+        case QUERY_INSERT:
+            if (q->return_name.len || q->cb_args)
+                fprintf(fp, "            \"INSERT INTO %.*s (", q->table_name.len, data + q->table_name.off);
+            else
+                fprintf(fp, "            \"INSERT OR IGNORE INTO %.*s (", q->table_name.len, data + q->table_name.off);
+                    
+            a = q->in_args;
+            while (a) {
+                if (a != q->in_args) fprintf(fp, ", ");
+                fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+                a = a->next;
+            }
+            fprintf(fp, ") VALUES (");
+            a = q->in_args;
+            while (a) {
+                if (a != q->in_args) fprintf(fp, ", ");
+                fprintf(fp, "?");
+                a = a->next;
+            }
+            fprintf(fp, ")");
+
+            if (q->return_name.len || q->cb_args)
+            {
+                struct str_view reinsert = q->return_name.len ?
+                    q->return_name : q->cb_args->name;
+                fprintf(fp, " \"" NL);
+                fprintf(fp, "            \"ON CONFLICT DO UPDATE SET %.*s=excluded.%.*s RETURNING %.*s;\"," NL,
+                    reinsert.len, data + reinsert.off,
+                    reinsert.len, data + reinsert.off,
+                    reinsert.len, data + reinsert.off);
+            }
+            else
+                fprintf(fp, ";\"," NL);
+
+            break;
+
+        case QUERY_EXISTS:
+            fprintf(fp, "            \"SELECT 1 FROM %.*s", q->table_name.len, data + q->table_name.off);
+            a = q->in_args;
+            while (a) {
+                if (a == q->in_args) fprintf(fp, " \"" NL "            \"WHERE "); else fprintf(fp, " AND ");
+                fprintf(fp, "%.*s=?", a->name.len, data + a->name.off);
+                a = a->next;
+            }
+            fprintf(fp, " LIMIT 1;\"," NL);
+            break;
+
+        case QUERY_SELECT_FIRST:
+        case QUERY_SELECT_ALL:
+            fprintf(fp, "            \"SELECT ");
+            if (q->return_name.len)
+                fprintf(fp, "%.*s", q->return_name.len, data + q->return_name.off);
+            a = q->cb_args;
+            while (a) {
+                if (a != q->cb_args || q->return_name.len) fprintf(fp, ", ");
+                fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+                a = a->next;
+            }
+            fprintf(fp, " FROM %.*s", q->table_name.len, data + q->table_name.off);
+
+            a = q->in_args;
+            while (a) {
+                if (a == q->in_args) fprintf(fp, " \"" NL "            \"WHERE "); else fprintf(fp, " AND ");
+                fprintf(fp, "%.*s=?", a->name.len, data + a->name.off);
+                a = a->next;
+            }
+
+            if (q->type == QUERY_SELECT_FIRST)
+                fprintf(fp, " LIMIT 1");
+
+            fprintf(fp, ";\"," NL);
+            break;
+    }
+
+    fprintf(fp, "            -1, &ctx->");
+    fprintf_func_name(fp, g, q, data);
+    fprintf(fp, ", NULL)) != SQLITE_OK)" NL);
+    fprintf(fp, "        {" NL);
+    fprintf(fp, "            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
+    fprintf(fp, "            return -1;" NL);
+    fprintf(fp, "        }" NL);
+    fprintf(fp, "\n");
+}
+
+static void
+fprintf_sqlite_bind_args(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
+{
+    struct arg* a = q->in_args;
+    int i = 1;
+    for (; a; a = a->next, i++)
+    {
+        const char* sqlite_type = "";
+        const char* cast = "";
+
+        if (a == q->in_args) fprintf(fp, "    if ((ret = ");
+        else                 fprintf(fp, "        (ret = ");
+
+        if (str_view_eq("uint64_t", a->type, data))
+            { sqlite_type = "int64"; cast = "(int64_t)"; }
+        else if (str_view_eq("int64_t", a->type, data))
+            { sqlite_type = "int64"; }
+        else if (str_view_eq("int", a->type, data))
+            { sqlite_type = "int"; }
+        else if (str_view_eq("struct str_view", a->type, data))
+            { sqlite_type = "text"; }
+        else if (str_view_eq("const char*", a->type, data))
+            { sqlite_type = "text"; }
+
+        if (a->nullable)
+        {
+            fprintf(fp, "%.*s < 0 ? sqlite3_bind_null(ctx->", a->name.len, data + a->name.off);
+            fprintf_func_name(fp, g, q, data);
+            fprintf(fp, ", %d) : ", i);
+        }
+        fprintf(fp, "sqlite3_bind_%s(ctx->", sqlite_type);
+        fprintf_func_name(fp, g, q, data);
+        fprintf(fp, ", %d, %s%.*s", i, cast, a->name.len, data + a->name.off);
+
+        if (str_view_eq("struct str_view", a->type, data))
+            fprintf(fp, ".data, %.*s.len, SQLITE_STATIC", a->name.len, data + a->name.off);
+        else if (str_view_eq("const char*", a->type, data))
+            fprintf(fp, ", -1, SQLITE_STATIC");
+        fprintf(fp, ")) != SQLITE_OK");
+
+        if (a->next)
+            fprintf(fp, " ||" NL);
+    }
+    fprintf(fp, ")" NL "    {" NL);
+    fprintf(fp, "        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
+    fprintf(fp, "        return -1;" NL "    }" NL NL);
+}
+
+static void
+fprintf_sqlite_exec_exists(FILE* fp, const struct query_group* g, const struct query* q, const char* data)
+{
+    fprintf(fp, "next_step:" NL);
+    fprintf(fp, "    ret = sqlite3_step(ctx->");
+    fprintf_func_name(fp, g, q, data);
+    fprintf(fp, ");" NL);
+    fprintf(fp, "    switch (ret)" NL "    {" NL);
+    fprintf(fp, "        case SQLITE_ROW:" NL);
+    fprintf(fp, "            sqlite3_reset(ctx->");
+    fprintf_func_name(fp, g, q, data);
+    fprintf(fp, "); " NL);
+    fprintf(fp, "            return 1;" NL);
+    fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
+    fprintf(fp, "        case SQLITE_DONE:" NL);
+    fprintf(fp, "            sqlite3_reset(ctx->");
+    fprintf_func_name(fp, g, q, data);
+    fprintf(fp, ");" NL);
+    fprintf(fp, "            return 0;" NL);
+    fprintf(fp, "    }" NL NL);
+    fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
+    fprintf(fp, "    sqlite3_reset(ctx->");
+    fprintf_func_name(fp, g, q, data);
+    fprintf(fp, ");" NL);
+    fprintf(fp, "    return -1;" NL);
+}
+
+static void
+fprintf_sqlite_exec_callback(FILE* fp, const struct query_group* g, const struct query* q, const char* data)
+{
+    struct arg* a = q->cb_args;
+    int i = q->return_name.len ? 1 : 0;
+
+    fprintf(fp, "            ret = on_row(" NL);
+    for (; a; a = a->next, i++)
+    {
+        const char* sqlite_type = "";
+        const char* cast = "";
+
+        if (str_view_eq("uint64_t", a->type, data))
+            { sqlite_type = "int64"; cast = "(uint64_t)"; }
+        else if (str_view_eq("int64_t", a->type, data))
+            sqlite_type = "int64";
+        else if (str_view_eq("int", a->type, data))
+            sqlite_type = "int";
+        else if (str_view_eq("struct str_view", a->type, data))
+            { sqlite_type = "text"; cast = "(const char*)"; }
+        else if (str_view_eq("const char*", a->type, data))
+            { sqlite_type = "text"; cast = "(const char*)"; }
+
+        fprintf(fp, "                %ssqlite3_column_%s(ctx->", cast, sqlite_type);
+        fprintf_func_name(fp, g, q, data);
+        fprintf(fp, ", %d)," NL, i);
+    }
+    fprintf(fp, "                user_data);" NL);
+}
+
+static void
+fprintf_sqlite_exec(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
+{
+    struct arg* a;
+    int i;
+    switch (q->type)
+    {
+        case QUERY_EXISTS:
+            fprintf_sqlite_exec_exists(fp, g, q, data);
+            break;
+        case QUERY_INSERT:
+            if (q->return_name.len)
+            {
+                fprintf(fp, "next_step:" NL);
+                fprintf(fp, "    ret = sqlite3_step(ctx->");
+                fprintf_func_name(fp, g, q, data);
+                fprintf(fp, ");" NL);
+                fprintf(fp, "    switch (ret)" NL "    {" NL);
+                fprintf(fp, "        case SQLITE_ROW:" NL);
+                fprintf(fp, "            %.*s = sqlite3_column_int(ctx->",
+                        q->return_name.len, data + q->return_name.off);
+                fprintf_func_name(fp, g, q, data);
+                fprintf(fp, ", 0);" NL);
+                fprintf(fp, "        case SQLITE_DONE: goto done;" NL);
+                fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
+                fprintf(fp, "    }" NL NL);
+                fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
+                fprintf(fp, "done:" NL);
+                fprintf(fp, "    sqlite3_reset(ctx->");
+                fprintf_func_name(fp, g, q, data);
+                fprintf(fp, ");" NL);
+                fprintf(fp, "    return %.*s;" NL, q->return_name.len, data + q->return_name.off);
+            }
+            else
+            {
+                fprintf(fp, "next_step:" NL);
+                fprintf(fp, "    ret = sqlite3_step(ctx->");
+                fprintf_func_name(fp, g, q, data);
+                fprintf(fp, ");" NL);
+                fprintf(fp, "    switch (ret)" NL "    {" NL);
+                fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
+                fprintf(fp, "        case SQLITE_DONE:" NL);
+                fprintf(fp, "            sqlite3_reset(ctx->");
+                fprintf_func_name(fp, g, q, data);
+                fprintf(fp, ");" NL);
+                fprintf(fp, "            return 0;" NL);
+                fprintf(fp, "    }" NL NL);
+                fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
+                fprintf(fp, "    sqlite3_reset(ctx->");
+                fprintf_func_name(fp, g, q, data);
+                fprintf(fp, ");" NL);
+                fprintf(fp, "    return -1;" NL);
+            }
+            break;
+
+        case QUERY_SELECT_FIRST:
+        case QUERY_SELECT_ALL:
+            fprintf(fp, "next_step:" NL);
+            fprintf(fp, "    ret = sqlite3_step(ctx->");
+            fprintf_func_name(fp, g, q, data);
+            fprintf(fp, ");" NL);
+            fprintf(fp, "    switch (ret)" NL "    {" NL);
+            fprintf(fp, "        case SQLITE_ROW:" NL);
+
+            if (q->return_name.len)
+            {
+                fprintf(fp, "            %.*s = sqlite3_column_int(ctx->",
+                    q->return_name.len, data + q->return_name.off);
+                fprintf_func_name(fp, g, q, data);
+                fprintf(fp, ", 0);" NL);
+            }
+
+            fprintf_sqlite_exec_callback(fp, g, q, data);
+
+            if (q->type != QUERY_SELECT_FIRST)
+                fprintf(fp, "            if (ret == 0) goto next_step;" NL);
+
+            fprintf(fp, "            sqlite3_reset(ctx->");
+            fprintf_func_name(fp, g, q, data);
+            fprintf(fp, ");" NL);
+
+            if (q->return_name.len)
+                fprintf(fp, "            return %.*s;" NL, q->return_name.len, data + q->return_name.off);
+            else
+                fprintf(fp, "            return ret;" NL);
+
+            fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
+            fprintf(fp, "        case SQLITE_DONE:" NL);
+            fprintf(fp, "            sqlite3_reset(ctx->");
+            fprintf_func_name(fp, g, q, data);
+            fprintf(fp, ");" NL);
+
+            if (q->return_name.len)
+                fprintf(fp, "            return %.*s;" NL, q->return_name.len, data + q->return_name.off);
+            else
+                fprintf(fp, "            return 0;" NL);
+
+            fprintf(fp, "    }" NL NL);
+            fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
+            fprintf(fp, "    sqlite3_reset(ctx->");
+            fprintf_func_name(fp, g, q, data);
+            fprintf(fp, ");" NL);
+            fprintf(fp, "    return -1;" NL);
+            break;
+    }
+}
+
 static int
 gen_source(const struct root* root, const char* data, const char* file_name)
 {
@@ -1181,336 +1580,18 @@ gen_source(const struct root* root, const char* data, const char* file_name)
         q = g->queries;
         while (q)
         {
-            fprintf(fp, "static int" NL "%.*s_%.*s(struct %.*s* ctx",
-                    g->name.len, data + g->name.off,
-                    q->name.len, data + q->name.off,
-                    root->prefix.len, data + root->prefix.off);
+            fprintf_function_decl(fp, root, g, q, data);
+            fprintf(fp, NL "{" NL);
 
-            a = q->in_args;
-            while (a)
-            {
-                fprintf(fp, ", %.*s %.*s",
-                    a->type.len, data + a->type.off,
-                    a->name.len, data + a->name.off);
-                a = a->next;
-            }
-
-            if (q->cb_args)
-                fprintf(fp, ", int (*on_row)(");
-            a = q->cb_args;
-            while (a)
-            {
-                if (a != q->cb_args) fprintf(fp, ", ");
-                fprintf(fp, "%.*s %.*s",
-                    a->type.len, data + a->type.off,
-                    a->name.len, data + a->name.off);
-                a = a->next;
-            }
-            if (q->cb_args)
-                fprintf(fp, ", void* user_data), void* user_data");
-
-            fprintf(fp, ")" NL "{" NL);
-
+            /* Local variables */
             fprintf(fp, "    int ret");
             if (q->return_name.len)
                 fprintf(fp, ", %.*s = -1", q->return_name.len, data + q->return_name.off);
             fprintf(fp, ";" NL);
 
-            fprintf(fp, "    if (ctx->%.*s_%.*s == NULL)" NL,
-                    g->name.len, data + g->name.off,
-                    q->name.len, data + q->name.off);
-            fprintf(fp, "        if ((ret = sqlite3_prepare_v2(ctx->db," NL);
-            if (q->stmt.len)
-            {
-                int p = 0;
-                for (; p != q->stmt.len; ++p)
-                    if (!isspace(data[q->stmt.off + p]) && data[q->stmt.off + p] != '\r' && data[q->stmt.off + p] != '\n')
-                        break;
-
-                fprintf(fp, "            \"");
-                for (; p != q->stmt.len; ++p)
-                {
-                    if (data[q->stmt.off + p] == '\n')
-                    {
-                        for (; p != q->stmt.len; ++p)
-                            if (!isspace(data[q->stmt.off + p + 1]))
-                                break;
-                        if (p + 1 < q->stmt.len)
-                            fprintf(fp, " \"" NL "            \"");
-                    }
-                    else if (data[q->stmt.off + p] != '\r')
-                        fprintf(fp, "%c", data[q->stmt.off + p]);
-                }
-                fprintf(fp, "\"," NL);
-            }
-            else switch (q->type)
-            {
-                case QUERY_INSERT:
-                    if (q->return_name.len)
-                        fprintf(fp, "            \"INSERT INTO %.*s (", q->table_name.len, data + q->table_name.off);
-                    else
-                        fprintf(fp, "            \"INSERT OR IGNORE INTO %.*s (", q->table_name.len, data + q->table_name.off);
-                    
-                    a = q->in_args;
-                    while (a) {
-                        if (a != q->in_args) fprintf(fp, ", ");
-                        fprintf(fp, "%.*s", a->name.len, data + a->name.off);
-                        a = a->next;
-                    }
-                    fprintf(fp, ") VALUES (");
-                    a = q->in_args;
-                    while (a) {
-                        if (a != q->in_args) fprintf(fp, ", ");
-                        fprintf(fp, "?");
-                        a = a->next;
-                    }
-                    fprintf(fp, ")");
-
-                    if (q->return_name.len)
-                    {
-                        fprintf(fp, " \"" NL);
-                        fprintf(fp, "            \"ON CONFLICT DO UPDATE SET %.*s=excluded.%.*s RETURNING %.*s;\"," NL,
-                            q->return_name.len, data + q->return_name.off,
-                            q->return_name.len, data + q->return_name.off,
-                            q->return_name.len, data + q->return_name.off);
-                    }
-                    else
-                        fprintf(fp, ";\"," NL);
-
-                    break;
-
-                case QUERY_EXISTS:
-                    fprintf(fp, "            \"SELECT 1 FROM %.*s", q->table_name.len, data + q->table_name.off);
-                    a = q->in_args;
-                    while (a) {
-                        if (a == q->in_args) fprintf(fp, " \"" NL "            \"WHERE "); else fprintf(fp, " AND ");
-                        fprintf(fp, "%.*s=?", a->name.len, data + a->name.off);
-                        a = a->next;
-                    }
-                    fprintf(fp, ";\"," NL);
-                    break;
-
-                case QUERY_SELECT_FIRST:
-                case QUERY_SELECT_ALL:
-                    fprintf(fp, "            \"SELECT ");
-                    if (q->return_name.len)
-                        fprintf(fp, "%.*s", q->return_name.len, data + q->return_name.off);
-                    a = q->cb_args;
-                    while (a) {
-                        if (a != q->cb_args || q->return_name.len) fprintf(fp, ", ");
-                        fprintf(fp, "%.*s", a->name.len, data + a->name.off);
-                        a = a->next;
-                    }
-                    fprintf(fp, " FROM %.*s", q->table_name.len, data + q->table_name.off);
-
-                    a = q->in_args;
-                    while (a) {
-                        if (a == q->in_args) fprintf(fp, " \"" NL "            \"WHERE "); else fprintf(fp, " AND ");
-                        fprintf(fp, "%.*s=?", a->name.len, data + a->name.off);
-                        a = a->next;
-                    }
-
-                    fprintf(fp, ";\"," NL);
-                    break;
-            }
-
-            fprintf(fp, "            -1, &ctx->%.*s_%.*s, NULL)) != SQLITE_OK)" NL,
-                    g->name.len, data + g->name.off,
-                    q->name.len, data + q->name.off);
-            fprintf(fp, "        {" NL);
-            fprintf(fp, "            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
-            fprintf(fp, "            return -1;" NL);
-            fprintf(fp, "        }" NL);
-            fprintf(fp, "\n");
-
-            /* Bind arguments */
-            a = q->in_args;
-            i = 1;
-            for (; a; a = a->next, i++)
-            {
-                const char* sqlite_type = "";
-                const char* cast = "";
-
-                if (a == q->in_args) fprintf(fp, "    if ((ret = ");
-                else                 fprintf(fp, "        (ret = ");
-
-                if (str_view_eq("uint64_t", a->type, data))
-                    { sqlite_type = "int64"; cast = "(int64_t)"; }
-                else if (str_view_eq("int64_t", a->type, data))
-                    { sqlite_type = "int64"; }
-                else if (str_view_eq("int", a->type, data))
-                    { sqlite_type = "int"; }
-                else if (str_view_eq("struct str_view", a->type, data))
-                    { sqlite_type = "text"; }
-                else if (str_view_eq("const char*", a->type, data))
-                    { sqlite_type = "text"; }
-
-                fprintf(fp, "sqlite3_bind_%s(ctx->%.*s_%.*s, %d, %s%.*s",
-                        sqlite_type,
-                        g->name.len, data + g->name.off,
-                        q->name.len, data + q->name.off,
-                        i, cast,
-                        a->name.len, data + a->name.off);
-
-                if (str_view_eq("struct str_view", a->type, data))
-                    fprintf(fp, ".data, %.*s.len, SQLITE_STATIC", a->name.len, data + a->name.off);
-                else if (str_view_eq("const char*", a->type, data))
-                    fprintf(fp, ", -1, SQLITE_STATIC");
-                fprintf(fp, ")) != SQLITE_OK");
-
-                if (a->next)
-                    fprintf(fp, " ||" NL);
-            }
-            fprintf(fp, ")" NL "    {" NL);
-            fprintf(fp, "        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
-            fprintf(fp, "        return -1;" NL "    }" NL NL);
-
-            /* Execute statement */
-            switch (q->type)
-            {
-                case QUERY_EXISTS:
-                    fprintf(fp, "next_step:" NL);
-                    fprintf(fp, "    ret = sqlite3_step(ctx->%.*s_%.*s);" NL,
-                            g->name.len, data + g->name.off,
-                            q->name.len, data + q->name.off);
-                    fprintf(fp, "    switch (ret)" NL "    {" NL);
-                    fprintf(fp, "        case SQLITE_ROW:" NL);
-                    fprintf(fp, "            sqlite3_reset(ctx->%.*s_%.*s);" NL,
-                            g->name.len, data + g->name.off,
-                            q->name.len, data + q->name.off);
-                    fprintf(fp, "            return 1;" NL);
-                    fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
-                    fprintf(fp, "        case SQLITE_DONE:" NL);
-                    fprintf(fp, "            sqlite3_reset(ctx->%.*s_%.*s);" NL,
-                            g->name.len, data + g->name.off,
-                            q->name.len, data + q->name.off);
-                    fprintf(fp, "            return 0;" NL);
-                    fprintf(fp, "    }" NL NL);
-                    fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
-                    fprintf(fp, "    sqlite3_reset(ctx->%.*s_%.*s);" NL,
-                            g->name.len, data + g->name.off,
-                            q->name.len, data + q->name.off);
-                    fprintf(fp, "    return -1;" NL);
-                    break;
-                case QUERY_INSERT:
-                    if (q->return_name.len)
-                    {
-                        fprintf(fp, "next_step:" NL);
-                        fprintf(fp, "    ret = sqlite3_step(ctx->%.*s_%.*s);" NL,
-                                g->name.len, data + g->name.off,
-                                q->name.len, data + q->name.off);
-                        fprintf(fp, "    switch (ret)" NL "    {" NL);
-                        fprintf(fp, "        case SQLITE_ROW:" NL);
-                        fprintf(fp, "            %.*s = sqlite3_column_int(ctx->%.*s_%.*s, 0);" NL,
-                                q->return_name.len, data + q->return_name.off,
-                                g->name.len, data + g->name.off,
-                                q->name.len, data + q->name.off);
-                        fprintf(fp, "            goto done;" NL);
-                        fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
-                        fprintf(fp, "        case SQLITE_DONE: goto done;" NL);
-                        fprintf(fp, "    }" NL NL);
-                        fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
-                        fprintf(fp, "done:" NL);
-                        fprintf(fp, "    sqlite3_reset(ctx->%.*s_%.*s);" NL,
-                                g->name.len, data + g->name.off,
-                                q->name.len, data + q->name.off);
-                        fprintf(fp, "    return %.*s;" NL, q->return_name.len, data + q->return_name.off);
-                    }
-                    else
-                    {
-                        fprintf(fp, "next_step:" NL);
-                        fprintf(fp, "    ret = sqlite3_step(ctx->%.*s_%.*s);" NL,
-                                g->name.len, data + g->name.off,
-                                q->name.len, data + q->name.off);
-                        fprintf(fp, "    switch (ret)" NL "    {" NL);
-                        fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
-                        fprintf(fp, "        case SQLITE_DONE:" NL);
-                        fprintf(fp, "            sqlite3_reset(ctx->%.*s_%.*s);" NL,
-                                g->name.len, data + g->name.off,
-                                q->name.len, data + q->name.off);
-                        fprintf(fp, "            return 0;" NL);
-                        fprintf(fp, "    }" NL NL);
-                        fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
-                        fprintf(fp, "    sqlite3_reset(ctx->%.*s_%.*s);" NL,
-                                g->name.len, data + g->name.off,
-                                q->name.len, data + q->name.off);
-                        fprintf(fp, "    return -1;" NL);
-                    }
-                    break;
-
-                case QUERY_SELECT_FIRST:
-                case QUERY_SELECT_ALL:
-                    fprintf(fp, "next_step:" NL);
-                    fprintf(fp, "    ret = sqlite3_step(ctx->%.*s_%.*s);" NL,
-                        g->name.len, data + g->name.off,
-                        q->name.len, data + q->name.off);
-                    fprintf(fp, "    switch (ret)" NL "    {" NL);
-                    fprintf(fp, "        case SQLITE_ROW:" NL);
-
-                    if (q->return_name.len)
-                        fprintf(fp, "            %.*s = sqlite3_column_int(ctx->%.*s_%.*s, 0);" NL,
-                            q->return_name.len, data + q->return_name.off,
-                            g->name.len, data + g->name.off,
-                            q->name.len, data + q->name.off);
-
-                    fprintf(fp, "            ret = on_row(" NL);
-                    a = q->cb_args;
-                    i = q->return_name.len ? 1 : 0;
-                    for (; a; a = a->next, i++)
-                    {
-                        const char* sqlite_type = "";
-                        const char* cast = "";
-
-                        if (str_view_eq("uint64_t", a->type, data))
-                            { sqlite_type = "int64"; cast = "(uint64_t)"; }
-                        else if (str_view_eq("int64_t", a->type, data))
-                            sqlite_type = "int64";
-                        else if (str_view_eq("int", a->type, data))
-                            sqlite_type = "int";
-                        else if (str_view_eq("struct str_view", a->type, data))
-                            { sqlite_type = "text"; cast = "(const char*)"; }
-                        else if (str_view_eq("const char*", a->type, data))
-                            { sqlite_type = "text"; cast = "(const char*)"; }
-
-                        fprintf(fp, "                %ssqlite3_column_%s(ctx->%.*s_%.*s, %d)," NL,
-                                cast, sqlite_type,
-                                g->name.len, data + g->name.off,
-                                q->name.len, data + q->name.off,
-                                i);
-                    }
-                    fprintf(fp, "                user_data);" NL);
-
-                    if (q->type != QUERY_SELECT_FIRST)
-                        fprintf(fp, "            if (ret == 0) goto next_step;" NL);
-
-                    fprintf(fp, "            sqlite3_reset(ctx->%.*s_%.*s);" NL,
-                        g->name.len, data + g->name.off,
-                        q->name.len, data + q->name.off);
-
-                    if (q->return_name.len)
-                        fprintf(fp, "            return %.*s;" NL, q->return_name.len, data + q->return_name.off);
-                    else
-                        fprintf(fp, "            return ret;" NL);
-
-                    fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
-                    fprintf(fp, "        case SQLITE_DONE:" NL);
-                    fprintf(fp, "            sqlite3_reset(ctx->%.*s_%.*s);" NL,
-                        g->name.len, data + g->name.off,
-                        q->name.len, data + q->name.off);
-
-                    if (q->return_name.len)
-                        fprintf(fp, "            return %.*s;" NL, q->return_name.len, data + q->return_name.off);
-                    else
-                        fprintf(fp, "            return 0;" NL);
-
-                    fprintf(fp, "    }" NL NL);
-                    fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
-                    fprintf(fp, "    sqlite3_reset(ctx->%.*s_%.*s);" NL,
-                        g->name.len, data + g->name.off,
-                        q->name.len, data + q->name.off);
-                    fprintf(fp, "    return -1;" NL);
-                    break;
-            }
+            fprintf_sqlite_prepare_stmt(fp, root, g, q, data);
+            fprintf_sqlite_bind_args(fp, root, g, q, data);
+            fprintf_sqlite_exec(fp, root, g, q, data);
 
             fprintf(fp, "}" NL NL);
 
