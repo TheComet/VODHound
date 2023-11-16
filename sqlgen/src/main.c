@@ -474,6 +474,7 @@ struct arg
     struct str_view type;
     struct str_view name;
     char nullable;
+    char update;
 };
 
 static struct arg*
@@ -488,6 +489,7 @@ enum query_type
 {
     QUERY_NONE,
     QUERY_INSERT,
+    QUERY_UPDATE,
     QUERY_EXISTS,
     QUERY_SELECT_FIRST,
     QUERY_SELECT_ALL,
@@ -756,6 +758,8 @@ parse(struct parser* p, struct root* root)
                         t = p->value.str;
                         if (str_view_eq("insert", t, p->data))
                             query->type = QUERY_INSERT;
+                        else if (str_view_eq("update", t, p->data))
+                            query->type = QUERY_UPDATE;
                         else if (str_view_eq("exists", t, p->data))
                             query->type = QUERY_EXISTS;
                         else if (str_view_eq("select-first", t, p->data))
@@ -764,6 +768,34 @@ parse(struct parser* p, struct root* root)
                             query->type = QUERY_SELECT_ALL;
                         else
                             return print_error("Error: Unknown query type \"%.*s\"\n", t.len, p->data + t.off);
+
+                        if (query->type == QUERY_UPDATE)
+                        {
+                            do
+                            {
+                                struct arg* a;
+                                struct str_view find;
+                                tok = scan_next_token(p);
+                                if (tok != TOK_LABEL)
+                                    return print_error("Error: Expected column name after \"update\"\n");
+                                find = p->value.str;
+
+                                a = query->in_args;
+                                while (a) {
+                                    if (a->name.len == find.len &&
+                                            memcmp(p->data + a->name.off, p->data + find.off, find.len) == 0)
+                                    {
+                                        a->update = 1;
+                                        break;
+                                    }
+                                    a = a->next;
+                                }
+                                if (a == NULL)
+                                    return print_error("Error: \"update %.*s\" specified, but no argument with this name exists in the function's parameter list\n",
+                                            find.len, p->data + find.off);
+                            } while ((tok = scan_next_token(p)) == ',');
+                            goto switch_next_stmt;
+                        }
                     } goto expect_next_stmt;
 
                     case TOK_TABLE: {
@@ -1148,6 +1180,40 @@ fprintf_sqlite_prepare_stmt(FILE* fp, const struct root* root, const struct quer
 
             break;
 
+        case QUERY_UPDATE: {
+            char first;
+            fprintf(fp, "            \"UPDATE %.*s SET ",
+                    q->table_name.len, data + q->table_name.off);
+
+            /* SET ... */
+            first = 1;
+            a = q->in_args;
+            while (a) {
+                if (a->update)
+                {
+                    if (!first) fprintf(fp, ", ");
+                    fprintf(fp, "%.*s=?", a->name.len, data + a->name.off);
+                    first = 0;
+                }
+                a = a->next;
+            }
+
+            /* WHERE ... */
+            first = 1;
+            a = q->in_args;
+            while (a) {
+                if (!a->update)
+                {
+                    if (first) fprintf(fp, " WHERE ");
+                    else       fprintf(fp, " AND ");
+                    fprintf(fp, "%.*s=?", a->name.len, data + a->name.off);
+                    first = 0;
+                }
+                a = a->next;
+            }
+            fprintf(fp, ";\",\n");
+        } break;
+
         case QUERY_EXISTS:
             fprintf(fp, "            \"SELECT 1 FROM %.*s", q->table_name.len, data + q->table_name.off);
             a = q->in_args;
@@ -1199,15 +1265,23 @@ fprintf_sqlite_prepare_stmt(FILE* fp, const struct root* root, const struct quer
 static void
 fprintf_sqlite_bind_args(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
 {
-    struct arg* a = q->in_args;
+    struct arg* a;
     int i = 1;
-    for (; a; a = a->next, i++)
+    int update_pass = 1;
+    int first = 1;
+again:
+    a = q->in_args;
+    for (; a; a = a->next)
     {
         const char* sqlite_type = "";
         const char* cast = "";
 
-        if (a == q->in_args) fprintf(fp, "    if ((ret = ");
-        else                 fprintf(fp, "        (ret = ");
+        if (update_pass != a->update)
+            continue;
+
+        if (first) fprintf(fp, "    if ((ret = ");
+        else fprintf(fp, " ||" NL "        (ret = ");
+        first = 0;
 
         if (str_view_eq("uint64_t", a->type, data))
             { sqlite_type = "int64"; cast = "(int64_t)"; }
@@ -1236,9 +1310,12 @@ fprintf_sqlite_bind_args(FILE* fp, const struct root* root, const struct query_g
             fprintf(fp, ", -1, SQLITE_STATIC");
         fprintf(fp, ")) != SQLITE_OK");
 
-        if (a->next)
-            fprintf(fp, " ||" NL);
+        i++;
     }
+
+    if (update_pass--)
+        goto again;
+
     fprintf(fp, ")" NL "    {" NL);
     fprintf(fp, "        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
     fprintf(fp, "        return -1;" NL "    }" NL NL);
@@ -1306,6 +1383,7 @@ fprintf_sqlite_exec(FILE* fp, const struct root* root, const struct query_group*
             fprintf(fp, "    return -1;" NL);
             break;
 
+        case QUERY_UPDATE:
         case QUERY_INSERT:
             fprintf(fp, "next_step:" NL);
             fprintf(fp, "    ret = sqlite3_step(ctx->");
