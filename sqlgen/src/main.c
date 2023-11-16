@@ -5,6 +5,8 @@
 #include <ctype.h>
 
 #if defined(WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
 #else
 #include <unistd.h>
 #include <sys/fcntl.h>
@@ -28,10 +30,97 @@ struct mfile
     int size;
 };
 
+#if defined(WIN32)
+wchar_t*
+utf8_to_utf16(const char* utf8, int utf8_bytes)
+{
+    int utf16_bytes = MultiByteToWideChar(CP_UTF8, 0, utf8, utf8_bytes, NULL, 0);
+    if (utf16_bytes == 0)
+        return NULL;
+
+    wchar_t* utf16 = malloc((sizeof(wchar_t) + 1) * utf16_bytes);
+    if (utf16 == NULL)
+        return NULL;
+
+    if (MultiByteToWideChar(CP_UTF8, 0, utf8, utf8_bytes, utf16, utf16_bytes) == 0)
+    {
+        free(utf16);
+        return NULL;
+    }
+
+    utf16[utf16_bytes] = 0;
+
+    return utf16;
+}
+void
+utf_free(void* utf)
+{
+    free(utf);
+}
+#endif
+
 static int
 mfile_map(struct mfile* mf, const char* file_name)
 {
 #if defined(WIN32)
+    HANDLE hFile;
+    LARGE_INTEGER liFileSize;
+    HANDLE mapping;
+    wchar_t* utf16_filename;
+
+    utf16_filename = utf8_to_utf16(file_name, (int)strlen(file_name));
+    if (utf16_filename == NULL)
+        goto utf16_conv_failed;
+
+    /* Try to open the file */
+    hFile = CreateFileW(
+        utf16_filename,         /* File name */
+        GENERIC_READ,           /* Read only */
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        NULL,                   /* Default security */
+        OPEN_EXISTING,          /* File must exist */
+        FILE_ATTRIBUTE_NORMAL,  /* Default attributes */
+        NULL);                  /* No attribute template */
+    if (hFile == INVALID_HANDLE_VALUE)
+        goto open_failed;
+
+    /* Determine file size in bytes */
+    if (!GetFileSizeEx(hFile, &liFileSize))
+        goto get_file_size_failed;
+    if (liFileSize.QuadPart > (1ULL << 32) - 1)  /* mf->size is an int */
+        goto get_file_size_failed;
+
+    mapping = CreateFileMapping(
+        hFile,                 /* File handle */
+        NULL,                  /* Default security attributes */
+        PAGE_READONLY,         /* Read only (or copy on write, but we don't write) */
+        0, 0,                  /* High/Low size of mapping. Zero means entire file */
+        NULL);                 /* Don't name the mapping */
+    if (mapping == NULL)
+        goto create_file_mapping_failed;
+
+    mf->address = MapViewOfFile(
+        mapping,               /* File mapping handle */
+        FILE_MAP_READ,         /* Read-only view of file */
+        0, 0,                  /* High/Low offset of where the mapping should begin in the file */
+        0);                    /* Length of mapping. Zero means entire file */
+    if (mf->address == NULL)
+        goto map_view_failed;
+
+    /* The file mapping isn't required anymore */
+    CloseHandle(mapping);
+    CloseHandle(hFile);
+    utf_free(utf16_filename);
+
+    mf->size = liFileSize.QuadPart;
+
+    return 0;
+
+    map_view_failed            : CloseHandle(mapping);
+    create_file_mapping_failed :
+    get_file_size_failed       : CloseHandle(hFile);
+    open_failed                : utf_free(utf16_filename);
+    utf16_conv_failed          : return -1;
 #else
     struct stat stbuf;
     int fd;
@@ -44,7 +133,7 @@ mfile_map(struct mfile* mf, const char* file_name)
         goto fstat_failed;
     if (!S_ISREG(stbuf.st_mode))
         goto fstat_failed;
-    mf->address = mmap(NULL, (size_t)stbuf.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_NORESERVE, fd, 0);
+    mf->address = mmap(NULL, (size_t)stbuf.st_size, PROT_READ, MAP_PRIVATE | MAP_NORESERVE, fd, 0);
     if (mf->address == NULL)
         goto mmap_failed;
 
@@ -64,6 +153,7 @@ void
 mfile_unmap(struct mfile* mf)
 {
 #if defined(WIN32)
+    UnmapViewOfFile(mf->address);
 #else
     munmap(mf->address, (size_t)mf->size);
 #endif
@@ -178,6 +268,13 @@ struct str_view
 {
     int off, len;
 };
+
+static int
+str_view_eq(const char* s1, struct str_view s2, const char* data)
+{
+    int len = strlen(s1);
+    return len == s2.len && memcmp(data + s2.off, s1, len) == 0;
+}
 
 struct parser
 {
@@ -381,8 +478,7 @@ arg_alloc(void)
 enum query_type
 {
     QUERY_NONE,
-    QUERY_INSERT_OR_IGNORE,
-    QUERY_INSERT_OR_GET,
+    QUERY_INSERT,
     QUERY_GET_SINGLE,
     QUERY_GET_MULTI,
     QUERY_EXISTS
@@ -511,11 +607,11 @@ parse(struct parser* p, struct root* root)
                 if (scan_next_token(p) != TOK_STRING)
                     return print_error("Error: Expected string for %%option\n");
 
-                if (memcmp(p->data + option.off, "prefix", sizeof("prefix") - 1) == 0)
+                if (str_view_eq("prefix", option, p->data))
                     root->prefix = p->value.str;
-                else if (memcmp(p->data + option.off, "malloc", sizeof("malloc") - 1) == 0)
+                else if (str_view_eq("malloc", option, p->data) == 0)
                     root->malloc = p->value.str;
-                else if (memcmp(p->data + option.off, "free", sizeof("free") - 1) == 0)
+                else if (str_view_eq("free", option, p->data) == 0)
                     root->free = p->value.str;
                 else
                     return print_error("Unknown option \"%.*s\"\n", option.len, p->data + option.off);
@@ -592,7 +688,7 @@ parse(struct parser* p, struct root* root)
                         arg = arg_alloc();
                         arg->type = p->value.str;
                         /* Special case, struct -> expect another label */
-                        if (memcmp(p->data + arg->type.off, "struct", sizeof("struct") - 1) == 0)
+                        if (str_view_eq("struct", arg->type, p->data))
                         {
                             if (scan_next_token(p) != TOK_LABEL)
                                 return print_error("Error: struct without name\n");
@@ -630,15 +726,13 @@ parse(struct parser* p, struct root* root)
                         if (scan_next_token(p) != TOK_LABEL)
                             return print_error("Error: Expected query type after \"type\"\n");
                         t = p->value.str;
-                        if (memcmp(p->data + t.off, "insert-or-get", t.len) == 0)
-                            query->type = QUERY_INSERT_OR_GET;
-                        else if (memcmp(p->data + t.off, "insert-or-ignore", t.len) == 0)
-                            query->type = QUERY_INSERT_OR_IGNORE;
-                        else if (memcmp(p->data + t.off, "exists", t.len) == 0)
+                        if (str_view_eq("insert", t, p->data))
+                            query->type = QUERY_INSERT;
+                        else if (str_view_eq("exists", t, p->data) == 0)
                             query->type = QUERY_EXISTS;
-                        else if (memcmp(p->data + t.off, "get-single", t.len) == 0)
+                        else if (str_view_eq("get-single", t, p->data) == 0)
                             query->type = QUERY_GET_SINGLE;
-                        else if (memcmp(p->data + t.off, "get-multi", t.len) == 0)
+                        else if (str_view_eq("get-multi", t, p->data) == 0)
                             query->type = QUERY_GET_MULTI;
                         else
                             return print_error("Error: Unknown query type \"%.*s\"\n", t.len, p->data + t.off);
@@ -754,7 +848,7 @@ parse(struct parser* p, struct root* root)
                         arg = arg_alloc();
                         arg->type = p->value.str;
                         /* Special case, struct -> expect another label */
-                        if (memcmp(p->data + arg->type.off, "struct", sizeof("struct") - 1) == 0)
+                        if (str_view_eq("struct", arg->type, p->data))
                         {
                             if (scan_next_token(p) != TOK_LABEL)
                                 return print_error("Error: struct without name\n");
@@ -1046,11 +1140,11 @@ gen_source(const struct root* root, const char* data, const char* file_name)
             {
                 switch (q->type)
                 {
-                    case QUERY_INSERT_OR_IGNORE:
-                        fprintf(fp, "            \"INSERT OR IGNORE INTO %.*s (", q->table_name.len, data + q->table_name.off);
-                        break;
-                    case QUERY_INSERT_OR_GET:
-                        fprintf(fp, "            \"INSERT INTO %.*s (", q->table_name.len, data + q->table_name.off);
+                    case QUERY_INSERT:
+                        if (q->return_name.len)
+                            fprintf(fp, "            \"INSERT INTO %.*s (", q->table_name.len, data + q->table_name.off);
+                        else
+                            fprintf(fp, "            \"INSERT OR IGNORE INTO %.*s (", q->table_name.len, data + q->table_name.off);
                         break;
                     case QUERY_EXISTS:
                         fprintf(fp, "            \"SELECT 1 FROM %.*s", q->table_name.len, data + q->table_name.off);
@@ -1058,8 +1152,7 @@ gen_source(const struct root* root, const char* data, const char* file_name)
                 }
                 switch (q->type)
                 {
-                    case QUERY_INSERT_OR_IGNORE:
-                    case QUERY_INSERT_OR_GET:
+                    case QUERY_INSERT:
                         a = q->args;
                         while (a) {
                             if (a != q->args) fprintf(fp, ", ");
@@ -1087,15 +1180,19 @@ gen_source(const struct root* root, const char* data, const char* file_name)
                 switch (q->type)
                 {
                     case QUERY_EXISTS:
-                    case QUERY_INSERT_OR_IGNORE:
                         fprintf(fp, ";\",\n");
                         break;
-                    case QUERY_INSERT_OR_GET:
-                        fprintf(fp, " \"\n");
-                        fprintf(fp, "            \"ON CONFLICT DO UPDATE SET %.*s=excluded.%.*s RETURNING %.*s;\",\n",
-                                q->return_name.len, data + q->return_name.off,
-                                q->return_name.len, data + q->return_name.off,
-                                q->return_name.len, data + q->return_name.off);
+                    case QUERY_INSERT:
+                        if (q->return_name.len)
+                        {
+                            fprintf(fp, " \"\n");
+                            fprintf(fp, "            \"ON CONFLICT DO UPDATE SET %.*s=excluded.%.*s RETURNING %.*s;\",\n",
+                                    q->return_name.len, data + q->return_name.off,
+                                    q->return_name.len, data + q->return_name.off,
+                                    q->return_name.len, data + q->return_name.off);
+                        }
+                        else
+                            fprintf(fp, ";\",\n");
                         break;
                 }
             }
@@ -1119,13 +1216,13 @@ gen_source(const struct root* root, const char* data, const char* file_name)
                 if (a == q->args) fprintf(fp, "    if ((ret = ");
                 else              fprintf(fp, "        (ret = ");
 
-                if (memcmp(data + a->type.off, "uint64_t", sizeof("uint64_t") - 1) == 0)
+                if (str_view_eq("uint64_t", a->type, data))
                     { sqlite_type = "int64"; cast = "(int64_t)"; }
-                else if (memcmp(data + a->type.off, "int64_t", sizeof("int64_t") - 1) == 0)
+                else if (str_view_eq("int64_t", a->type, data))
                     { sqlite_type = "int64"; }
-                if (memcmp(data + a->type.off, "int", sizeof("int") - 1) == 0)
+                else if (str_view_eq("int", a->type, data))
                     { sqlite_type = "int"; }
-                else if (memcmp(data + a->type.off, "struct str_view", sizeof("struct str_view") - 1) == 0)
+                else if (str_view_eq("struct str_view", a->type, data))
                     { sqlite_type = "text"; }
 
                 fprintf(fp, "sqlite3_bind_%s(ctx->%.*s_%.*s, %d, %s%.*s",
@@ -1135,7 +1232,7 @@ gen_source(const struct root* root, const char* data, const char* file_name)
                         i, cast,
                         a->name.len, data + a->name.off);
 
-                if (memcmp(data + a->type.off, "struct str_view", sizeof("struct str_view") - 1) == 0)
+                if (str_view_eq("struct str_view", a->type, data))
                     fprintf(fp, ".data, %.*s.len, SQLITE_STATIC", a->name.len, data + a->name.off);
                 fprintf(fp, ")) != SQLITE_OK");
 
@@ -1173,46 +1270,50 @@ gen_source(const struct root* root, const char* data, const char* file_name)
                             q->name.len, data + q->name.off);
                     fprintf(fp, "    return -1;\n");
                     break;
-                case QUERY_INSERT_OR_IGNORE:
-                    fprintf(fp, "next_step:\n");
-                    fprintf(fp, "    ret = sqlite3_step(ctx->%.*s_%.*s);\n",
-                            g->name.len, data + g->name.off,
-                            q->name.len, data + q->name.off);
-                    fprintf(fp, "    switch (ret)\n    {\n");
-                    fprintf(fp, "        case SQLITE_BUSY: goto next_step;\n");
-                    fprintf(fp, "        case SQLITE_DONE:\n");
-                    fprintf(fp, "            sqlite3_reset(ctx->%.*s_%.*s);\n",
-                            g->name.len, data + g->name.off,
-                            q->name.len, data + q->name.off);
-                    fprintf(fp, "            return 0;\n");
-                    fprintf(fp, "    }\n\n");
-                    fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));\n");
-                    fprintf(fp, "    sqlite3_reset(ctx->%.*s_%.*s);\n",
-                            g->name.len, data + g->name.off,
-                            q->name.len, data + q->name.off);
-                    fprintf(fp, "    return -1;\n");
-                    break;
-                case QUERY_INSERT_OR_GET: {
-                    fprintf(fp, "next_step:\n");
-                    fprintf(fp, "    ret = sqlite3_step(ctx->%.*s_%.*s);\n",
-                            g->name.len, data + g->name.off,
-                            q->name.len, data + q->name.off);
-                    fprintf(fp, "    switch (ret)\n    {\n");
-                    fprintf(fp, "        case SQLITE_ROW:\n");
-                    fprintf(fp, "            %.*s = sqlite3_column_int(ctx->%.*s_%.*s, 0);\n",
-                            q->return_name.len, data + q->return_name.off,
-                            g->name.len, data + g->name.off,
-                            q->name.len, data + q->name.off);
-                    fprintf(fp, "            goto done;\n");
-                    fprintf(fp, "        case SQLITE_BUSY: goto next_step;\n");
-                    fprintf(fp, "        case SQLITE_DONE: goto done;\n");
-                    fprintf(fp, "    }\n\n");
-                    fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));\n");
-                    fprintf(fp, "done:\n");
-                    fprintf(fp, "    sqlite3_reset(ctx->%.*s_%.*s);\n",
-                            g->name.len, data + g->name.off,
-                            q->name.len, data + q->name.off);
-                    fprintf(fp, "    return %.*s;\n", q->return_name.len, data + q->return_name.off);
+                case QUERY_INSERT:
+                    if (q->return_name.len)
+                    {
+                        fprintf(fp, "next_step:\n");
+                        fprintf(fp, "    ret = sqlite3_step(ctx->%.*s_%.*s);\n",
+                                g->name.len, data + g->name.off,
+                                q->name.len, data + q->name.off);
+                        fprintf(fp, "    switch (ret)\n    {\n");
+                        fprintf(fp, "        case SQLITE_ROW:\n");
+                        fprintf(fp, "            %.*s = sqlite3_column_int(ctx->%.*s_%.*s, 0);\n",
+                                q->return_name.len, data + q->return_name.off,
+                                g->name.len, data + g->name.off,
+                                q->name.len, data + q->name.off);
+                        fprintf(fp, "            goto done;\n");
+                        fprintf(fp, "        case SQLITE_BUSY: goto next_step;\n");
+                        fprintf(fp, "        case SQLITE_DONE: goto done;\n");
+                        fprintf(fp, "    }\n\n");
+                        fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));\n");
+                        fprintf(fp, "done:\n");
+                        fprintf(fp, "    sqlite3_reset(ctx->%.*s_%.*s);\n",
+                                g->name.len, data + g->name.off,
+                                q->name.len, data + q->name.off);
+                        fprintf(fp, "    return %.*s;\n", q->return_name.len, data + q->return_name.off);
+                    }
+                    else
+                    {
+                        fprintf(fp, "next_step:\n");
+                        fprintf(fp, "    ret = sqlite3_step(ctx->%.*s_%.*s);\n",
+                                g->name.len, data + g->name.off,
+                                q->name.len, data + q->name.off);
+                        fprintf(fp, "    switch (ret)\n    {\n");
+                        fprintf(fp, "        case SQLITE_BUSY: goto next_step;\n");
+                        fprintf(fp, "        case SQLITE_DONE:\n");
+                        fprintf(fp, "            sqlite3_reset(ctx->%.*s_%.*s);\n",
+                                g->name.len, data + g->name.off,
+                                q->name.len, data + q->name.off);
+                        fprintf(fp, "            return 0;\n");
+                        fprintf(fp, "    }\n\n");
+                        fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));\n");
+                        fprintf(fp, "    sqlite3_reset(ctx->%.*s_%.*s);\n",
+                                g->name.len, data + g->name.off,
+                                q->name.len, data + q->name.off);
+                        fprintf(fp, "    return -1;\n");
+                    }
                 } break;
             }
 

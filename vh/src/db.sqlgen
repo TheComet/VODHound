@@ -36,7 +36,7 @@ C_END
     return check_version_and_migrate(ctx->db, reinit_db);
 }
 %query motion,add(uint64_t hash40, struct str_view string) {
-    type insert-or-ignore
+    type insert
     table motions
 }
 %query motion,exists(uint64_t hash40) {
@@ -44,12 +44,12 @@ C_END
     table motions
 }
 %query motion_label,add_or_get_group(struct str_view name) {
-    type insert-or-get
+    type insert
     table motion_groups
     return id
 }
 %query motion_label,add_or_get_layer(int group_id, struct str_view name) {
-    type insert-or-get
+    type insert
     stmt {
         WITH priorities AS (
             WITH list(id) AS (VALUES(0))
@@ -63,6 +63,7 @@ C_END
     }
     return id
 }
+/*
 %query motion_label,add_or_get_category(struct str_view name) {
     type insert-or-get
     table motion_categories
@@ -208,7 +209,7 @@ C_END
 %query person,set_pronouns(int id, struct str_view pronouns) {
     type update-or-ignore pronouns
     table people
-}
+}*/
 
 %source-preamble {
 static int
