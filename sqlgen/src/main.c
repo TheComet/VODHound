@@ -1334,33 +1334,6 @@ fprintf_sqlite_bind_args(FILE* fp, const struct root* root, const struct query_g
 }
 
 static void
-fprintf_sqlite_exec_exists(FILE* fp, const struct query_group* g, const struct query* q, const char* data)
-{
-    fprintf(fp, "next_step:" NL);
-    fprintf(fp, "    ret = sqlite3_step(ctx->");
-    fprintf_func_name(fp, g, q, data);
-    fprintf(fp, ");" NL);
-    fprintf(fp, "    switch (ret)" NL "    {" NL);
-    fprintf(fp, "        case SQLITE_ROW:" NL);
-    fprintf(fp, "            sqlite3_reset(ctx->");
-    fprintf_func_name(fp, g, q, data);
-    fprintf(fp, "); " NL);
-    fprintf(fp, "            return 1;" NL);
-    fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
-    fprintf(fp, "        case SQLITE_DONE:" NL);
-    fprintf(fp, "            sqlite3_reset(ctx->");
-    fprintf_func_name(fp, g, q, data);
-    fprintf(fp, ");" NL);
-    fprintf(fp, "            return 0;" NL);
-    fprintf(fp, "    }" NL NL);
-    fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
-    fprintf(fp, "    sqlite3_reset(ctx->");
-    fprintf_func_name(fp, g, q, data);
-    fprintf(fp, ");" NL);
-    fprintf(fp, "    return -1;" NL);
-}
-
-static void
 fprintf_sqlite_exec_callback(FILE* fp, const struct query_group* g, const struct query* q, const char* data)
 {
     struct arg* a = q->cb_args;
@@ -1398,51 +1371,75 @@ fprintf_sqlite_exec(FILE* fp, const struct root* root, const struct query_group*
     switch (q->type)
     {
         case QUERY_EXISTS:
-            fprintf_sqlite_exec_exists(fp, g, q, data);
+            fprintf(fp, "next_step:" NL);
+            fprintf(fp, "    ret = sqlite3_step(ctx->");
+            fprintf_func_name(fp, g, q, data);
+            fprintf(fp, ");" NL);
+            fprintf(fp, "    switch (ret)" NL "    {" NL);
+            fprintf(fp, "        case SQLITE_ROW:" NL);
+            fprintf(fp, "            sqlite3_reset(ctx->");
+            fprintf_func_name(fp, g, q, data);
+            fprintf(fp, "); " NL);
+            fprintf(fp, "            return 1;" NL);
+            fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
+            fprintf(fp, "        case SQLITE_DONE:" NL);
+            fprintf(fp, "            sqlite3_reset(ctx->");
+            fprintf_func_name(fp, g, q, data);
+            fprintf(fp, ");" NL);
+            fprintf(fp, "            return 0;" NL);
+            fprintf(fp, "    }" NL NL);
+            fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
+            fprintf(fp, "    sqlite3_reset(ctx->");
+            fprintf_func_name(fp, g, q, data);
+            fprintf(fp, ");" NL);
+            fprintf(fp, "    return -1;" NL);
             break;
+
         case QUERY_INSERT:
+            fprintf(fp, "next_step:" NL);
+            fprintf(fp, "    ret = sqlite3_step(ctx->");
+            fprintf_func_name(fp, g, q, data);
+            fprintf(fp, ");" NL);
+            fprintf(fp, "    switch (ret)" NL "    {" NL);
+
+            if (q->return_name.len || q->cb_args)
+                fprintf(fp, "        case SQLITE_ROW:" NL);
+
             if (q->return_name.len)
             {
-                fprintf(fp, "next_step:" NL);
-                fprintf(fp, "    ret = sqlite3_step(ctx->");
-                fprintf_func_name(fp, g, q, data);
-                fprintf(fp, ");" NL);
-                fprintf(fp, "    switch (ret)" NL "    {" NL);
-                fprintf(fp, "        case SQLITE_ROW:" NL);
                 fprintf(fp, "            %.*s = sqlite3_column_int(ctx->",
-                        q->return_name.len, data + q->return_name.off);
+                    q->return_name.len, data + q->return_name.off);
                 fprintf_func_name(fp, g, q, data);
                 fprintf(fp, ", 0);" NL);
-                fprintf(fp, "        case SQLITE_DONE: goto done;" NL);
-                fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
-                fprintf(fp, "    }" NL NL);
-                fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
-                fprintf(fp, "done:" NL);
-                fprintf(fp, "    sqlite3_reset(ctx->");
-                fprintf_func_name(fp, g, q, data);
-                fprintf(fp, ");" NL);
-                fprintf(fp, "    return %.*s;" NL, q->return_name.len, data + q->return_name.off);
             }
-            else
+
+            if (q->cb_args)
+                fprintf_sqlite_exec_callback(fp, g, q, data);
+
+            if (q->return_name.len || q->cb_args)
             {
-                fprintf(fp, "next_step:" NL);
-                fprintf(fp, "    ret = sqlite3_step(ctx->");
-                fprintf_func_name(fp, g, q, data);
-                fprintf(fp, ");" NL);
-                fprintf(fp, "    switch (ret)" NL "    {" NL);
-                fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
-                fprintf(fp, "        case SQLITE_DONE:" NL);
                 fprintf(fp, "            sqlite3_reset(ctx->");
                 fprintf_func_name(fp, g, q, data);
                 fprintf(fp, ");" NL);
-                fprintf(fp, "            return 0;" NL);
-                fprintf(fp, "    }" NL NL);
-                fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
-                fprintf(fp, "    sqlite3_reset(ctx->");
-                fprintf_func_name(fp, g, q, data);
-                fprintf(fp, ");" NL);
-                fprintf(fp, "    return -1;" NL);
+
+                if (q->return_name.len)
+                    fprintf(fp, "            return %.*s;" NL, q->return_name.len, data + q->return_name.off);
+                else
+                    fprintf(fp, "            return ret;" NL);
             }
+
+            fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
+            fprintf(fp, "        case SQLITE_DONE:" NL);
+            fprintf(fp, "            sqlite3_reset(ctx->");
+            fprintf_func_name(fp, g, q, data);
+            fprintf(fp, ");" NL);
+            fprintf(fp, "            return 0;" NL);
+            fprintf(fp, "    }" NL NL);
+            fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
+            fprintf(fp, "    sqlite3_reset(ctx->");
+            fprintf_func_name(fp, g, q, data);
+            fprintf(fp, ");" NL);
+            fprintf(fp, "    return -1;" NL);
             break;
 
         case QUERY_SELECT_FIRST:
@@ -1715,7 +1712,6 @@ int main(int argc, char** argv)
     parser.data = (char*)mf.address;
     parser.off = 0;
     parser.len = mf.size;
-    parse(&parser, &root);
     if (parse(&parser, &root) != 0)
         return -1;
 
