@@ -479,10 +479,10 @@ C_END
     table stream_recording_sources
 }
 */
-%query test(int id) {
+%query test(int id, const char* name) {
     type select-all
     table test
-    callback const char* name
+    callback int id, const char* name
 }
 
 %source-preamble {

@@ -1898,8 +1898,34 @@ gen_source(const struct root* root, const char* data, const char* file_name)
             }
             fprintf(fp, ", void* user_data)" NL "{" NL);
 
+            fprintf(fp, "    int result;" NL);
             fprintf(fp, "    void** dbg = user_data;" NL);
-            fprintf(fp, "    int result = (*(int(*)(");
+
+            fprintf(fp, "    log_dbg(\"  ");
+            a = q->cb_args;
+            while (a)
+            {
+                if (a != q->cb_args) fprintf(fp, " | ");
+                if (str_view_eq("const char*", a->type, data))
+                    fprintf(fp, "%%s");
+                else
+                    fprintf(fp, "%%d");
+                a = a->next;
+            }
+            fprintf(fp, "\\n\", ");
+            a = q->cb_args;
+            while (a)
+            {
+                if (a != q->cb_args) fprintf(fp, ", ");
+                if (str_view_eq("const char*", a->type, data)) {}
+                else
+                    fprintf(fp, "(int)");
+                fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+                a = a->next;
+            }
+            fprintf(fp, ");" NL);
+
+            fprintf(fp, "    result = (*(int(*)(");
             a = q->cb_args;
             while (a)
             {
@@ -1925,10 +1951,41 @@ gen_source(const struct root* root, const char* data, const char* file_name)
         fprintf_dbg_func_decl(fp, root, g, q, data);
         fprintf(fp, NL "{" NL);
 
+        fprintf(fp, "    int result;" NL);
         if (q->cb_args)
             fprintf(fp, "    void* dbg[2] = { on_row, user_data };" NL);
 
-        fprintf(fp, "    int result = db_sqlite.");
+        fprintf(fp, "    log_dbg(\"%.*s(", q->name.len, data + q->name.off);
+        a = q->cb_args;
+        while (a)
+        {
+            if (a != q->cb_args) fprintf(fp, ", ");
+            if (str_view_eq("const char*", a->type, data))
+                fprintf(fp, "%%s");
+            else if (str_view_eq("struct str_view", a->type, data))
+                fprintf(fp, "%%.*s");
+            else
+                fprintf(fp, "%%d");
+            a = a->next;
+        }
+        fprintf(fp, "\\n\", ");
+        a = q->cb_args;
+        while (a)
+        {
+            if (a != q->cb_args) fprintf(fp, ", ");
+            if (str_view_eq("const char*", a->type, data))
+                fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+            else if (str_view_eq("struct str_view", a->type, data))
+                fprintf(fp, "%.*s.len, %.*s.data",
+                    a->name.len, data + a->name.off,
+                    a->name.len, data + a->name.off);
+            else
+                fprintf(fp, "(int)%.*s", a->name.len, data + a->name.off);
+            a = a->next;
+        }
+        fprintf(fp, ");" NL);
+
+        fprintf(fp, "    result = db_sqlite.");
         fprintf_func_name(fp, NULL, q, data);
         fprintf(fp, "(ctx");
         a = q->in_args;
