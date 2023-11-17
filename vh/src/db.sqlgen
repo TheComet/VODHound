@@ -31,7 +31,7 @@ newdb_deinit(void);
 
 C_END
 }
-
+/*
 %function migrate(int reinit_db) {
     return check_version_and_migrate(ctx->db, reinit_db);
 }
@@ -323,7 +323,7 @@ C_END
      * values within the same statement. The reason for not using two ? here
      * is because the code generator does not support binding the same value
      * twice, so we bind it once into a subquery.
-     */
+     *
     type select-all
     stmt {
         WITH grouped_games AS (
@@ -477,6 +477,12 @@ C_END
 %query stream_recording_sources,add(struct str_view path, int64_t frame_offset) {
     type insert
     table stream_recording_sources
+}
+*/
+%query test(int id) {
+    type select-all
+    table test
+    callback const char* name
 }
 
 %source-preamble {

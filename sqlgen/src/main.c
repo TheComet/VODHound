@@ -1070,6 +1070,41 @@ fprintf_func_decl(FILE* fp, const struct root* root, const struct query_group* g
 }
 
 static void
+fprintf_dbg_func_decl(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
+{
+    struct arg* a;
+
+    fprintf(fp, "static int" NL "dbg_");
+    fprintf_func_name(fp, g, q, data);
+    fprintf(fp, "(struct %.*s* ctx",  root->prefix.len, data + root->prefix.off);
+
+    a = q->in_args;
+    while (a)
+    {
+        fprintf(fp, ", %.*s %.*s",
+            a->type.len, data + a->type.off,
+            a->name.len, data + a->name.off);
+        a = a->next;
+    }
+
+    if (q->cb_args)
+        fprintf(fp, ", int (*on_row)(");
+    a = q->cb_args;
+    while (a)
+    {
+        if (a != q->cb_args) fprintf(fp, ", ");
+        fprintf(fp, "%.*s %.*s",
+            a->type.len, data + a->type.off,
+            a->name.len, data + a->name.off);
+        a = a->next;
+    }
+    if (q->cb_args)
+        fprintf(fp, ", void* user_data), void* user_data");
+
+    fprintf(fp, ")");
+}
+
+static void
 fprintf_func_ptr_decl(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
 {
     struct arg* a;
@@ -1797,6 +1832,157 @@ gen_source(const struct root* root, const char* data, const char* file_name)
     while (q)
     {
         fprintf(fp, "    %.*s," NL, q->name.len, data + q->name.off);
+        q = q->next;
+    }
+    /* Grouped queries */
+    g = root->query_groups;
+    while (g)
+    {
+        fprintf(fp, "    {" NL);
+        q = g->queries;
+        while (q)
+        {
+            fprintf(fp, "        %.*s_%.*s," NL,
+                    g->name.len, data + g->name.off,
+                    q->name.len, data + q->name.off);
+            q = q->next;
+        }
+        fprintf(fp, "    }," NL);
+        g = g->next;
+    }
+    fprintf(fp, "};" NL NL);
+
+    /* ------------------------------------------------------------------------
+     * Debug wrapper
+     * --------------------------------------------------------------------- */
+
+    /*
+     * static int dbg_test_on_row(const char* name, void* user_data)
+     * {
+     *     void** dbg_user_data = user_data;
+     *     int result = (*(int(*)(const char*,void*))dbg_user_data[0])(name, dbg_user_data[1]);
+     *     return result;
+     * }
+     *
+     * static int
+     * dbg_test(struct newdb* ctx, int id, int (*on_row)(const char* name, void* user_data), void* user_data)
+     * {
+     *     void* dbg_user_data[2] = { on_row, user_data };
+     *     int result = db_sqlite.test(ctx, id, dbg_test_on_row, dbg_user_data);
+     *     return result;
+     * }
+     *
+     * static struct newdb_interface db_dbg_sqlite = {
+     *     newdb_open,
+     *     newdb_close,
+     *     dbg_test
+     * };
+     */
+    q = root->queries;
+    while (q)
+    {
+        if (q->cb_args)
+        {
+            fprintf(fp, "static int" NL "dbg_");
+            fprintf_func_name(fp, NULL, q, data);
+            fprintf(fp, "_on_row(");
+
+            a = q->cb_args;
+            while (a)
+            {
+                if (a != q->cb_args) fprintf(fp, ", ");
+                fprintf(fp, "%.*s %.*s",
+                    a->type.len, data + a->type.off,
+                    a->name.len, data + a->name.off);
+                a = a->next;
+            }
+            fprintf(fp, ", void* user_data)" NL "{" NL);
+
+            fprintf(fp, "    void** dbg = user_data;" NL);
+            fprintf(fp, "    int result = (*(int(*)(");
+            a = q->cb_args;
+            while (a)
+            {
+                if (a != q->cb_args) fprintf(fp, ", ");
+                fprintf(fp, "%.*s", a->type.len, data + a->type.off);
+                a = a->next;
+            }
+            fprintf(fp, ",void*))dbg[0])(");
+            a = q->cb_args;
+            while (a)
+            {
+                if (a != q->cb_args) fprintf(fp, ", ");
+                fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+                a = a->next;
+            }
+            fprintf(fp, ", dbg[1]);" NL);
+
+            fprintf(fp, "    return result;" NL);
+
+            fprintf(fp, "}" NL);
+        }
+
+        fprintf_dbg_func_decl(fp, root, g, q, data);
+        fprintf(fp, NL "{" NL);
+
+        if (q->cb_args)
+            fprintf(fp, "    void* dbg[2] = { on_row, user_data };" NL);
+
+        fprintf(fp, "    int result = db_sqlite.");
+        fprintf_func_name(fp, NULL, q, data);
+        fprintf(fp, "(ctx");
+        a = q->in_args;
+        while (a)
+        {
+            fprintf(fp, ", %.*s", a->name.len, data + a->name.off);
+            a = a->next;
+        }
+
+        if (q->cb_args)
+        {
+            fprintf(fp, ", dbg_");
+            fprintf_func_name(fp, NULL, q, data);
+            fprintf(fp, "_on_row, dbg");
+        }
+
+        fprintf(fp, ");" NL);
+
+        fprintf(fp, "    return result;" NL);
+
+        fprintf(fp, "}" NL);
+        q = q->next;
+    }
+    g = root->query_groups;
+    while (g)
+    {
+        fprintf(fp, "    {" NL);
+        q = g->queries;
+        while (q)
+        {
+            fprintf_dbg_func_decl(fp, root, g, q, data);
+            fprintf(fp, "{}" NL);
+            q = q->next;
+        }
+        fprintf(fp, "    }," NL);
+        g = g->next;
+    }
+
+    fprintf(fp, "static struct %.*s_interface dbg_db_sqlite = {" NL, root->prefix.len, data + root->prefix.off);
+    fprintf(fp, "    %.*s_open," NL "    %.*s_close," NL,
+            root->prefix.len, data + root->prefix.off,
+            root->prefix.len, data + root->prefix.off);
+    /* Functions */
+    f = root->functions;
+    while (f)
+    {
+        fprintf(fp, "    %.*s," NL, f->name.len, data + f->name.off);
+        f = f->next;
+    }
+    /* Global queries */
+    q = root->queries;
+    while (q)
+    {
+        fprintf(fp, "    dbg_%.*s," NL, q->name.len, data + q->name.off);
         q = q->next;
     }
     /* Grouped queries */
