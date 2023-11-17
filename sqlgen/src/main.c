@@ -16,6 +16,22 @@
 #define NL "\n"
 #endif
 
+#define DEFAULT_PREFIX "sqlgen"
+#define DEFAULT_MALLOC "malloc"
+#define DEFAULT_FREE "free"
+#define DEFAULT_LOG_DBG "printf"
+#define DEFAULT_LOG_SQL_ERR "sqlgen_error"
+#define PREFIX(sv, data) \
+        (sv).len ? (sv).len : (int)sizeof(DEFAULT_PREFIX) - 1, (sv).len ? (data) + (sv).off : DEFAULT_PREFIX
+#define MALLOC(sv, data) \
+        (sv).len ? (sv).len : (int)sizeof(DEFAULT_MALLOC) - 1, (sv).len ? (data) + (sv).off : DEFAULT_MALLOC
+#define FREE(sv, data) \
+        (sv).len ? (sv).len : (int)sizeof(DEFAULT_FREE) - 1, (sv).len ? (data) + (sv).off : DEFAULT_FREE
+#define LOG_DBG(sv, data) \
+        (sv).len ? (sv).len : (int)sizeof(DEFAULT_LOG_DBG) - 1, (sv).len ? (data) + (sv).off : DEFAULT_LOG_DBG
+#define LOG_SQL_ERR(sv, data) \
+        (sv).len ? (sv).len : (int)sizeof(DEFAULT_LOG_SQL_ERR) - 1, (sv).len ? (data) + (sv).off : DEFAULT_LOG_SQL_ERR
+
 struct mfile
 {
     void* address;
@@ -104,7 +120,7 @@ mfile_map(struct mfile* mf, const char* file_name)
     CloseHandle(hFile);
     utf_free(utf16_filename);
 
-    mf->size = liFileSize.QuadPart;
+    mf->size = (int)liFileSize.QuadPart;
 
     return 0;
 
@@ -162,6 +178,10 @@ struct cfg
     const char* output_header;
     const char* output_source;
     enum backend backends;
+    char debug_layer;
+    char custom_init;
+    char custom_deinit;
+    char custom_api;
 };
 
 static int
@@ -217,7 +237,7 @@ parse_cmdline(int argc, char** argv, struct cfg* cfg)
                 while (*p && *p != ',')
                     ++p;
 
-                if (memcmp(backend, "sqlite", sizeof("sqlite") - 1) == 0)
+                if (memcmp(backend, "sqlite3", sizeof("sqlite3") - 1) == 0)
                     cfg->backends |= BACKEND_SQLITE3;
                 else
                 {
@@ -235,6 +255,10 @@ parse_cmdline(int argc, char** argv, struct cfg* cfg)
                 backend = p;
             }
         }
+        else if (strcmp(argv[i], "--debug-layer") == 0)
+        {
+            cfg->debug_layer = 1;
+        }
         else
         {
             fprintf(stderr, "Error: Unknown option \"%s\"\n", argv[i]);
@@ -243,15 +267,27 @@ parse_cmdline(int argc, char** argv, struct cfg* cfg)
     }
 
     if (cfg->backends == 0)
-        return print_error("Error: No backends were specified. Use -b <backend1,backend2,...>. Supported backends are: sqlite\n");
+    {
+        fprintf(stderr, "Error: No backends were specified. Use -b <backend1,backend2,...>. Supported backends are: sqlite3\n");
+        return -1;
+    }
 
     if (cfg->output_header == NULL || !*cfg->output_header)
-        return print_error("Error: No output header file was specified. Use --header\n");
+    {
+        fprintf(stderr, "Error: No output header file was specified. Use --header\n");
+        return -1;
+    }
     if (cfg->output_source == NULL || !*cfg->output_source)
-        return print_error("Error: No output source file was specified. Use --source\n");
+    {
+        fprintf(stderr, "Error: No output source file was specified. Use --source\n");
+        return -1;
+    }
 
     if (cfg->input_file == NULL || !*cfg->input_file)
-        return print_error("Error: No input file name was specified. Use -i\n");
+    {
+        fprintf(stderr, "Error: No input file name was specified. Use -i\n");
+        return -1;
+    }
 
     return 0;
 }
@@ -264,7 +300,7 @@ struct str_view
 static int
 str_view_eq(const char* s1, struct str_view s2, const char* data)
 {
-    int len = strlen(s1);
+    int len = (int)strlen(s1);
     return len == s2.len && memcmp(data + s2.off, s1, len) == 0;
 }
 
@@ -561,6 +597,8 @@ struct root
     struct str_view prefix;
     struct str_view malloc;
     struct str_view free;
+    struct str_view log_dbg;
+    struct str_view log_sql_err;
     struct str_view header_preamble;
     struct str_view header_postamble;
     struct str_view source_includes;
@@ -610,7 +648,7 @@ scan_block(struct parser* p, int expect_opening_brace)
 }
 
 static int
-parse(struct parser* p, struct root* root)
+parse(struct parser* p, struct root* root, struct cfg* cfg)
 {
     do {
         switch (scan_next_token(p)) {
@@ -619,6 +657,16 @@ parse(struct parser* p, struct root* root)
                 if (scan_next_token(p) != TOK_LABEL)
                     return print_error(p, "Error: Expected option name after %%option\n");
                 option = p->value.str;
+
+                /* Options with no arguments */
+                if (str_view_eq("debug-layer", option, p->data))
+                    { cfg->debug_layer = 1; break; }
+                else if (str_view_eq("custom-init", option, p->data))
+                    { cfg->custom_init = 1; break; }
+                else if (str_view_eq("custom-deinit", option, p->data))
+                    { cfg->custom_deinit = 1; break; }
+                else if (str_view_eq("custom-api", option, p->data))
+                    { cfg->custom_api = 1; break; }
 
                 if (scan_next_token(p) != '=')
                     return print_error(p, "Error: Expecting '='\n");
@@ -631,6 +679,10 @@ parse(struct parser* p, struct root* root)
                     root->malloc = p->value.str;
                 else if (str_view_eq("free", option, p->data))
                     root->free = p->value.str;
+                else if (str_view_eq("log-dbg", option, p->data))
+                    root->log_dbg = p->value.str;
+                else if (str_view_eq("log-sql-error", option, p->data))
+                    root->log_sql_err = p->value.str;
                 else
                     return print_error(p, "Unknown option \"%.*s\"\n", option.len, p->data + option.off);
             } break;
@@ -979,7 +1031,14 @@ parse(struct parser* p, struct root* root)
                         if (str_view_eq("struct", arg->type, p->data))
                         {
                             if (scan_next_token(p) != TOK_LABEL)
-                                return print_error(p, "Error: struct without name\n");
+                                return print_error(p, "Error: Missing struct name after \"struct\"\n");
+                            arg->type.len = p->value.str.off + p->value.str.len - arg->type.off;
+                        }
+                        /* Special case, const -> expect another label */
+                        if (str_view_eq("const", arg->type, p->data))
+                        {
+                            if (scan_next_token(p) != TOK_LABEL)
+                                return print_error(p, "Error: const qualifier without type\n");
                             arg->type.len = p->value.str.off + p->value.str.len - arg->type.off;
                         }
 
@@ -1025,10 +1084,11 @@ parse(struct parser* p, struct root* root)
     } while(1);
 }
 
-static void
+static int
 post_parse(struct root* root, const char* data)
 {
-
+    /* TODO validate some things */
+    return 0;
 }
 
 static void
@@ -1046,7 +1106,7 @@ fprintf_func_decl(FILE* fp, const struct root* root, const struct query_group* g
 
     fprintf(fp, "static int" NL);
     fprintf_func_name(fp, g, q, data);
-    fprintf(fp, "(struct %.*s* ctx",  root->prefix.len, data + root->prefix.off);
+    fprintf(fp, "(struct %.*s* ctx", PREFIX(root->prefix, data));
 
     a = q->in_args;
     while (a)
@@ -1081,7 +1141,7 @@ fprintf_dbg_func_decl(FILE* fp, const struct root* root, const struct query_grou
 
     fprintf(fp, "static int" NL "dbg_");
     fprintf_func_name(fp, g, q, data);
-    fprintf(fp, "(struct %.*s* ctx",  root->prefix.len, data + root->prefix.off);
+    fprintf(fp, "(struct %.*s* ctx", PREFIX(root->prefix, data));
 
     a = q->in_args;
     while (a)
@@ -1116,7 +1176,7 @@ fprintf_func_ptr_decl(FILE* fp, const struct root* root, const struct query_grou
 
     fprintf(fp, "int (*");
     fprintf_func_name(fp, g, q, data);
-    fprintf(fp, ")(struct %.*s* ctx",  root->prefix.len, data + root->prefix.off);
+    fprintf(fp, ")(struct %.*s* ctx", PREFIX(root->prefix, data));
 
     a = q->in_args;
     while (a)
@@ -1202,8 +1262,12 @@ fprintf_sqlite_prepare_stmt(FILE* fp, const struct root* root, const struct quer
 
             if (q->return_name.len || q->cb_args)
             {
-                struct str_view reinsert = q->return_name.len ?
-                    q->return_name : q->cb_args->name;
+                /* 
+                 * Have to re-insert a value to trigger the RETURNING statement.
+                 * Caution here: We DON'T want to reinsert "id" or "rowid" because
+                 * it will cause the id to auto-increment.
+                 */
+                struct str_view reinsert = q->in_args ? q->in_args->name : q->return_name;
                 fprintf(fp, " \"" NL);
                 fprintf(fp, "            \"ON CONFLICT DO UPDATE SET %.*s=excluded.%.*s RETURNING ",
                     reinsert.len, data + reinsert.off,
@@ -1305,7 +1369,7 @@ fprintf_sqlite_prepare_stmt(FILE* fp, const struct root* root, const struct quer
     fprintf_func_name(fp, g, q, data);
     fprintf(fp, ", NULL)) != SQLITE_OK)" NL);
     fprintf(fp, "        {" NL);
-    fprintf(fp, "            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
+    fprintf(fp, "            %.*s(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
     fprintf(fp, "            return -1;" NL);
     fprintf(fp, "        }" NL NL);
 }
@@ -1371,7 +1435,7 @@ again:
         goto again;
 
     fprintf(fp, ")" NL "    {" NL);
-    fprintf(fp, "        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
+    fprintf(fp, "        %.*s(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
     fprintf(fp, "        return -1;" NL "    }" NL NL);
 }
 
@@ -1410,8 +1474,6 @@ fprintf_sqlite_exec_callback(FILE* fp, const struct query_group* g, const struct
 static void
 fprintf_sqlite_exec(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
 {
-    struct arg* a;
-    int i;
     switch (q->type)
     {
         case QUERY_EXISTS:
@@ -1432,7 +1494,7 @@ fprintf_sqlite_exec(FILE* fp, const struct root* root, const struct query_group*
             fprintf(fp, ");" NL);
             fprintf(fp, "            return 0;" NL);
             fprintf(fp, "    }" NL NL);
-            fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
+            fprintf(fp, "    %.*s(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
             fprintf(fp, "    sqlite3_reset(ctx->");
             fprintf_func_name(fp, g, q, data);
             fprintf(fp, ");" NL);
@@ -1493,7 +1555,7 @@ fprintf_sqlite_exec(FILE* fp, const struct root* root, const struct query_group*
             }
 
             fprintf(fp, "    }" NL NL);
-            fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
+            fprintf(fp, "    %.*s(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
             if (q->return_name.len || q->cb_args)
                 fprintf(fp, "done:" NL);
             fprintf(fp, "    sqlite3_reset(ctx->");
@@ -1551,96 +1613,13 @@ fprintf_sqlite_exec(FILE* fp, const struct root* root, const struct query_group*
                 fprintf(fp, "            return 0;" NL);
 
             fprintf(fp, "    }" NL NL);
-            fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
+            fprintf(fp, "    %.*s(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
             fprintf(fp, "    sqlite3_reset(ctx->");
             fprintf_func_name(fp, g, q, data);
             fprintf(fp, ");" NL);
             fprintf(fp, "    return -1;" NL);
             break;
     }
-}
-
-static int
-gen_header(const struct root* root, const char* data, const char* file_name)
-{
-    struct query* q;
-    struct query_group* g;
-    struct function* f;
-    struct arg* a;
-    FILE* fp = fopen(file_name, "wb");
-    if (fp == NULL)
-    {
-        fprintf(stderr, "Error: Failed to open file for writing \"%s\"\n", file_name);
-        return -1;
-    }
-
-    if (root->header_preamble.len)
-        fprintf(fp, "%.*s" NL, root->header_preamble.len, data + root->header_preamble.off);
-
-    fprintf(fp, "struct %.*s;" NL, root->prefix.len, data + root->prefix.off);
-    fprintf(fp, "struct %.*s_interface" NL "{" NL, root->prefix.len, data + root->prefix.off);
-
-    /* Open and close functions are hard-coded */
-    fprintf(fp, "    struct %.*s* (*open)(const char* uri);" NL,
-            root->prefix.len, data + root->prefix.off);
-    fprintf(fp, "    void (*close)(struct %.*s* ctx);" NL NL,
-            root->prefix.len, data + root->prefix.off);
-
-    /* Functions */
-    f = root->functions;
-    while (f)
-    {
-        fprintf(fp, "    int (*%.*s)(struct %.*s* ctx",
-                f->name.len, data + f->name.off,
-                root->prefix.len, data + root->prefix.off);
-        a = f->args;
-        while (a)
-        {
-            fprintf(fp, ", ");
-            fprintf(fp, "%.*s %.*s",
-                a->type.len, data + a->type.off,
-                a->name.len, data + a->name.off);
-            a = a->next;
-        }
-        fprintf(fp, ");" NL);
-
-        f = f->next;
-    }
-
-    /* Global queries */
-    q = root->queries;
-    while (q)
-    {
-        fprintf(fp, "    ");
-        fprintf_func_ptr_decl(fp, root, NULL, q, data);
-        fprintf(fp, ";" NL);
-        q = q->next;
-    }
-    fprintf(fp, NL);
-
-    /* Grouped queries */
-    g = root->query_groups;
-    while (g)
-    {
-        fprintf(fp, "    struct {" NL);
-        q = g->queries;
-        while (q)
-        {
-            fprintf(fp, "        ");
-            fprintf_func_ptr_decl(fp, root, NULL, q, data);
-            fprintf(fp, ";" NL);
-            q = q->next;
-        }
-        fprintf(fp, "    } %.*s;" NL NL, g->name.len, data + g->name.off);
-        g = g->next;
-    }
-    fprintf(fp, "};" NL NL);
-
-    if (root->header_postamble.len)
-        fprintf(fp, "%.*s" NL, root->header_postamble.len, data + root->header_postamble.off);
-
-    fclose(fp);
-    return 0;
 }
 
 static void
@@ -1666,7 +1645,7 @@ fprintf_debug_wrapper(FILE* fp, const struct root* root, const struct query_grou
 
         fprintf(fp, "    void** dbg = user_data;" NL);
 
-        fprintf(fp, "    log_dbg(\"  ");
+        fprintf(fp, "    %.*s(\"  ", LOG_DBG(root->log_dbg, data));
         a = q->cb_args;
         while (a)
         {
@@ -1714,10 +1693,11 @@ fprintf_debug_wrapper(FILE* fp, const struct root* root, const struct query_grou
     fprintf(fp, NL "{" NL);
 
     fprintf(fp, "    int result;" NL);
+    fprintf(fp, "    char* sql;" NL);
     if (q->cb_args)
         fprintf(fp, "    void* dbg[2] = { (void*)on_row, user_data };" NL);
 
-    fprintf(fp, "    log_dbg(\"db_sqlite.");
+    fprintf(fp, "    %.*s(\"db_sqlite3.", LOG_DBG(root->log_dbg, data));
     if (g)
         fprintf(fp, "%.*s.", g->name.len, data + g->name.off);
     fprintf(fp, "%.*s", q->name.len, data + q->name.off);
@@ -1727,9 +1707,9 @@ fprintf_debug_wrapper(FILE* fp, const struct root* root, const struct query_grou
     {
         if (a != q->in_args) fprintf(fp, ", ");
         if (str_view_eq("const char*", a->type, data))
-            fprintf(fp, "%%s");
+            fprintf(fp, "\\\"%%s\\\"");
         else if (str_view_eq("struct str_view", a->type, data))
-            fprintf(fp, "%%.*s");
+            fprintf(fp, "\\\"%%.*s\\\"");
         else if (str_view_eq("int64_t", a->type, data))
             fprintf(fp, "%%\" PRIi64\"");
         else if (str_view_eq("uint64_t", a->type, data))
@@ -1761,7 +1741,7 @@ fprintf_debug_wrapper(FILE* fp, const struct root* root, const struct query_grou
     }
     fprintf(fp, ");" NL);
 
-    fprintf(fp, "    result = db_sqlite.");
+    fprintf(fp, "    result = db_sqlite3.");
     if (g)
         fprintf(fp, "%.*s.", g->name.len, data + g->name.off);
     fprintf(fp, "%.*s", q->name.len, data + q->name.off);
@@ -1780,15 +1760,111 @@ fprintf_debug_wrapper(FILE* fp, const struct root* root, const struct query_grou
     }
     fprintf(fp, ");" NL);
 
-    fprintf(fp, "    log_dbg(\"returned %%d\\n\", result);" NL);
+    fprintf(fp, "    sql = sqlite3_expanded_sql(ctx->");
+    fprintf_func_name(fp, g, q, data);
+    fprintf(fp, ");" NL);
+    fprintf(fp, "    %.*s(\"retval=%%d\\n%%s\\n\\n\", result, sql);" NL, LOG_DBG(root->log_dbg, data));
+    fprintf(fp, "    sqlite3_free(sql);" NL);
     fprintf(fp, "    return result;" NL);
     fprintf(fp, "}" NL NL);
 }
 
 static int
-gen_source(const struct root* root, const char* data, const char* file_name)
+gen_header(const struct root* root, const char* data, const char* file_name,
+    char custom_init, char custom_deinit, char custom_api)
 {
-    int i;
+    struct query* q;
+    struct query_group* g;
+    struct function* f;
+    struct arg* a;
+    FILE* fp = fopen(file_name, "wb");
+    if (fp == NULL)
+    {
+        fprintf(stderr, "Error: Failed to open file for writing \"%s\"\n", file_name);
+        return -1;
+    }
+
+    if (root->header_preamble.len)
+        fprintf(fp, "%.*s" NL, root->header_preamble.len, data + root->header_preamble.off);
+
+    fprintf(fp, "struct %.*s;" NL, PREFIX(root->prefix, data));
+    fprintf(fp, "struct %.*s_interface" NL "{" NL, PREFIX(root->prefix, data));
+
+    /* Open and close functions are hard-coded */
+    fprintf(fp, "    struct %.*s* (*open)(const char* uri);" NL,
+            PREFIX(root->prefix, data));
+    fprintf(fp, "    void (*close)(struct %.*s* ctx);" NL NL,
+            PREFIX(root->prefix, data));
+
+    /* Functions */
+    f = root->functions;
+    while (f)
+    {
+        fprintf(fp, "    int (*%.*s)(struct %.*s* ctx",
+                f->name.len, data + f->name.off,
+                PREFIX(root->prefix, data));
+        a = f->args;
+        while (a)
+        {
+            fprintf(fp, ", ");
+            fprintf(fp, "%.*s %.*s",
+                a->type.len, data + a->type.off,
+                a->name.len, data + a->name.off);
+            a = a->next;
+        }
+        fprintf(fp, ");" NL);
+
+        f = f->next;
+    }
+
+    /* Global queries */
+    q = root->queries;
+    while (q)
+    {
+        fprintf(fp, "    ");
+        fprintf_func_ptr_decl(fp, root, NULL, q, data);
+        fprintf(fp, ";" NL);
+        q = q->next;
+    }
+    fprintf(fp, NL);
+
+    /* Grouped queries */
+    g = root->query_groups;
+    while (g)
+    {
+        fprintf(fp, "    struct {" NL);
+        q = g->queries;
+        while (q)
+        {
+            fprintf(fp, "        ");
+            fprintf_func_ptr_decl(fp, root, NULL, q, data);
+            fprintf(fp, ";" NL);
+            q = q->next;
+        }
+        fprintf(fp, "    } %.*s;" NL NL, g->name.len, data + g->name.off);
+        g = g->next;
+    }
+    fprintf(fp, "};" NL NL);
+
+    /* API */
+    if (!custom_init)
+        fprintf(fp, "int %.*s_init(void);" NL, PREFIX(root->prefix, data));
+    if (!custom_deinit)
+        fprintf(fp, "void %.*s_deinit(void);" NL, PREFIX(root->prefix, data));
+    if (!custom_api)
+        fprintf(fp, "struct %.*s_interface* %.*s(const char* backend);" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
+
+    if (root->header_postamble.len)
+        fprintf(fp, "%.*s" NL, root->header_postamble.len, data + root->header_postamble.off);
+
+    fclose(fp);
+    return 0;
+}
+
+static int
+gen_source(const struct root* root, const char* data, const char* file_name,
+    char debug_layer, char custom_init, char custom_deinit, char custom_api)
+{
     struct query* q;
     struct query_group* g;
     struct function* f;
@@ -1803,12 +1879,16 @@ gen_source(const struct root* root, const char* data, const char* file_name)
     if (root->source_includes.len)
         fprintf(fp, "%.*s" NL, root->source_includes.len, data + root->source_includes.off);
 
+    fprintf(fp, "#include <stdlib.h>" NL);
+    fprintf(fp, "#include <string.h>" NL);
+    fprintf(fp, "#include <stdio.h>" NL);
+
     /* ------------------------------------------------------------------------
      * Context structure declaration
      * --------------------------------------------------------------------- */
 
     fprintf(fp, "struct %.*s" NL "{" NL,
-            root->prefix.len, data + root->prefix.off);
+            PREFIX(root->prefix, data));
     fprintf(fp, "    sqlite3* db;" NL);
     /* Global queries */
     q = root->queries;
@@ -1833,6 +1913,14 @@ gen_source(const struct root* root, const char* data, const char* file_name)
     }
     fprintf(fp, "};" NL);
 
+    /* Error function */
+    if (root->log_sql_err.len == 0)
+    {
+        fprintf(fp, "static void" NL "sqlgen_error(int error_code, const char* error_code_str, const char* error_msg)" NL "{" NL);
+        fprintf(fp, "    printf(\"SQL Error: %%s (%%d): %%s\\n\", error_code_str, error_code, error_msg);" NL);
+        fprintf(fp, "}" NL NL);
+    }
+
     if (root->source_preamble.len)
         fprintf(fp, "%.*s" NL, root->source_preamble.len, data + root->source_preamble.off);
 
@@ -1845,7 +1933,7 @@ gen_source(const struct root* root, const char* data, const char* file_name)
     {
         fprintf(fp, "static int" NL "%.*s(struct %.*s* ctx",
                 f->name.len, data + f->name.off,
-                root->prefix.len, data + root->prefix.off);
+                PREFIX(root->prefix, data));
         a = f->args;
         while (a)
         {
@@ -1917,27 +2005,27 @@ gen_source(const struct root* root, const char* data, const char* file_name)
      * --------------------------------------------------------------------- */
 
     fprintf(fp, "static struct %.*s*" NL "%.*s_open(const char* uri)" NL "{" NL,
-            root->prefix.len, data + root->prefix.off,
-            root->prefix.len, data + root->prefix.off);
+            PREFIX(root->prefix, data),
+            PREFIX(root->prefix, data));
     fprintf(fp, "    int ret;" NL);
     fprintf(fp, "    struct %.*s* ctx = %.*s(sizeof *ctx);" NL,
-            root->prefix.len, data + root->prefix.off,
-            root->malloc.len ? root->malloc.len : 6, root->malloc.len ? data + root->malloc.off : "malloc");
+            PREFIX(root->prefix, data),
+            MALLOC(root->malloc, data));
     fprintf(fp, "    if (ctx == NULL)" NL);
     fprintf(fp, "        return NULL;" NL);
     fprintf(fp, "    memset(ctx, 0, sizeof *ctx);" NL NL);
     fprintf(fp, "    ret = sqlite3_open_v2(uri, &ctx->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL);" NL);
     fprintf(fp, "    if (ret == SQLITE_OK)" NL);
     fprintf(fp, "        return ctx;" NL NL);
-    fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
+    fprintf(fp, "    %.*s(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
     fprintf(fp, "    %.*s(ctx);" NL,
-            root->free.len ? root->free.len : 6, root->free.len ? data + root->free.off : "free");
+            FREE(root->free, data));
     fprintf(fp, "    return NULL;" NL);
     fprintf(fp, "}" NL NL);
 
     fprintf(fp, "static void" NL "%.*s_close(struct %.*s* ctx)" NL "{" NL,
-            root->prefix.len, data + root->prefix.off,
-            root->prefix.len, data + root->prefix.off);
+            PREFIX(root->prefix, data),
+            PREFIX(root->prefix, data));
     /* Global queries */
     q = root->queries;
     while (q)
@@ -1968,10 +2056,10 @@ gen_source(const struct root* root, const char* data, const char* file_name)
      * Interface
      * --------------------------------------------------------------------- */
 
-    fprintf(fp, "static struct %.*s_interface db_sqlite = {" NL, root->prefix.len, data + root->prefix.off);
+    fprintf(fp, "static struct %.*s_interface db_sqlite3 = {" NL, PREFIX(root->prefix, data));
     fprintf(fp, "    %.*s_open," NL "    %.*s_close," NL,
-            root->prefix.len, data + root->prefix.off,
-            root->prefix.len, data + root->prefix.off);
+            PREFIX(root->prefix, data),
+            PREFIX(root->prefix, data));
     /* Functions */
     f = root->functions;
     while (f)
@@ -2008,71 +2096,103 @@ gen_source(const struct root* root, const char* data, const char* file_name)
      * Debug layer
      * --------------------------------------------------------------------- */
 
-    q = root->queries;
-    while (q)
+    if (debug_layer)
     {
-        fprintf_debug_wrapper(fp, root, NULL, q, data);
-        q = q->next;
-    }
-    g = root->query_groups;
-    while (g)
-    {
-        q = g->queries;
+        q = root->queries;
         while (q)
         {
-            fprintf_debug_wrapper(fp, root, g, q, data);
+            fprintf_debug_wrapper(fp, root, NULL, q, data);
             q = q->next;
         }
-        g = g->next;
-    }
+        g = root->query_groups;
+        while (g)
+        {
+            q = g->queries;
+            while (q)
+            {
+                fprintf_debug_wrapper(fp, root, g, q, data);
+                q = q->next;
+            }
+            g = g->next;
+        }
 
-    fprintf(fp, "static struct %.*s_interface dbg_db_sqlite = {" NL, root->prefix.len, data + root->prefix.off);
-    fprintf(fp, "    %.*s_open," NL "    %.*s_close," NL,
-            root->prefix.len, data + root->prefix.off,
-            root->prefix.len, data + root->prefix.off);
-    /* Functions */
-    f = root->functions;
-    while (f)
-    {
-        fprintf(fp, "    %.*s," NL, f->name.len, data + f->name.off);
-        f = f->next;
-    }
-    /* Global queries */
-    q = root->queries;
-    while (q)
-    {
-        fprintf(fp, "    dbg_%.*s," NL, q->name.len, data + q->name.off);
-        q = q->next;
-    }
-    /* Grouped queries */
-    g = root->query_groups;
-    while (g)
-    {
-        fprintf(fp, "    {" NL);
-        q = g->queries;
+        /* Open and close wrappers */
+        fprintf(fp, "static struct %.*s* dbg_%.*s_open(const char* uri)" NL "{" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
+        fprintf(fp, "    %.*s(\"Opening database \\\"%%s\\\"\\n\", uri);" NL, LOG_DBG(root->log_dbg, data));
+        fprintf(fp, "    return db_sqlite3.open(uri);" NL);
+        fprintf(fp, "}" NL NL);
+        fprintf(fp, "static void dbg_%.*s_close(struct %.*s* ctx)" NL "{" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
+        fprintf(fp, "    %.*s(\"Closing database\\n\");" NL, LOG_DBG(root->log_dbg, data));
+        fprintf(fp, "    db_sqlite3.close(ctx);" NL);
+        fprintf(fp, "}" NL NL);
+
+        fprintf(fp, "static struct %.*s_interface dbg_db_sqlite3 = {" NL, PREFIX(root->prefix, data));
+        fprintf(fp, "    dbg_%.*s_open," NL "    dbg_%.*s_close," NL,
+                PREFIX(root->prefix, data),
+                PREFIX(root->prefix, data));
+        /* Functions */
+        f = root->functions;
+        while (f)
+        {
+            fprintf(fp, "    %.*s," NL, f->name.len, data + f->name.off);
+            f = f->next;
+        }
+        /* Global queries */
+        q = root->queries;
         while (q)
         {
-            fprintf(fp, "        dbg_%.*s_%.*s," NL,
-                    g->name.len, data + g->name.off,
-                    q->name.len, data + q->name.off);
+            fprintf(fp, "    dbg_%.*s," NL, q->name.len, data + q->name.off);
             q = q->next;
         }
-        fprintf(fp, "    }," NL);
-        g = g->next;
+        /* Grouped queries */
+        g = root->query_groups;
+        while (g)
+        {
+            fprintf(fp, "    {" NL);
+            q = g->queries;
+            while (q)
+            {
+                fprintf(fp, "        dbg_%.*s_%.*s," NL,
+                        g->name.len, data + g->name.off,
+                        q->name.len, data + q->name.off);
+                q = q->next;
+            }
+            fprintf(fp, "    }," NL);
+            g = g->next;
+        }
+        fprintf(fp, "};" NL NL);
     }
-    fprintf(fp, "};" NL NL);
 
     /* ------------------------------------------------------------------------
      * API
      * --------------------------------------------------------------------- */
 
-    fprintf(fp, "struct %.*s_interface* %.*s(const char* type)" NL "{" NL,
-        root->prefix.len, data + root->prefix.off,
-        root->prefix.len, data + root->prefix.off);
-    fprintf(fp, "    if (strcmp(\"sqlite\", type) == 0)" NL);
-    fprintf(fp, "        return &dbg_db_sqlite;" NL);
-    fprintf(fp, "    return NULL;" NL);
-    fprintf(fp, "}" NL);
+    if (!custom_init)
+    {
+        fprintf(fp, "int" NL "%.*s_init(void)" NL "{" NL, PREFIX(root->prefix, data));
+        fprintf(fp, "    if (sqlite3_initialize() != SQLITE_OK)" NL);
+        fprintf(fp, "        return -1;" NL);
+        fprintf(fp, "    return 0;" NL);
+        fprintf(fp, "}" NL NL);
+    }
+
+    if (!custom_deinit)
+    {
+        fprintf(fp, "void" NL "%.*s_deinit(void)" NL "{" NL, PREFIX(root->prefix, data));
+        fprintf(fp, "    sqlite3_shutdown();" NL);
+        fprintf(fp, "}" NL NL);
+    }
+
+    if (!custom_api)
+    {
+        fprintf(fp, "struct %.*s_interface* %.*s(const char* backend)" NL "{" NL,
+            PREFIX(root->prefix, data),
+            PREFIX(root->prefix, data));
+        fprintf(fp, "    if (strcmp(\"sqlite3\", backend) == 0)" NL);
+        fprintf(fp, "        return &%sdb_sqlite3;" NL, debug_layer ? "dbg_" : "");
+        fprintf(fp, "    return NULL;" NL);
+        fprintf(fp, "}" NL);
+    }
 
     if (root->source_postamble.len)
         fprintf(fp, "%.*s" NL, root->source_postamble.len, data + root->source_postamble.off);
@@ -2095,14 +2215,15 @@ int main(int argc, char** argv)
 
     root_init(&root);
     parser_init(&parser, &mf);
-    if (parse(&parser, &root) != 0)
+    if (parse(&parser, &root, &cfg) != 0)
         return -1;
 
-    post_parse(&root, mf.address);
-
-    if (gen_header(&root, mf.address, cfg.output_header) < 0)
+    if (post_parse(&root, mf.address) != 0)
         return -1;
-    if (gen_source(&root, mf.address, cfg.output_source) < 0)
+
+    if (gen_header(&root, mf.address, cfg.output_header, cfg.custom_init, cfg.custom_deinit, cfg.custom_api) < 0)
+        return -1;
+    if (gen_source(&root, mf.address, cfg.output_source, cfg.debug_layer, cfg.custom_init, cfg.custom_deinit, cfg.custom_api) < 0)
         return -1;
 
     return 0;

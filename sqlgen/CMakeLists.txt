@@ -11,7 +11,8 @@ macro (sqlgen_target name)
     set (sqlgen_target_PARAM_OPTIONS)
     set (sqlgen_target_PARAM_ONE_VALUE_KEYWORDS
         INPUT
-        OUTPUT_HEADER)
+        HEADER
+        SOURCE)
     set (sqlgen_target_PARAM_MULTI_VALUE_KEYWORDS
         BACKENDS)
     cmake_parse_arguments (
@@ -22,20 +23,27 @@ macro (sqlgen_target name)
         ${ARGN})
 
     if (NOT "${sqlgen_target_arg_UNPARSED_ARGUMENTS}" STREQUAL "")
-        message (FATAL_ERROR "sqlgen_target (<name> INPUT <input file> OUTPUT_HEADER <output file> BACKENDS <sqlite [...]>)")
+        message (FATAL_ERROR "sqlgen_target (<name> BACKENDS <sqlite [...]> INPUT <input file> [HEADER file] [SOURCE file])")
     endif ()
 
     set (_input_file "${sqlgen_target_arg_INPUT}")
-    set (_output_header "${sqlgen_target_arg_OUTPUT_HEADER}")
+    set (_output_header "${sqlgen_target_arg_HEADER}")
+    set (_output_source "${sqlgen_target_arg_SOURCE}")
+    
+    get_filename_component (_input_name "${_input_file}" NAME)
+    if (NOT _output_header)
+        set (_output_header "${CMAKE_CURRENT_BINARY_DIR}/${_input_name}.h")
+    endif ()
+    if (NOT _output_source)
+        set (_output_source "${CMAKE_CURRENT_BINARY_DIR}/${_input_name}.c")
+    endif ()
+
     if (NOT IS_ABSOLUTE "${_input_file}")
         set (_input_file "${CMAKE_CURRENT_SOURCE_DIR}/${_input_file}")
     endif ()
     if (NOT IS_ABSOLUTE "${_output_header}")
         set (_output_header "${CMAKE_CURRENT_BINARY_DIR}/${_output_header}")
     endif ()
-
-    get_filename_component (_input_name "${_input_file}" NAME)
-    set (_output_source "${CMAKE_CURRENT_BINARY_DIR}/${_input_name}.c")
 
     string (REPLACE ";" "," _backends ${sqlgen_target_arg_BACKENDS})
 

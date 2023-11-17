@@ -33,8 +33,4 @@ log_err(const char* fmt, ...);
 VH_PUBLIC_API VH_PRINTF_FORMAT(1, 2) void
 log_note(const char* fmt, ...);
 
-/* Specialized logging functions ------------------------------------------- */
-VH_PUBLIC_API void
-log_sqlite_err(int error_code, const char* error_code_str, const char* error_msg);
-
 C_END

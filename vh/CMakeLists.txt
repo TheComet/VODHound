@@ -65,7 +65,7 @@ configure_file ("templates/config.h.in" "include/vh/config.h")
 sqlgen_target (vhdb
     INPUT "src/db.sqlgen"
     OUTPUT_HEADER "include/vh/db.h"
-    BACKENDS sqlite)
+    BACKENDS sqlite3)
 
 ###############################################################################
 # Library source files and settings

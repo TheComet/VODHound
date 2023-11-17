@@ -1,6 +1,11 @@
 %option prefix="db"
 %option malloc="mem_alloc"
 %option free="mem_free"
+%option log-dbg="log_dbg"
+%option log-sql-err="log_sql_err"
+%option custom-init
+%option custom-deinit
+%option debug-layer
 
 %header-preamble {
 #include "vh/config.h"
@@ -21,9 +26,6 @@ C_BEGIN
 }
 
 %header-postamble {
-VH_PUBLIC_API struct db_interface*
-db(const char* type);
-
 VH_PRIVATE_API int
 db_init(void);
 
@@ -507,6 +509,12 @@ C_END
 }
 
 %source-preamble {
+void
+log_sql_err(int error_code, const char* error_code_str, const char* error_msg)
+{
+    log_err("%s (%d): %s\n", error_code_str, error_code, error_msg);
+}
+
 static int
 exec_sql_wrapper(sqlite3* db, const char* sql)
 {
@@ -514,7 +522,7 @@ exec_sql_wrapper(sqlite3* db, const char* sql)
     int ret = sqlite3_exec(db, sql, NULL, NULL, &error_message);
     if (ret != SQLITE_OK)
     {
-        log_sqlite_err(ret, error_message, sqlite3_errmsg(db));
+        log_sql_err(ret, error_message, sqlite3_errmsg(db));
         sqlite3_free(error_message);
         return -1;
     }
@@ -543,7 +551,7 @@ next_step:
     ret = sqlite3_prepare_v2(db, sql, sql_len, &stmt, &sql_next);
     if (ret != SQLITE_OK)
     {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
+        log_sql_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
         goto prepare_failed;
     }
 retry_step:
@@ -561,7 +569,7 @@ retry_step:
             sqlite3_finalize(stmt);
             goto next_step;
         default:
-            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
+            log_sql_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
             goto exec_failed;
     }
 
@@ -584,14 +592,14 @@ check_version_and_migrate(sqlite3* db, int reinit_db)
     ret = sqlite3_prepare_v2(db, "PRAGMA user_version", -1, &stmt, NULL);
     if (ret != SQLITE_OK)
     {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
+        log_sql_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
         return -1;
     }
 
     ret = sqlite3_step(stmt);
     if (ret != SQLITE_ROW)
     {
-        log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
+        log_sql_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
         sqlite3_finalize(stmt);
         return -1;
     }
