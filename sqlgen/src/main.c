@@ -16,16 +16,6 @@
 #define NL "\n"
 #endif
 
-static int
-print_error(const char* fmt, ...)
-{
-    va_list va;
-    va_start(va, fmt);
-    vfprintf(stderr, fmt, va);
-    va_end(va);
-    return -1;
-}
-
 struct mfile
 {
     void* address;
@@ -281,12 +271,22 @@ str_view_eq(const char* s1, struct str_view s2, const char* data)
 struct parser
 {
     const char* data;
-    int off;
+    int tail;
+    int head;
     int len;
     union {
         struct str_view str;
     } value;
 };
+
+static void
+parser_init(struct parser* p, struct mfile* mf)
+{
+    p->data = (char*)mf->address;
+    p->head = 0;
+    p->tail = 0;
+    p->len = mf->size;
+}
 
 enum token
 {
@@ -310,159 +310,168 @@ enum token
     TOK_RETURN
 };
 
+static int
+print_error(struct parser* p, const char* fmt, ...)
+{
+    va_list va;
+    va_start(va, fmt);
+    vfprintf(stderr, fmt, va);
+    va_end(va);
+
+    fprintf(stderr, "%.*s\n", p->head - p->tail, p->data + p->tail);
+    return -1;
+}
+
 static enum token
 scan_comment_block(struct parser* p)
 {
-    while (p->off != p->len)
+    while (p->head != p->len)
     {
-        if (p->data[p->off] == '*' && p->data[p->off+1] == '/')
+        if (p->data[p->head] == '*' && p->data[p->head+1] == '/')
         {
-            p->off += 2;
+            p->head += 2;
             return TOK_END;
         }
 
-        p->off++;
+        p->head++;
     }
 
-    fprintf(stderr, "Error: Missing \"*/\" closing block comment\n");
-    return TOK_ERROR;
+    return print_error(p, "Error: Missing \"*/\" closing block comment\n");
 }
 
 static void
 scan_comment_line(struct parser* p)
 {
-    while (p->off != p->len)
+    while (p->head != p->len)
     {
-        if (p->data[p->off] == '\n')
+        if (p->data[p->head] == '\n')
         {
-            p->off++;
+            p->head++;
             break;
         }
-        p->off++;
+        p->head++;
     }
 }
 
 static enum token
 scan_next_token(struct parser* p)
 {
-    while (p->off != p->len)
+    p->tail = p->head;
+    while (p->head != p->len)
     {
-        if (p->data[p->off] == '/' && p->data[p->off+1] == '*')
+        if (p->data[p->head] == '/' && p->data[p->head+1] == '*')
         {
-            p->off += 2;
+            p->head += 2;
             if (scan_comment_block(p) < 0)
                 return TOK_ERROR;
             continue;
         }
-        if (p->data[p->off] == '/' && p->data[p->off+1] == '/')
+        if (p->data[p->head] == '/' && p->data[p->head+1] == '/')
         {
-            p->off += 2;
+            p->head += 2;
             scan_comment_line(p);
             continue;
         }
-        if (isspace(p->data[p->off]) || p->data[p->off] == '\r' || p->data[p->off] == '\n')
+        if (isspace(p->data[p->head]) || p->data[p->head] == '\r' || p->data[p->head] == '\n')
         {
-            p->off++;
+            p->head++;
             continue;
         }
         /* ".*?" */
-        if (p->data[p->off] == '"')
+        if (p->data[p->head] == '"')
         {
-            p->value.str.off = ++p->off;
-            for (; p->off != p->len; ++p->off)
-                if (p->data[p->off] == '"')
+            p->value.str.off = ++p->head;
+            for (; p->head != p->len; ++p->head)
+                if (p->data[p->head] == '"')
                     break;
-            if (p->off == p->len)
-            {
-                fprintf(stderr, "Error: Missing closing quote on string\n");
-                return TOK_ERROR;
-            }
-            p->value.str.len = p->off++ - p->value.str.off;
+            if (p->head == p->len)
+                return print_error(p, "Error: Missing closing quote on string\n");
+            p->value.str.len = p->head++ - p->value.str.off;
             return TOK_STRING;
         }
-        if (memcmp(p->data + p->off, "%option", sizeof("%option") - 1) == 0)
+        if (memcmp(p->data + p->head, "%option", sizeof("%option") - 1) == 0)
         {
-            p->off += sizeof("%option") - 1;
+            p->head += sizeof("%option") - 1;
             return TOK_OPTION;
         }
-        if (memcmp(p->data + p->off, "%header-preamble", sizeof("%header-preamble") - 1) == 0)
+        if (memcmp(p->data + p->head, "%header-preamble", sizeof("%header-preamble") - 1) == 0)
         {
-            p->off += sizeof("%header-preamble") - 1;
+            p->head += sizeof("%header-preamble") - 1;
             return TOK_HEADER_PREAMBLE;
         }
-        if (memcmp(p->data + p->off, "%header-postamble", sizeof("%header-postamble") - 1) == 0)
+        if (memcmp(p->data + p->head, "%header-postamble", sizeof("%header-postamble") - 1) == 0)
         {
-            p->off += sizeof("%header-postamble") - 1;
+            p->head += sizeof("%header-postamble") - 1;
             return TOK_HEADER_POSTAMBLE;
         }
-        if (memcmp(p->data + p->off, "%source-includes", sizeof("%source-includes") - 1) == 0)
+        if (memcmp(p->data + p->head, "%source-includes", sizeof("%source-includes") - 1) == 0)
         {
-            p->off += sizeof("%source-includes") - 1;
+            p->head += sizeof("%source-includes") - 1;
             return TOK_SOURCE_INCLUDES;
         }
-        if (memcmp(p->data + p->off, "%source-preamble", sizeof("%source-preamble") - 1) == 0)
+        if (memcmp(p->data + p->head, "%source-preamble", sizeof("%source-preamble") - 1) == 0)
         {
-            p->off += sizeof("%source-preamble") - 1;
+            p->head += sizeof("%source-preamble") - 1;
             return TOK_SOURCE_PREAMBLE;
         }
-        if (memcmp(p->data + p->off, "%source-postamble", sizeof("%source-postamble") - 1) == 0)
+        if (memcmp(p->data + p->head, "%source-postamble", sizeof("%source-postamble") - 1) == 0)
         {
-            p->off += sizeof("%source-postamble") - 1;
+            p->head += sizeof("%source-postamble") - 1;
             return TOK_SOURCE_POSTAMBLE;
         }
-        if (memcmp(p->data + p->off, "%query", sizeof("%query") - 1) == 0)
+        if (memcmp(p->data + p->head, "%query", sizeof("%query") - 1) == 0)
         {
-            p->off += sizeof("%query") - 1;
+            p->head += sizeof("%query") - 1;
             return TOK_QUERY;
         }
-        if (memcmp(p->data + p->off, "%private-query", sizeof("%private-query") - 1) == 0)
+        if (memcmp(p->data + p->head, "%private-query", sizeof("%private-query") - 1) == 0)
         {
-            p->off += sizeof("%private-query") - 1;
+            p->head += sizeof("%private-query") - 1;
             return TOK_PRIVATE_QUERY;
         }
-        if (memcmp(p->data + p->off, "%function", sizeof("%function") - 1) == 0)
+        if (memcmp(p->data + p->head, "%function", sizeof("%function") - 1) == 0)
         {
-            p->off += sizeof("%function") - 1;
+            p->head += sizeof("%function") - 1;
             return TOK_FUNCTION;
         }
-        if (memcmp(p->data + p->off, "type", sizeof("type") - 1) == 0)
+        if (memcmp(p->data + p->head, "type", sizeof("type") - 1) == 0)
         {
-            p->off += sizeof("type") - 1;
+            p->head += sizeof("type") - 1;
             return TOK_TYPE;
         }
-        if (memcmp(p->data + p->off, "table", sizeof("table") - 1) == 0)
+        if (memcmp(p->data + p->head, "table", sizeof("table") - 1) == 0)
         {
-            p->off += sizeof("table") - 1;
+            p->head += sizeof("table") - 1;
             return TOK_TABLE;
         }
-        if (memcmp(p->data + p->off, "stmt", sizeof("stmt") - 1) == 0)
+        if (memcmp(p->data + p->head, "stmt", sizeof("stmt") - 1) == 0)
         {
-            p->off += sizeof("stmt") - 1;
+            p->head += sizeof("stmt") - 1;
             return TOK_STMT;
         }
-        if (memcmp(p->data + p->off, "callback", sizeof("callback") - 1) == 0)
+        if (memcmp(p->data + p->head, "callback", sizeof("callback") - 1) == 0)
         {
-            p->off += sizeof("callback") - 1;
+            p->head += sizeof("callback") - 1;
             return TOK_CALLBACK;
         }
-        if (memcmp(p->data + p->off, "return", sizeof("return") - 1) == 0)
+        if (memcmp(p->data + p->head, "return", sizeof("return") - 1) == 0)
         {
-            p->off += sizeof("return") - 1;
+            p->head += sizeof("return") - 1;
             return TOK_RETURN;
         }
-        if (isalpha(p->data[p->off]))
+        if (isalpha(p->data[p->head]))
         {
-            p->value.str.off = p->off++;
-            while (p->off != p->len && (isalnum(p->data[p->off]) ||
-                p->data[p->off] == '-' || p->data[p->off] == '_' || p->data[p->off] == '*'))
+            p->value.str.off = p->head++;
+            while (p->head != p->len && (isalnum(p->data[p->head]) ||
+                p->data[p->head] == '-' || p->data[p->head] == '_' || p->data[p->head] == '*'))
             {
-                p->off++;
+                p->head++;
             }
-            p->value.str.len = p->off - p->value.str.off;
+            p->value.str.len = p->head - p->value.str.off;
             return TOK_LABEL;
         }
 
-        return p->data[p->off++];
+        return p->data[p->head++];
     }
 
     return TOK_END;
@@ -574,34 +583,30 @@ scan_block(struct parser* p, int expect_opening_brace)
     int depth = 1;
     if (expect_opening_brace)
         if (scan_next_token(p) != '{')
-            return print_error("Error: Expecting '{'\n");
+            return print_error(p, "Error: Expecting '{'\n");
 
     /*for (; p->off != p->len; p->off++)
         if (!isspace(p->data[p->off]) && p->data[p->off] != '\r' && p->data[p->off] != '\n')
             break;*/
-    if (p->off == p->len)
-    {
-        fprintf(stderr, "Error: Missing closing \"}\"\n");
-        return TOK_ERROR;
-    }
+    if (p->head == p->len)
+        return print_error(p, "Error: Missing closing \"}\"\n");
 
-    p->value.str.off = p->off;
-    while (p->off != p->len)
+    p->value.str.off = p->head;
+    while (p->head != p->len)
     {
-        if (p->data[p->off] == '{')
+        if (p->data[p->head] == '{')
             depth++;
-        else if (p->data[p->off] == '}')
+        else if (p->data[p->head] == '}')
             if (--depth == 0)
             {
-                p->value.str.len = p->off++ - p->value.str.off;
+                p->value.str.len = p->head++ - p->value.str.off;
                 return TOK_STRING;
             }
 
-        p->off++;
+        p->head++;
     }
 
-    fprintf(stderr, "Error: Missing closing \"}\"\n");
-    return TOK_ERROR;
+    return print_error(p, "Error: Missing closing \"}\"\n");
 }
 
 static int
@@ -612,13 +617,13 @@ parse(struct parser* p, struct root* root)
             case TOK_OPTION: {
                 struct str_view option;
                 if (scan_next_token(p) != TOK_LABEL)
-                    return print_error("Error: Expected option name after %%option\n");
+                    return print_error(p, "Error: Expected option name after %%option\n");
                 option = p->value.str;
 
                 if (scan_next_token(p) != '=')
-                    return print_error("Error: Expecting '='\n");
+                    return print_error(p, "Error: Expecting '='\n");
                 if (scan_next_token(p) != TOK_STRING)
-                    return print_error("Error: Expected string for %%option\n");
+                    return print_error(p, "Error: Expected string for %%option\n");
 
                 if (str_view_eq("prefix", option, p->data))
                     root->prefix = p->value.str;
@@ -627,7 +632,7 @@ parse(struct parser* p, struct root* root)
                 else if (str_view_eq("free", option, p->data))
                     root->free = p->value.str;
                 else
-                    return print_error("Unknown option \"%.*s\"\n", option.len, p->data + option.off);
+                    return print_error(p, "Unknown option \"%.*s\"\n", option.len, p->data + option.off);
             } break;
 
             case TOK_HEADER_PREAMBLE: {
@@ -668,13 +673,13 @@ parse(struct parser* p, struct root* root)
 
                 /* Parse "group,name" or "name"*/
                 if (scan_next_token(p) != TOK_LABEL)
-                    return print_error("Error: Expected label or group for %%query\n");
+                    return print_error(p, "Error: Expected label or group for %%query\n");
                 query->name = p->value.str;
                 switch (scan_next_token(p)) {
                     case '(': break;
                     case ',':
                         if (scan_next_token(p) != TOK_LABEL)
-                            return print_error("Error: Expected label for %%query\n");
+                            return print_error(p, "Error: Expected label for %%query\n");
                         group_name = query->name;
                         query->name = p->value.str;
 
@@ -682,7 +687,7 @@ parse(struct parser* p, struct root* root)
                             break;
                         /* fallthrough */
                     default:
-                        return print_error("Error: Expected \"(\"\n");
+                        return print_error(p, "Error: Expected \"(\"\n");
                 }
 
                 /* Parse parameter list */
@@ -693,9 +698,9 @@ parse(struct parser* p, struct root* root)
                     case ')': break;
                     case ',':
                         if (query->in_args == NULL)
-                            return print_error("Error: Expected parameter after \"(\"\n");
+                            return print_error(p, "Error: Expected parameter after \"(\"\n");
                         if (scan_next_token(p) != TOK_LABEL)
-                            return print_error("Error: Expected parameter after \",\"\n");
+                            return print_error(p, "Error: Expected parameter after \",\"\n");
                         /* fallthrough */
                     case TOK_LABEL: {
                         struct arg* arg = arg_alloc();
@@ -715,19 +720,19 @@ parse(struct parser* p, struct root* root)
                         if (str_view_eq("struct", arg->type, p->data))
                         {
                             if (scan_next_token(p) != TOK_LABEL)
-                                return print_error("Error: Missing struct name after \"struct\"\n");
+                                return print_error(p, "Error: Missing struct name after \"struct\"\n");
                             arg->type.len = p->value.str.off + p->value.str.len - arg->type.off;
                         }
                         /* Special case, const -> expect another label */
                         if (str_view_eq("const", arg->type, p->data))
                         {
                             if (scan_next_token(p) != TOK_LABEL)
-                                return print_error("Error: const qualifier without type\n");
+                                return print_error(p, "Error: const qualifier without type\n");
                             arg->type.len = p->value.str.off + p->value.str.len - arg->type.off;
                         }
 
                         if (scan_next_token(p) != TOK_LABEL)
-                            return print_error("Error: Missing parameter name\n");
+                            return print_error(p, "Error: Missing parameter name\n");
                         arg->name = p->value.str;
 
                         /* Param can have a "null" qualifier on the end */
@@ -736,18 +741,18 @@ parse(struct parser* p, struct root* root)
                             if (str_view_eq("null", p->value.str, p->data))
                                 arg->nullable = 1;
                             else
-                                return print_error("Error: Unknown parameter qualifier \"%.*s\"\n",
+                                return print_error(p, "Error: Unknown parameter qualifier \"%.*s\"\n",
                                     p->value.str.len, p->data + p->value.str.off);
                             goto expect_next_param;
                         }
                     } goto switch_next_param;
 
                     default:
-                        return print_error("Error: Expected parameter list\n");
+                        return print_error(p, "Error: Expected parameter list\n");
                 }
 
                 if (scan_next_token(p) != '{')
-                    return print_error("Error: Expected \"{\"\n");
+                    return print_error(p, "Error: Expected \"{\"\n");
 
             expect_next_stmt: tok = scan_next_token(p);
             switch_next_stmt:
@@ -755,7 +760,7 @@ parse(struct parser* p, struct root* root)
                     case TOK_TYPE: {
                         struct str_view t;
                         if (scan_next_token(p) != TOK_LABEL)
-                            return print_error("Error: Expected query type after \"type\"\n");
+                            return print_error(p, "Error: Expected query type after \"type\"\n");
                         t = p->value.str;
                         if (str_view_eq("insert", t, p->data))
                             query->type = QUERY_INSERT;
@@ -770,7 +775,7 @@ parse(struct parser* p, struct root* root)
                         else if (str_view_eq("select-all", t, p->data))
                             query->type = QUERY_SELECT_ALL;
                         else
-                            return print_error("Error: Unknown query type \"%.*s\"\n", t.len, p->data + t.off);
+                            return print_error(p, "Error: Unknown query type \"%.*s\"\n", t.len, p->data + t.off);
 
                         if (query->type == QUERY_UPDATE)
                         {
@@ -780,7 +785,7 @@ parse(struct parser* p, struct root* root)
                                 struct str_view find;
                                 tok = scan_next_token(p);
                                 if (tok != TOK_LABEL)
-                                    return print_error("Error: Expected column name after \"update\"\n");
+                                    return print_error(p, "Error: Expected column name after \"update\"\n");
                                 find = p->value.str;
 
                                 a = query->in_args;
@@ -794,7 +799,7 @@ parse(struct parser* p, struct root* root)
                                     a = a->next;
                                 }
                                 if (a == NULL)
-                                    return print_error("Error: \"update %.*s\" specified, but no argument with this name exists in the function's parameter list\n",
+                                    return print_error(p, "Error: \"update %.*s\" specified, but no argument with this name exists in the function's parameter list\n",
                                             find.len, p->data + find.off);
                             } while ((tok = scan_next_token(p)) == ',');
                             goto switch_next_stmt;
@@ -803,7 +808,7 @@ parse(struct parser* p, struct root* root)
 
                     case TOK_TABLE: {
                         if (scan_next_token(p) != TOK_LABEL)
-                            return print_error("Error: Expected query type after \"type\"\n");
+                            return print_error(p, "Error: Expected query type after \"type\"\n");
                         query->table_name = p->value.str;
                     } goto expect_next_stmt;
 
@@ -818,13 +823,13 @@ parse(struct parser* p, struct root* root)
                                 query->stmt = p->value.str;
                                 break;
                             default:
-                                return print_error("Error: Expected query statement after \"stmt\"\n");
+                                return print_error(p, "Error: Expected query statement after \"stmt\"\n");
                         }
                     } goto expect_next_stmt;
 
                     case TOK_RETURN: {
                         if (scan_next_token(p) != TOK_LABEL)
-                            return print_error("Error: Expected return value after \"return\"\n");
+                            return print_error(p, "Error: Expected return value after \"return\"\n");
                         query->return_name = p->value.str;
                     } goto expect_next_stmt;
 
@@ -835,9 +840,9 @@ parse(struct parser* p, struct root* root)
                         {
                             case ',':
                                 if (query->cb_args == NULL)
-                                    return print_error("Error: Expected parameter after \"select\"\n");
+                                    return print_error(p, "Error: Expected parameter after \"select\"\n");
                                 if (scan_next_token(p) != TOK_LABEL)
-                                    return print_error("Error: Expected parameter after \",\"\n");
+                                    return print_error(p, "Error: Expected parameter after \",\"\n");
                                 /* fallthrough */
                             case TOK_LABEL: {
                                 struct arg* arg = arg_alloc();
@@ -857,19 +862,19 @@ parse(struct parser* p, struct root* root)
                                 if (str_view_eq("struct", arg->type, p->data))
                                 {
                                     if (scan_next_token(p) != TOK_LABEL)
-                                        return print_error("Error: Missing struct name after \"struct\"\n");
+                                        return print_error(p, "Error: Missing struct name after \"struct\"\n");
                                     arg->type.len = p->value.str.off + p->value.str.len - arg->type.off;
                                 }
                                 /* Special case, const -> expect another label */
                                 if (str_view_eq("const", arg->type, p->data))
                                 {
                                     if (scan_next_token(p) != TOK_LABEL)
-                                        return print_error("Error: const qualifier without type\n");
+                                        return print_error(p, "Error: const qualifier without type\n");
                                     arg->type.len = p->value.str.off + p->value.str.len - arg->type.off;
                                 }
 
                                 if (scan_next_token(p) != TOK_LABEL)
-                                    return print_error("Error: Missing parameter name\n");
+                                    return print_error(p, "Error: Missing parameter name\n");
                                 arg->name = p->value.str;
 
                                 /* Param can have a "null" qualifier on the end */
@@ -878,7 +883,7 @@ parse(struct parser* p, struct root* root)
                                     if (str_view_eq("null", p->value.str, p->data))
                                         arg->nullable = 1;
                                     else
-                                        return print_error("Error: Unknown parameter qualifier \"%.*s\"\n",
+                                        return print_error(p, "Error: Unknown parameter qualifier \"%.*s\"\n",
                                             p->value.str.len, p->data + p->value.str.off);
                                     goto expect_next_cb_param;
                                 }
@@ -890,7 +895,7 @@ parse(struct parser* p, struct root* root)
 
                     case '}': break;
                     default:
-                        return print_error("Error: Expecting \"type\", \"table\", \"stmt\" or \"return\"\n");
+                        return print_error(p, "Error: Expecting \"type\", \"table\", \"stmt\" or \"return\"\n");
                 }
 
                 if (group_name.len)
@@ -949,10 +954,10 @@ parse(struct parser* p, struct root* root)
 
                 /* Parse function name */
                 if (scan_next_token(p) != TOK_LABEL)
-                    return print_error("Error: Expected label or group for %%query\n");
+                    return print_error(p, "Error: Expected label or group for %%query\n");
                 func->name = p->value.str;
                 if (scan_next_token(p) != '(')
-                    return print_error("Error: Expected \"(\"\n");
+                    return print_error(p, "Error: Expected \"(\"\n");
 
                 /* Parse parameter list */
             expect_next_param_func:
@@ -961,9 +966,9 @@ parse(struct parser* p, struct root* root)
                     case ')': break;
                     case ',':
                         if (func->args == NULL)
-                            return print_error("Error: Expected parameter after \"(\"\n");
+                            return print_error(p, "Error: Expected parameter after \"(\"\n");
                         if (scan_next_token(p) != TOK_LABEL)
-                            return print_error("Error: Expected parameter after \",\"\n");
+                            return print_error(p, "Error: Expected parameter after \",\"\n");
                         /* fallthrough */
                     case TOK_LABEL: {
                         struct arg* arg;
@@ -974,12 +979,12 @@ parse(struct parser* p, struct root* root)
                         if (str_view_eq("struct", arg->type, p->data))
                         {
                             if (scan_next_token(p) != TOK_LABEL)
-                                return print_error("Error: struct without name\n");
+                                return print_error(p, "Error: struct without name\n");
                             arg->type.len = p->value.str.off + p->value.str.len - arg->type.off;
                         }
 
                         if (scan_next_token(p) != TOK_LABEL)
-                            return print_error("Error: struct without name\n");
+                            return print_error(p, "Error: struct without name\n");
                         arg->name = p->value.str;
 
                         if (func->args == NULL)
@@ -996,7 +1001,7 @@ parse(struct parser* p, struct root* root)
                     } break;
 
                     default:
-                        return print_error("Error: Expected parameter list\n");
+                        return print_error(p, "Error: Expected parameter list\n");
                 }
 
                 if (scan_block(p, 1) != TOK_STRING)
@@ -1565,7 +1570,10 @@ gen_header(const struct root* root, const char* data, const char* file_name)
     struct arg* a;
     FILE* fp = fopen(file_name, "wb");
     if (fp == NULL)
-        return print_error("Error: Failed to open file for writing \"%s\"\n", file_name);
+    {
+        fprintf(stderr, "Error: Failed to open file for writing \"%s\"\n", file_name);
+        return -1;
+    }
 
     if (root->header_preamble.len)
         fprintf(fp, "%.*s" NL, root->header_preamble.len, data + root->header_preamble.off);
@@ -1636,6 +1644,148 @@ gen_header(const struct root* root, const char* data, const char* file_name)
     return 0;
 }
 
+static void
+fprintf_debug_wrapper(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
+{
+    struct arg* a;
+    if (q->cb_args)
+    {
+        fprintf(fp, "static int" NL "dbg_");
+        fprintf_func_name(fp, g, q, data);
+        fprintf(fp, "_on_row(");
+
+        a = q->cb_args;
+        while (a)
+        {
+            if (a != q->cb_args) fprintf(fp, ", ");
+            fprintf(fp, "%.*s %.*s",
+                a->type.len, data + a->type.off,
+                a->name.len, data + a->name.off);
+            a = a->next;
+        }
+        fprintf(fp, ", void* user_data)" NL "{" NL);
+
+        fprintf(fp, "    void** dbg = user_data;" NL);
+
+        fprintf(fp, "    log_dbg(\"  ");
+        a = q->cb_args;
+        while (a)
+        {
+            if (a != q->cb_args) fprintf(fp, " | ");
+            if (str_view_eq("const char*", a->type, data))
+                fprintf(fp, "\\\"%%s\\\"");
+            else
+                fprintf(fp, "%%d");
+            a = a->next;
+        }
+        fprintf(fp, "\\n\", ");
+        a = q->cb_args;
+        while (a)
+        {
+            if (a != q->cb_args) fprintf(fp, ", ");
+            if (str_view_eq("const char*", a->type, data)) {}
+            else
+                fprintf(fp, "(int)");
+            fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+            a = a->next;
+        }
+        fprintf(fp, ");" NL);
+
+        fprintf(fp, "    return (*(int(*)(");
+        a = q->cb_args;
+        while (a)
+        {
+            if (a != q->cb_args) fprintf(fp, ", ");
+            fprintf(fp, "%.*s", a->type.len, data + a->type.off);
+            a = a->next;
+        }
+        fprintf(fp, ",void*))dbg[0])(");
+        a = q->cb_args;
+        while (a)
+        {
+            if (a != q->cb_args) fprintf(fp, ", ");
+            fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+            a = a->next;
+        }
+        fprintf(fp, ", dbg[1]);" NL);
+        fprintf(fp, "}" NL);
+    }
+
+    fprintf_dbg_func_decl(fp, root, g, q, data);
+    fprintf(fp, NL "{" NL);
+
+    fprintf(fp, "    int result;" NL);
+    if (q->cb_args)
+        fprintf(fp, "    void* dbg[2] = { (void*)on_row, user_data };" NL);
+
+    fprintf(fp, "    log_dbg(\"db_sqlite.");
+    if (g)
+        fprintf(fp, "%.*s.", g->name.len, data + g->name.off);
+    fprintf(fp, "%.*s", q->name.len, data + q->name.off);
+    fprintf(fp, "(");
+    a = q->in_args;
+    while (a)
+    {
+        if (a != q->in_args) fprintf(fp, ", ");
+        if (str_view_eq("const char*", a->type, data))
+            fprintf(fp, "%%s");
+        else if (str_view_eq("struct str_view", a->type, data))
+            fprintf(fp, "%%.*s");
+        else if (str_view_eq("int64_t", a->type, data))
+            fprintf(fp, "%%\" PRIi64\"");
+        else if (str_view_eq("uint64_t", a->type, data))
+            fprintf(fp, "%%\" PRIu64\"");
+        else
+            fprintf(fp, "%%d");
+        a = a->next;
+    }
+    fprintf(fp, ")\\n\"");
+    if (q->in_args)
+        fprintf(fp, ", ");
+    a = q->in_args;
+    while (a)
+    {
+        if (a != q->in_args) fprintf(fp, ", ");
+        if (str_view_eq("const char*", a->type, data))
+            fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+        else if (str_view_eq("struct str_view", a->type, data))
+            fprintf(fp, "%.*s.len, %.*s.data",
+                a->name.len, data + a->name.off,
+                a->name.len, data + a->name.off);
+        else if (str_view_eq("int64_t", a->type, data))
+            fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+        else if (str_view_eq("uint64_t", a->type, data))
+            fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+        else
+            fprintf(fp, "(int)%.*s", a->name.len, data + a->name.off);
+        a = a->next;
+    }
+    fprintf(fp, ");" NL);
+
+    fprintf(fp, "    result = db_sqlite.");
+    if (g)
+        fprintf(fp, "%.*s.", g->name.len, data + g->name.off);
+    fprintf(fp, "%.*s", q->name.len, data + q->name.off);
+    fprintf(fp, "(ctx");
+    a = q->in_args;
+    while (a)
+    {
+        fprintf(fp, ", %.*s", a->name.len, data + a->name.off);
+        a = a->next;
+    }
+    if (q->cb_args)
+    {
+        fprintf(fp, ", dbg_");
+        fprintf_func_name(fp, g, q, data);
+        fprintf(fp, "_on_row, dbg");
+    }
+    fprintf(fp, ");" NL);
+
+    fprintf(fp, "    log_dbg(\"returned %%d\\n\", result);" NL);
+    fprintf(fp, "    return result;" NL);
+    fprintf(fp, "}" NL NL);
+}
+
 static int
 gen_source(const struct root* root, const char* data, const char* file_name)
 {
@@ -1646,7 +1796,10 @@ gen_source(const struct root* root, const char* data, const char* file_name)
     struct arg* a;
     FILE* fp = fopen(file_name, "wb");
     if (fp == NULL)
-        return print_error("Error: Failed to open file for writing \"%s\"" NL, file_name);
+    {
+        fprintf(stderr, "Error: Failed to open file for writing \"%s\"" NL, file_name);
+        return -1;
+    }
 
     if (root->source_includes.len)
         fprintf(fp, "%.*s" NL, root->source_includes.len, data + root->source_includes.off);
@@ -1853,174 +2006,24 @@ gen_source(const struct root* root, const char* data, const char* file_name)
     fprintf(fp, "};" NL NL);
 
     /* ------------------------------------------------------------------------
-     * Debug wrapper
+     * Debug layer
      * --------------------------------------------------------------------- */
 
-    /*
-     * static int dbg_test_on_row(const char* name, void* user_data)
-     * {
-     *     void** dbg_user_data = user_data;
-     *     int result = (*(int(*)(const char*,void*))dbg_user_data[0])(name, dbg_user_data[1]);
-     *     return result;
-     * }
-     *
-     * static int
-     * dbg_test(struct newdb* ctx, int id, int (*on_row)(const char* name, void* user_data), void* user_data)
-     * {
-     *     void* dbg_user_data[2] = { on_row, user_data };
-     *     int result = db_sqlite.test(ctx, id, dbg_test_on_row, dbg_user_data);
-     *     return result;
-     * }
-     *
-     * static struct newdb_interface db_dbg_sqlite = {
-     *     newdb_open,
-     *     newdb_close,
-     *     dbg_test
-     * };
-     */
     q = root->queries;
     while (q)
     {
-        if (q->cb_args)
-        {
-            fprintf(fp, "static int" NL "dbg_");
-            fprintf_func_name(fp, NULL, q, data);
-            fprintf(fp, "_on_row(");
-
-            a = q->cb_args;
-            while (a)
-            {
-                if (a != q->cb_args) fprintf(fp, ", ");
-                fprintf(fp, "%.*s %.*s",
-                    a->type.len, data + a->type.off,
-                    a->name.len, data + a->name.off);
-                a = a->next;
-            }
-            fprintf(fp, ", void* user_data)" NL "{" NL);
-
-            fprintf(fp, "    int result;" NL);
-            fprintf(fp, "    void** dbg = user_data;" NL);
-
-            fprintf(fp, "    log_dbg(\"  ");
-            a = q->cb_args;
-            while (a)
-            {
-                if (a != q->cb_args) fprintf(fp, " | ");
-                if (str_view_eq("const char*", a->type, data))
-                    fprintf(fp, "%%s");
-                else
-                    fprintf(fp, "%%d");
-                a = a->next;
-            }
-            fprintf(fp, "\\n\", ");
-            a = q->cb_args;
-            while (a)
-            {
-                if (a != q->cb_args) fprintf(fp, ", ");
-                if (str_view_eq("const char*", a->type, data)) {}
-                else
-                    fprintf(fp, "(int)");
-                fprintf(fp, "%.*s", a->name.len, data + a->name.off);
-                a = a->next;
-            }
-            fprintf(fp, ");" NL);
-
-            fprintf(fp, "    result = (*(int(*)(");
-            a = q->cb_args;
-            while (a)
-            {
-                if (a != q->cb_args) fprintf(fp, ", ");
-                fprintf(fp, "%.*s", a->type.len, data + a->type.off);
-                a = a->next;
-            }
-            fprintf(fp, ",void*))dbg[0])(");
-            a = q->cb_args;
-            while (a)
-            {
-                if (a != q->cb_args) fprintf(fp, ", ");
-                fprintf(fp, "%.*s", a->name.len, data + a->name.off);
-                a = a->next;
-            }
-            fprintf(fp, ", dbg[1]);" NL);
-
-            fprintf(fp, "    return result;" NL);
-
-            fprintf(fp, "}" NL);
-        }
-
-        fprintf_dbg_func_decl(fp, root, g, q, data);
-        fprintf(fp, NL "{" NL);
-
-        fprintf(fp, "    int result;" NL);
-        if (q->cb_args)
-            fprintf(fp, "    void* dbg[2] = { on_row, user_data };" NL);
-
-        fprintf(fp, "    log_dbg(\"%.*s(", q->name.len, data + q->name.off);
-        a = q->cb_args;
-        while (a)
-        {
-            if (a != q->cb_args) fprintf(fp, ", ");
-            if (str_view_eq("const char*", a->type, data))
-                fprintf(fp, "%%s");
-            else if (str_view_eq("struct str_view", a->type, data))
-                fprintf(fp, "%%.*s");
-            else
-                fprintf(fp, "%%d");
-            a = a->next;
-        }
-        fprintf(fp, "\\n\", ");
-        a = q->cb_args;
-        while (a)
-        {
-            if (a != q->cb_args) fprintf(fp, ", ");
-            if (str_view_eq("const char*", a->type, data))
-                fprintf(fp, "%.*s", a->name.len, data + a->name.off);
-            else if (str_view_eq("struct str_view", a->type, data))
-                fprintf(fp, "%.*s.len, %.*s.data",
-                    a->name.len, data + a->name.off,
-                    a->name.len, data + a->name.off);
-            else
-                fprintf(fp, "(int)%.*s", a->name.len, data + a->name.off);
-            a = a->next;
-        }
-        fprintf(fp, ");" NL);
-
-        fprintf(fp, "    result = db_sqlite.");
-        fprintf_func_name(fp, NULL, q, data);
-        fprintf(fp, "(ctx");
-        a = q->in_args;
-        while (a)
-        {
-            fprintf(fp, ", %.*s", a->name.len, data + a->name.off);
-            a = a->next;
-        }
-
-        if (q->cb_args)
-        {
-            fprintf(fp, ", dbg_");
-            fprintf_func_name(fp, NULL, q, data);
-            fprintf(fp, "_on_row, dbg");
-        }
-
-        fprintf(fp, ");" NL);
-
-        fprintf(fp, "    return result;" NL);
-
-        fprintf(fp, "}" NL);
+        fprintf_debug_wrapper(fp, root, NULL, q, data);
         q = q->next;
     }
     g = root->query_groups;
     while (g)
     {
-        fprintf(fp, "    {" NL);
         q = g->queries;
         while (q)
         {
-            fprintf_dbg_func_decl(fp, root, g, q, data);
-            fprintf(fp, "{}" NL);
+            fprintf_debug_wrapper(fp, root, g, q, data);
             q = q->next;
         }
-        fprintf(fp, "    }," NL);
         g = g->next;
     }
 
@@ -2050,7 +2053,7 @@ gen_source(const struct root* root, const char* data, const char* file_name)
         q = g->queries;
         while (q)
         {
-            fprintf(fp, "        %.*s_%.*s," NL,
+            fprintf(fp, "        dbg_%.*s_%.*s," NL,
                     g->name.len, data + g->name.off,
                     q->name.len, data + q->name.off);
             q = q->next;
@@ -2059,6 +2062,18 @@ gen_source(const struct root* root, const char* data, const char* file_name)
         g = g->next;
     }
     fprintf(fp, "};" NL NL);
+
+    /* ------------------------------------------------------------------------
+     * API
+     * --------------------------------------------------------------------- */
+
+    fprintf(fp, "struct %.*s_interface* %.*s(const char* type)" NL "{" NL,
+        root->prefix.len, data + root->prefix.off,
+        root->prefix.len, data + root->prefix.off);
+    fprintf(fp, "    if (strcmp(\"sqlite\", type) == 0)" NL);
+    fprintf(fp, "        return &dbg_db_sqlite;" NL);
+    fprintf(fp, "    return NULL;" NL);
+    fprintf(fp, "}" NL);
 
     if (root->source_postamble.len)
         fprintf(fp, "%.*s" NL, root->source_postamble.len, data + root->source_postamble.off);
@@ -2080,9 +2095,7 @@ int main(int argc, char** argv)
         return -1;
 
     root_init(&root);
-    parser.data = (char*)mf.address;
-    parser.off = 0;
-    parser.len = mf.size;
+    parser_init(&parser, &mf);
     if (parse(&parser, &root) != 0)
         return -1;
 

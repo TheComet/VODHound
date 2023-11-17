@@ -87,7 +87,7 @@
     else if (prepare_stmt_wrapper(ctx->db, &ctx->stmt, cstr_view(text)) != 0) \
         return error_return
 
-struct db
+struct olddb
 {
     sqlite3* db;
 
@@ -256,11 +256,11 @@ check_version_and_migrate(sqlite3* db, int reinit_db)
     return -1;
 }
 
-static struct db*
+static struct olddb*
 open_and_prepare(const char* uri, int reinit_db)
 {
     int ret;
-    struct db* ctx = mem_alloc(sizeof *ctx);
+    struct olddb* ctx = mem_alloc(sizeof *ctx);
     if (ctx == NULL)
         goto oom;
     memset(ctx, 0, sizeof *ctx);
@@ -283,7 +283,7 @@ open_and_prepare(const char* uri, int reinit_db)
 }
 
 static void
-close_db(struct db* ctx)
+close_db(struct olddb* ctx)
 {
     sqlite3_finalize(ctx->motion_layer_add_or_get_layer_priority);
 #define X(group, stmt) sqlite3_finalize(ctx->group##_##stmt);
@@ -295,25 +295,25 @@ close_db(struct db* ctx)
 }
 
 static int
-transaction_begin(struct db* ctx)
+transaction_begin(struct olddb* ctx)
 {
     return exec_sql_wrapper(ctx->db, "BEGIN TRANSACTION");
 }
 
 static int
-transaction_commit(struct db* ctx)
+transaction_commit(struct olddb* ctx)
 {
     return exec_sql_wrapper(ctx->db, "COMMIT TRANSACTION");
 }
 
 static int
-transaction_rollback(struct db* ctx)
+transaction_rollback(struct olddb* ctx)
 {
     return exec_sql_wrapper(ctx->db, "ROLLBACK TRANSACTION");
 }
 
 static int
-transaction_begin_nested(struct db* ctx, struct str_view name)
+transaction_begin_nested(struct olddb* ctx, struct str_view name)
 {
     char buf[64] = "SAVEPOINT ";
     strncat(buf, name.data, min((size_t)name.len, 64 - sizeof("SAVEPOINT ")));
@@ -321,7 +321,7 @@ transaction_begin_nested(struct db* ctx, struct str_view name)
 }
 
 static int
-transaction_commit_nested(struct db* ctx, struct str_view name)
+transaction_commit_nested(struct olddb* ctx, struct str_view name)
 {
     char buf[64] = "RELEASE SAVEPOINT ";
     strncat(buf, name.data, min((size_t)name.len, 64 - sizeof("RELEASE SAVEPOINT ")));
@@ -329,7 +329,7 @@ transaction_commit_nested(struct db* ctx, struct str_view name)
 }
 
 static int
-transaction_rollback_nested(struct db* ctx, struct str_view name)
+transaction_rollback_nested(struct olddb* ctx, struct str_view name)
 {
     char buf[64] = "ROLLBACK TO SAVEPOINT ";
     strncat(buf, name.data, min((size_t)name.len, 64 - sizeof("ROLLBACK TO SAVEPOINT ")));
@@ -337,7 +337,7 @@ transaction_rollback_nested(struct db* ctx, struct str_view name)
 }
 
 static int
-motion_add(struct db* ctx, uint64_t hash40, struct str_view string)
+motion_add(struct olddb* ctx, uint64_t hash40, struct str_view string)
 {
     int ret;
     if (ctx->motion_add == NULL)
@@ -356,7 +356,7 @@ motion_add(struct db* ctx, uint64_t hash40, struct str_view string)
 }
 
 static int
-motion_exists(struct db* ctx, uint64_t hash40)
+motion_exists(struct olddb* ctx, uint64_t hash40)
 {
     int ret;
     if (ctx->motion_exists == NULL)
@@ -389,7 +389,7 @@ next_step:
 }
 
 static int
-motion_label_add_or_get_group(struct db* ctx, struct str_view name)
+motion_label_add_or_get_group(struct olddb* ctx, struct str_view name)
 {
     int ret, group_id = -1;
     if (ctx->motion_label_add_or_get_group == NULL)
@@ -420,7 +420,7 @@ done:
 }
 
 static int
-motion_label_add_or_get_layer(struct db* ctx, int group_id, struct str_view name)
+motion_label_add_or_get_layer(struct olddb* ctx, int group_id, struct str_view name)
 {
     int ret, layer_id = -1, priority = -1;
     if (ctx->motion_layer_add_or_get_layer_priority == NULL)
@@ -479,7 +479,7 @@ done:
 }
 
 static int
-motion_label_add_or_get_category(struct db* ctx, struct str_view name)
+motion_label_add_or_get_category(struct olddb* ctx, struct str_view name)
 {
     int ret, category_id = -1;
     if (ctx->motion_label_add_or_get_category == NULL)
@@ -510,7 +510,7 @@ done:
 }
 
 static int
-motion_label_add_or_get_usage(struct db* ctx, struct str_view name)
+motion_label_add_or_get_usage(struct olddb* ctx, struct str_view name)
 {
     int ret, usage_id = -1;
     if (ctx->motion_label_add_or_get_usage == NULL)
@@ -541,7 +541,7 @@ done:
 }
 
 static int
-motion_label_add_or_get_label(struct db* ctx, uint64_t motion, int fighter_id, int layer_id, int category_id, int usage_id, struct str_view name)
+motion_label_add_or_get_label(struct olddb* ctx, uint64_t motion, int fighter_id, int layer_id, int category_id, int usage_id, struct str_view name)
 {
     int ret, label_id = -1;
     if (ctx->motion_label_add_or_get_label == NULL)
@@ -579,7 +579,7 @@ done:
 }
 
 static int
-motion_label_to_motions(struct db* ctx, int fighter_id, struct str_view label, struct vec* motions_out)
+motion_label_to_motions(struct olddb* ctx, int fighter_id, struct str_view label, struct vec* motions_out)
 {
     int ret;
     if (ctx->motion_label_to_motions == NULL)
@@ -617,7 +617,7 @@ error:
 }
 
 static int
-motion_label_to_notation_label(struct db* ctx, int fighter_id, uint64_t motion, struct str* label)
+motion_label_to_notation_label(struct olddb* ctx, int fighter_id, uint64_t motion, struct str* label)
 {
     int ret;
     if (ctx->motion_label_to_notation_label == NULL)
@@ -661,7 +661,7 @@ next_step:
 }
 
 static int
-fighter_add(struct db* ctx, int fighter_id, struct str_view name)
+fighter_add(struct olddb* ctx, int fighter_id, struct str_view name)
 {
     int ret;
     if (ctx->fighter_add == NULL)
@@ -680,7 +680,7 @@ fighter_add(struct db* ctx, int fighter_id, struct str_view name)
 }
 
 static int
-fighter_get_name(struct db* ctx, int fighter_id, struct str* name)
+fighter_get_name(struct olddb* ctx, int fighter_id, struct str* name)
 {
     int ret;
     str_clear(name);
@@ -717,7 +717,7 @@ error:
 }
 
 static int
-stage_add(struct db* ctx, int stage_id, struct str_view name)
+stage_add(struct olddb* ctx, int stage_id, struct str_view name)
 {
     int ret;
     if (ctx->stage_add == NULL)
@@ -736,7 +736,7 @@ stage_add(struct db* ctx, int stage_id, struct str_view name)
 }
 
 static int
-status_enum_add(struct db* ctx, int fighter_id, int status_id, struct str_view name)
+status_enum_add(struct olddb* ctx, int fighter_id, int status_id, struct str_view name)
 {
     int ret;
     if (ctx->status_enum_add == NULL)
@@ -769,7 +769,7 @@ error:
 }
 
 static int
-hit_status_enum_add(struct db* ctx, int id, struct str_view name)
+hit_status_enum_add(struct olddb* ctx, int id, struct str_view name)
 {
     int ret;
     if (ctx->hit_status_enum_add == NULL)
@@ -788,7 +788,7 @@ hit_status_enum_add(struct db* ctx, int id, struct str_view name)
 }
 
 static int
-tournament_add_or_get(struct db* ctx, struct str_view name, struct str_view website)
+tournament_add_or_get(struct olddb* ctx, struct str_view name, struct str_view website)
 {
     int ret, tournament_id = -1;
     if (ctx->tournament_add_or_get == NULL)
@@ -822,7 +822,7 @@ done:
 }
 
 static int
-tournament_add_sponsor(struct db* ctx, int tournament_id, int sponsor_id)
+tournament_add_sponsor(struct olddb* ctx, int tournament_id, int sponsor_id)
 {
     int ret;
     if (ctx->tournament_add_sponsor == NULL)
@@ -841,7 +841,7 @@ tournament_add_sponsor(struct db* ctx, int tournament_id, int sponsor_id)
 }
 
 static int
-tournament_add_organizer(struct db* ctx, int tournament_id, int person_id)
+tournament_add_organizer(struct olddb* ctx, int tournament_id, int person_id)
 {
     int ret;
     if (ctx->tournament_add_organizer == NULL)
@@ -860,7 +860,7 @@ tournament_add_organizer(struct db* ctx, int tournament_id, int person_id)
 }
 
 static int
-tournament_add_commentator(struct db* ctx, int tournament_id, int person_id)
+tournament_add_commentator(struct olddb* ctx, int tournament_id, int person_id)
 {
     int ret;
     if (ctx->tournament_add_commentator == NULL)
@@ -879,7 +879,7 @@ tournament_add_commentator(struct db* ctx, int tournament_id, int person_id)
 }
 
 static int
-event_add_or_get_type(struct db* ctx, struct str_view name)
+event_add_or_get_type(struct olddb* ctx, struct str_view name)
 {
     int ret, event_type_id = -1;
     if (ctx->event_add_or_get_type == NULL)
@@ -910,7 +910,7 @@ done:
 }
 
 static int
-event_add_or_get(struct db* ctx, int event_type_id, struct str_view url)
+event_add_or_get(struct olddb* ctx, int event_type_id, struct str_view url)
 {
     int ret, event_id = -1;
     if (ctx->event_add_or_get == NULL)
@@ -944,7 +944,7 @@ done:
 }
 
 static int
-round_add_or_get_type(struct db* ctx, struct str_view short_name, struct str_view long_name)
+round_add_or_get_type(struct olddb* ctx, struct str_view short_name, struct str_view long_name)
 {
     int ret, round_type_id = -1;
     if (ctx->round_add_or_get_type == NULL)
@@ -978,7 +978,7 @@ done:
 }
 
 static int
-set_format_add_or_get(struct db* ctx, struct str_view short_name, struct str_view long_name)
+set_format_add_or_get(struct olddb* ctx, struct str_view short_name, struct str_view long_name)
 {
     int ret, set_format_id = -1;
     if (ctx->set_format_add_or_get == NULL)
@@ -1012,7 +1012,7 @@ done:
 }
 
 static int
-team_add_or_get(struct db* ctx, struct str_view name, struct str_view url)
+team_add_or_get(struct olddb* ctx, struct str_view name, struct str_view url)
 {
     int ret, team_id = -1;
     if (ctx->team_add_or_get == NULL)
@@ -1046,7 +1046,7 @@ done:
 }
 
 static int
-team_add_member(struct db* ctx, int team_id, int person_id)
+team_add_member(struct olddb* ctx, int team_id, int person_id)
 {
     int ret;
     if (ctx->team_add_member == NULL)
@@ -1065,7 +1065,7 @@ team_add_member(struct db* ctx, int team_id, int person_id)
 }
 
 static int
-sponsor_add_or_get(struct db* ctx, struct str_view short_name, struct str_view full_name, struct str_view website)
+sponsor_add_or_get(struct olddb* ctx, struct str_view short_name, struct str_view full_name, struct str_view website)
 {
     int ret, sponsor_id = -1;
     if (ctx->sponsor_add_or_get == NULL)
@@ -1101,7 +1101,7 @@ done:
 
 static int
 person_add_or_get(
-    struct db* ctx,
+    struct olddb* ctx,
     int sponsor_id, struct str_view name, struct str_view tag, struct str_view social, struct str_view pronouns,
     int (*on_person)(
         int id, int sponsor_id, const char* name, const char* tag, const char* social, const char* pronouns,
@@ -1163,7 +1163,7 @@ done:
 }
 
 static int
-person_get_id_from_name(struct db* ctx, struct str_view name)
+person_get_id_from_name(struct olddb* ctx, struct str_view name)
 {
     int ret, person_id = -1;
     if (ctx->person_get_id_from_name == NULL)
@@ -1193,7 +1193,7 @@ done:
 }
 
 static int
-person_get_team_id_from_name(struct db* ctx, struct str_view name)
+person_get_team_id_from_name(struct olddb* ctx, struct str_view name)
 {
     int ret, team_id = -11;
     if (ctx->person_get_team_id_from_name == NULL)
@@ -1226,7 +1226,7 @@ done:
 }
 
 static int
-person_set_tag(struct db* ctx, int person_id, struct str_view tag)
+person_set_tag(struct olddb* ctx, int person_id, struct str_view tag)
 {
     int ret;
     if (ctx->person_set_tag == NULL)
@@ -1245,7 +1245,7 @@ person_set_tag(struct db* ctx, int person_id, struct str_view tag)
 }
 
 static int
-person_set_social(struct db* ctx, int person_id, struct str_view social)
+person_set_social(struct olddb* ctx, int person_id, struct str_view social)
 {
     int ret;
     if (ctx->person_set_social == NULL)
@@ -1264,7 +1264,7 @@ person_set_social(struct db* ctx, int person_id, struct str_view social)
 }
 
 static int
-person_set_pronouns(struct db* ctx, int person_id, struct str_view pronouns)
+person_set_pronouns(struct olddb* ctx, int person_id, struct str_view pronouns)
 {
     int ret;
     if (ctx->person_set_pronouns == NULL)
@@ -1284,7 +1284,7 @@ person_set_pronouns(struct db* ctx, int person_id, struct str_view pronouns)
 
 static int
 game_add_or_get(
-        struct db* ctx,
+        struct olddb* ctx,
         int round_type_id,
         int round_number,
         int set_format_id,
@@ -1350,7 +1350,7 @@ done:
 }
 
 static int
-game_get_all(struct db* ctx,
+game_get_all(struct olddb* ctx,
     int (*on_game)(
         int game_id,
         uint64_t time_started,
@@ -1467,7 +1467,7 @@ next_step:
 }
 
 static int
-game_get_events(struct db* ctx,
+game_get_events(struct olddb* ctx,
     int (*on_game_event)(
         const char* date,
         const char* name,
@@ -1515,7 +1515,7 @@ next_step:
 }
 
 static int
-game_get_all_in_event(struct db* ctx,
+game_get_all_in_event(struct olddb* ctx,
     struct str_view date, int event_id,
     int (*on_game)(
         int game_id,
@@ -1654,7 +1654,7 @@ error:
 }
 
 static int
-game_associate_tournament(struct db* ctx, int game_id, int tournament_id)
+game_associate_tournament(struct olddb* ctx, int game_id, int tournament_id)
 {
     int ret;
     if (ctx->game_associate_tournament == NULL)
@@ -1673,7 +1673,7 @@ game_associate_tournament(struct db* ctx, int game_id, int tournament_id)
 }
 
 static int
-game_associate_event(struct db* ctx, int game_id, int event_id)
+game_associate_event(struct olddb* ctx, int game_id, int event_id)
 {
     int ret;
     if (ctx->game_associate_event == NULL)
@@ -1692,7 +1692,7 @@ game_associate_event(struct db* ctx, int game_id, int event_id)
 }
 
 static int
-game_associate_video(struct db* ctx, int game_id, int video_id, int64_t frame_offset)
+game_associate_video(struct olddb* ctx, int game_id, int video_id, int64_t frame_offset)
 {
     int ret;
     if (ctx->game_associate_video == NULL)
@@ -1712,7 +1712,7 @@ game_associate_video(struct db* ctx, int game_id, int video_id, int64_t frame_of
 }
 
 static int
-game_unassociate_video(struct db* ctx, int game_id, int video_id)
+game_unassociate_video(struct olddb* ctx, int game_id, int video_id)
 {
     int ret;
     if (ctx->game_unassociate_video == NULL)
@@ -1731,7 +1731,7 @@ game_unassociate_video(struct db* ctx, int game_id, int video_id)
 }
 
 static int
-game_get_videos(struct db* ctx, int game_id,
+game_get_videos(struct olddb* ctx, int game_id,
     int (*on_video)(
         const char* file_name,
         const char* path_hint,
@@ -1779,7 +1779,7 @@ error:
 
 static int
 game_add_player(
-    struct db* ctx,
+    struct olddb* ctx,
     int person_id,
     int game_id,
     int slot,
@@ -1811,7 +1811,7 @@ game_add_player(
 }
 
 static int
-group_add_or_get(struct db* ctx, struct str_view name)
+group_add_or_get(struct olddb* ctx, struct str_view name)
 {
     int ret, group_id = -1;
     if (ctx->group_add_or_get == NULL)
@@ -1842,7 +1842,7 @@ done:
 }
 
 static int
-group_add_game(struct db* ctx, int group_id, int game_id)
+group_add_game(struct olddb* ctx, int group_id, int game_id)
 {
     int ret;
     if (ctx->group_add_game == NULL)
@@ -1861,7 +1861,7 @@ group_add_game(struct db* ctx, int group_id, int game_id)
 }
 
 static int
-video_add_or_get(struct db* ctx, struct str_view file_name, struct str_view path_hint)
+video_add_or_get(struct olddb* ctx, struct str_view file_name, struct str_view path_hint)
 {
     int ret, video_id = -1;
     if (ctx->video_add_or_get == NULL)
@@ -1895,7 +1895,7 @@ done:
 }
 
 static int
-video_set_path_hint(struct db* ctx, struct str_view file_name, struct str_view path_hint)
+video_set_path_hint(struct olddb* ctx, struct str_view file_name, struct str_view path_hint)
 {
     int ret;
     if (ctx->video_set_path_hint == NULL)
@@ -1914,7 +1914,7 @@ video_set_path_hint(struct db* ctx, struct str_view file_name, struct str_view p
 }
 
 static int
-video_add_path(struct db* ctx, struct str_view path)
+video_add_path(struct olddb* ctx, struct str_view path)
 {
     int ret;
     if (ctx->video_add_path == NULL)
@@ -1932,7 +1932,7 @@ video_add_path(struct db* ctx, struct str_view path)
 }
 
 static int
-video_query_paths(struct db* ctx, int (*on_video_path)(const char* path, void* user), void* user)
+video_query_paths(struct olddb* ctx, int (*on_video_path)(const char* path, void* user), void* user)
 {
     int ret;
     if (ctx->video_query_paths == NULL)
@@ -1963,7 +1963,7 @@ next_step:
 }
 
 static int
-score_add(struct db* ctx, int game_id, int team_id, int score)
+score_add(struct olddb* ctx, int game_id, int team_id, int score)
 {
     int ret;
     if (ctx->score_add == NULL)
@@ -1983,7 +1983,7 @@ score_add(struct db* ctx, int game_id, int team_id, int score)
 }
 
 static int
-switch_info_add(struct db* ctx, struct str_view name, struct str_view ip, uint16_t port)
+switch_info_add(struct olddb* ctx, struct str_view name, struct str_view ip, uint16_t port)
 {
     int ret;
     if (ctx->switch_info_add == NULL)
@@ -2003,7 +2003,7 @@ switch_info_add(struct db* ctx, struct str_view name, struct str_view ip, uint16
 }
 
 static int
-stream_recording_sources_add(struct db* ctx, struct str_view path, int frame_offset)
+stream_recording_sources_add(struct olddb* ctx, struct str_view path, int frame_offset)
 {
     int ret;
     if (ctx->stream_recording_sources_add == NULL)
@@ -2021,7 +2021,7 @@ stream_recording_sources_add(struct db* ctx, struct str_view path, int frame_off
     return step_stmt_wrapper(ctx->db, ctx->stream_recording_sources_add);
 }
 
-struct db_interface db_sqlite = {
+static struct olddb_interface db_sqlite = {
     open_and_prepare,
     close_db,
 
@@ -2039,7 +2039,7 @@ struct db_interface db_sqlite = {
 #undef X
 };
 
-struct db_interface* db(const char* type)
+struct olddb_interface* olddb(const char* type)
 {
     if (strcmp("sqlite", type) == 0)
         return &db_sqlite;
@@ -2067,7 +2067,7 @@ static struct sqlite3_mem_methods vh_mem_sqlite = {
 #endif
 
 int
-db_init(void)
+olddb_init(void)
 {
 #if defined(VH_MEM_DEBUGGING)
     sqlite3_config(SQLITE_CONFIG_MALLOC, &vh_mem_sqlite);
@@ -2079,7 +2079,7 @@ db_init(void)
 }
 
 void
-db_deinit(void)
+olddb_deinit(void)
 {
     sqlite3_shutdown();
 }

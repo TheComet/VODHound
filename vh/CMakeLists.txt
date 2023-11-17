@@ -82,7 +82,6 @@ add_library (vh ${VH_LIB_TYPE}
     "include/vh/btree.h"
     "include/vh/cli_colors.h"
     "include/vh/crc32.h"
-    "include/vh/db_ops.h"
     "include/vh/dynlib.h"
     "include/vh/fs.h"
     "include/vh/frame_data.h"
@@ -106,7 +105,6 @@ add_library (vh ${VH_LIB_TYPE}
 
     "src/btree.c"
     "src/crc32.c"
-    "src/db_ops.c"
     "src/frame_data.c"
     "src/fs_common.c"
     "src/hash.c"

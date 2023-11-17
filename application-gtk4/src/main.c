@@ -1,6 +1,6 @@
 #include <gtk/gtk.h>
 
-#include "vh/db_ops.h"
+#include "vh/db.h"
 #include "vh/import.h"
 #include "vh/log.h"
 #include "vh/mem.h"
@@ -279,7 +279,7 @@ expand_node_cb(gpointer item, gpointer user_data)
     list = vhapp_game_list_new();
     log_dbg("expand_node_cb()\n");
     on_game_ctx.game_list = list;
-    ctx->dbi->game.get_all_in_event(ctx->db, date, game_object->event_id, on_game, &on_game_ctx);
+    ctx->dbi->game.get_all_in_event(ctx->db, game_object->event_id, date, on_game, &on_game_ctx);
 
     return G_LIST_MODEL(list);
 }
@@ -489,9 +489,11 @@ int main(int argc, char** argv)
 
     int reinit_db = 0;
     struct db_interface* dbi = db("sqlite");
-    struct db* db = dbi->open_and_prepare("vodhound.db", reinit_db);
+    struct db* db = dbi->open("vodhound.db");
     if (db == NULL)
         goto open_db_failed;
+    if (dbi->migrate(db, reinit_db) != 0)
+        goto migrate_db_failed;
 
     if (reinit_db)
     {
@@ -514,6 +516,7 @@ int main(int argc, char** argv)
 
     return status;
 
+migrate_db_failed  : dbi->close(db);
 open_db_failed     : vh_deinit();
 vh_init_failed     : vh_threadlocal_deinit();
 vh_init_tl_failed  : return -1;

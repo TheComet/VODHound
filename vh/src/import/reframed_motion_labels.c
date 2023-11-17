@@ -1,5 +1,5 @@
 #include "vh/btree.h"
-#include "vh/db_ops.h"
+#include "vh/db.h"
 #include "vh/log.h"
 #include "vh/mfile.h"
 #include "vh/mstream.h"

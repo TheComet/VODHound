@@ -1,7 +1,7 @@
 #include "vh/import.h"
 
+#include "vh/db.h"
 #include "vh/fs.h"
-#include "vh/db_ops.h"
 #include "vh/log.h"
 
 #include "json-c/json.h"

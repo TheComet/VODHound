@@ -1,4 +1,4 @@
-%option prefix="newdb"
+%option prefix="db"
 %option malloc="mem_alloc"
 %option free="mem_free"
 
@@ -17,24 +17,51 @@ C_BEGIN
 #include "vh/mfile.h"
 #include "sqlite/sqlite3.h"
 #include <ctype.h>
+#include <inttypes.h>
 }
 
 %header-postamble {
-VH_PUBLIC_API struct newdb_interface*
-newdb(const char* type);
+VH_PUBLIC_API struct db_interface*
+db(const char* type);
 
 VH_PRIVATE_API int
-newdb_init(void);
+db_init(void);
 
 VH_PRIVATE_API void
-newdb_deinit(void);
+db_deinit(void);
 
 C_END
 }
-/*
+
 %function migrate(int reinit_db) {
     return check_version_and_migrate(ctx->db, reinit_db);
 }
+
+%query transaction,begin() {
+    type insert
+    stmt { BEGIN TRANSACTION }
+}
+%query transaction,commit() {
+    type insert
+    stmt { COMMIT TRANSACTION }
+}
+%query transaction,rollback() {
+    type insert
+    stmt { ROLLBACK TRANSACTION }
+}
+%query transaction,begin_nested(struct str_view name) {
+    type insert
+    stmt { SAVEPOINT ? }
+}
+%query transaction,commit_nested(struct str_view name) {
+    type insert
+    stmt { RELEASE SAVEPOINT ? }
+}
+%query transaction,rollback_nested(struct str_view name) {
+    type insert
+    stmt { ROLLBACK TO SAVEPOINT ? }
+}
+
 %query motion,add(uint64_t hash40, struct str_view string) {
     type insert
     table motions
@@ -167,17 +194,17 @@ C_END
     type insert
     table teams
 }
-%query sponsor,add_or_get(
+%query sponsor,add_or_get(struct str_view short_name, struct str_view full_name, struct str_view website) {
+    type insert
+    table sponsors
+    return id
+}
+%query person,add_or_get(
         int sponsor_id,
         struct str_view name,
         struct str_view tag,
         struct str_view social,
         struct str_view pronouns) {
-    type insert
-    table sponsors
-    return id
-}
-%query person,add_or_get(struct str_view short_name, struct str_view full_name, struct str_view website) {
     type insert
     table people
     callback int id, int sponsor_id, const char* name, const char* tag, const char* social, const char* pronouns
@@ -323,7 +350,7 @@ C_END
      * values within the same statement. The reason for not using two ? here
      * is because the code generator does not support binding the same value
      * twice, so we bind it once into a subquery.
-     *
+     */
     type select-all
     stmt {
         WITH grouped_games AS (
@@ -478,12 +505,6 @@ C_END
     type insert
     table stream_recording_sources
 }
-*/
-%query test(int id, const char* name) {
-    type select-all
-    table test
-    callback int id, const char* name
-}
 
 %source-preamble {
 static int
@@ -621,13 +642,6 @@ check_version_and_migrate(sqlite3* db, int reinit_db)
 }
 
 %source-postamble {
-struct newdb_interface* newdb(const char* type)
-{
-    if (strcmp("sqlite", type) == 0)
-        return &db_sqlite;
-    return NULL;
-}
-
 #if defined(VH_MEM_DEBUGGING)
 static void* dbgmem_malloc(int size) { return mem_alloc((mem_size)size); }
 static void* dbgmem_realloc(void* p, int size) { return mem_realloc(p, (mem_size)size); }
@@ -649,7 +663,7 @@ static struct sqlite3_mem_methods vh_mem_sqlite = {
 #endif
 
 int
-newdb_init(void)
+db_init(void)
 {
 #if defined(VH_MEM_DEBUGGING)
     sqlite3_config(SQLITE_CONFIG_MALLOC, &vh_mem_sqlite);
@@ -661,7 +675,7 @@ newdb_init(void)
 }
 
 void
-newdb_deinit(void)
+db_deinit(void)
 {
     sqlite3_shutdown();
 }
