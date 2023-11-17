@@ -2,9 +2,11 @@
 %option malloc="mem_alloc"
 %option free="mem_free"
 %option log-dbg="log_dbg"
-%option log-sql-err="log_sql_err"
+%option log-error="log_err"
+%option log-sql-error="log_sql_err"
 %option custom-init
 %option custom-deinit
+%option custom-api-decl
 %option debug-layer
 
 %header-preamble {
@@ -31,6 +33,9 @@ db_init(void);
 
 VH_PRIVATE_API void
 db_deinit(void);
+
+VH_PUBLIC_API struct db_interface*
+db(const char* backend);
 
 C_END
 }

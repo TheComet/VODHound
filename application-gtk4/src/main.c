@@ -488,7 +488,7 @@ int main(int argc, char** argv)
         goto vh_init_failed;
 
     int reinit_db = 0;
-    struct db_interface* dbi = db("sqlite");
+    struct db_interface* dbi = db("sqlite3");
     struct db* db = dbi->open("vodhound.db");
     if (db == NULL)
         goto open_db_failed;

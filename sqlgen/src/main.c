@@ -20,6 +20,7 @@
 #define DEFAULT_MALLOC "malloc"
 #define DEFAULT_FREE "free"
 #define DEFAULT_LOG_DBG "printf"
+#define DEFAULT_LOG_ERR "printf"
 #define DEFAULT_LOG_SQL_ERR "sqlgen_error"
 #define PREFIX(sv, data) \
         (sv).len ? (sv).len : (int)sizeof(DEFAULT_PREFIX) - 1, (sv).len ? (data) + (sv).off : DEFAULT_PREFIX
@@ -29,6 +30,8 @@
         (sv).len ? (sv).len : (int)sizeof(DEFAULT_FREE) - 1, (sv).len ? (data) + (sv).off : DEFAULT_FREE
 #define LOG_DBG(sv, data) \
         (sv).len ? (sv).len : (int)sizeof(DEFAULT_LOG_DBG) - 1, (sv).len ? (data) + (sv).off : DEFAULT_LOG_DBG
+#define LOG_ERR(sv, data) \
+        (sv).len ? (sv).len : (int)sizeof(DEFAULT_LOG_ERR) - 1, (sv).len ? (data) + (sv).off : DEFAULT_LOG_ERR
 #define LOG_SQL_ERR(sv, data) \
         (sv).len ? (sv).len : (int)sizeof(DEFAULT_LOG_SQL_ERR) - 1, (sv).len ? (data) + (sv).off : DEFAULT_LOG_SQL_ERR
 
@@ -180,8 +183,11 @@ struct cfg
     enum backend backends;
     char debug_layer;
     char custom_init;
+    char custom_init_decl;
     char custom_deinit;
+    char custom_deinit_decl;
     char custom_api;
+    char custom_api_decl;
 };
 
 static int
@@ -598,6 +604,7 @@ struct root
     struct str_view malloc;
     struct str_view free;
     struct str_view log_dbg;
+    struct str_view log_err;
     struct str_view log_sql_err;
     struct str_view header_preamble;
     struct str_view header_postamble;
@@ -662,11 +669,17 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                 if (str_view_eq("debug-layer", option, p->data))
                     { cfg->debug_layer = 1; break; }
                 else if (str_view_eq("custom-init", option, p->data))
-                    { cfg->custom_init = 1; break; }
+                    { cfg->custom_init = 1; cfg->custom_init_decl = 1; break; }
+                else if (str_view_eq("custom-init-decl", option, p->data))
+                    { cfg->custom_init_decl = 1; break; }
                 else if (str_view_eq("custom-deinit", option, p->data))
-                    { cfg->custom_deinit = 1; break; }
+                    { cfg->custom_deinit = 1; cfg->custom_deinit_decl = 1; break; }
+                else if (str_view_eq("custom-deinit-decl", option, p->data))
+                    { cfg->custom_deinit_decl = 1; break; }
                 else if (str_view_eq("custom-api", option, p->data))
-                    { cfg->custom_api = 1; break; }
+                    { cfg->custom_api = 1; cfg->custom_api_decl = 1; break; }
+                else if (str_view_eq("custom-api-decl", option, p->data))
+                    { cfg->custom_api_decl = 1; break; }
 
                 if (scan_next_token(p) != '=')
                     return print_error(p, "Error: Expecting '='\n");
@@ -681,6 +694,8 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                     root->free = p->value.str;
                 else if (str_view_eq("log-dbg", option, p->data))
                     root->log_dbg = p->value.str;
+                else if (str_view_eq("log-error", option, p->data))
+                    root->log_err = p->value.str;
                 else if (str_view_eq("log-sql-error", option, p->data))
                     root->log_sql_err = p->value.str;
                 else
@@ -2190,6 +2205,8 @@ gen_source(const struct root* root, const char* data, const char* file_name,
             PREFIX(root->prefix, data));
         fprintf(fp, "    if (strcmp(\"sqlite3\", backend) == 0)" NL);
         fprintf(fp, "        return &%sdb_sqlite3;" NL, debug_layer ? "dbg_" : "");
+        fprintf(fp, "    %.*s(\"%.*s(): Unknown backend \\\"%%s\\\"\", backend);" NL,
+            LOG_ERR(root->log_err, data), PREFIX(root->prefix, data));
         fprintf(fp, "    return NULL;" NL);
         fprintf(fp, "}" NL);
     }
@@ -2221,9 +2238,11 @@ int main(int argc, char** argv)
     if (post_parse(&root, mf.address) != 0)
         return -1;
 
-    if (gen_header(&root, mf.address, cfg.output_header, cfg.custom_init, cfg.custom_deinit, cfg.custom_api) < 0)
+    if (gen_header(&root, mf.address, cfg.output_header,
+            cfg.custom_init_decl, cfg.custom_deinit_decl, cfg.custom_api_decl) < 0)
         return -1;
-    if (gen_source(&root, mf.address, cfg.output_source, cfg.debug_layer, cfg.custom_init, cfg.custom_deinit, cfg.custom_api) < 0)
+    if (gen_source(&root, mf.address, cfg.output_source,
+            cfg.debug_layer, cfg.custom_init, cfg.custom_deinit, cfg.custom_api) < 0)
         return -1;
 
     return 0;

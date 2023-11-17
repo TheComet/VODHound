@@ -1,6 +1,6 @@
 #include "vh/backtrace.h"
 #include "vh/crc32.h"
-#include "vh/db_ops.h"
+#include "vh/db.h"
 #include "vh/fs.h"
 #include "vh/mem.h"
 #include "vh/init.h"
