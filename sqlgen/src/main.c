@@ -1253,14 +1253,14 @@ fprintf_sqlite_prepare_stmt(FILE* fp, const struct root* root, const struct quer
             while (a) {
                 if (!a->update)
                 {
-                    if (first) fprintf(fp, "WHERE ");
+                    if (first) fprintf(fp, " WHERE ");
                     else       fprintf(fp, " AND ");
                     fprintf(fp, "%.*s=?", a->name.len, data + a->name.off);
                     first = 0;
                 }
                 a = a->next;
             }
-            fprintf(fp, ";\",\n");
+            fprintf(fp, ";\"," NL);
         } break;
 
         case QUERY_EXISTS:
@@ -1307,8 +1307,7 @@ fprintf_sqlite_prepare_stmt(FILE* fp, const struct root* root, const struct quer
     fprintf(fp, "        {" NL);
     fprintf(fp, "            log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
     fprintf(fp, "            return -1;" NL);
-    fprintf(fp, "        }" NL);
-    fprintf(fp, "\n");
+    fprintf(fp, "        }" NL NL);
 }
 
 static void
