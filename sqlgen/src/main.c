@@ -490,6 +490,7 @@ enum query_type
     QUERY_NONE,
     QUERY_INSERT,
     QUERY_UPDATE,
+    QUERY_DELETE,
     QUERY_EXISTS,
     QUERY_SELECT_FIRST,
     QUERY_SELECT_ALL,
@@ -760,6 +761,8 @@ parse(struct parser* p, struct root* root)
                             query->type = QUERY_INSERT;
                         else if (str_view_eq("update", t, p->data))
                             query->type = QUERY_UPDATE;
+                        else if (str_view_eq("delete", t, p->data))
+                            query->type = QUERY_DELETE;
                         else if (str_view_eq("exists", t, p->data))
                             query->type = QUERY_EXISTS;
                         else if (str_view_eq("select-first", t, p->data))
@@ -1180,10 +1183,16 @@ fprintf_sqlite_prepare_stmt(FILE* fp, const struct root* root, const struct quer
 
             break;
 
+        case QUERY_DELETE:
         case QUERY_UPDATE: {
             char first;
-            fprintf(fp, "            \"UPDATE %.*s SET ",
+            fprintf(fp, "            \"");
+            fprintf(fp, "%s", q->type == QUERY_UPDATE ? "UPDATE" : "DELETE FROM");
+
+            fprintf(fp, " %.*s ",
                     q->table_name.len, data + q->table_name.off);
+            if (q->type == QUERY_UPDATE)
+                fprintf(fp, "SET ");
 
             /* SET ... */
             first = 1;
@@ -1204,7 +1213,7 @@ fprintf_sqlite_prepare_stmt(FILE* fp, const struct root* root, const struct quer
             while (a) {
                 if (!a->update)
                 {
-                    if (first) fprintf(fp, " WHERE ");
+                    if (first) fprintf(fp, "WHERE ");
                     else       fprintf(fp, " AND ");
                     fprintf(fp, "%.*s=?", a->name.len, data + a->name.off);
                     first = 0;
@@ -1269,6 +1278,10 @@ fprintf_sqlite_bind_args(FILE* fp, const struct root* root, const struct query_g
     int i = 1;
     int update_pass = 1;
     int first = 1;
+
+    if (q->in_args == NULL)
+        return;
+
 again:
     a = q->in_args;
     for (; a; a = a->next)
@@ -1289,6 +1302,8 @@ again:
             { sqlite_type = "int64"; }
         else if (str_view_eq("int", a->type, data))
             { sqlite_type = "int"; }
+        else if (str_view_eq("uint16_t", a->type, data))
+            { sqlite_type = "int"; cast = "(int)"; }
         else if (str_view_eq("struct str_view", a->type, data))
             { sqlite_type = "text"; }
         else if (str_view_eq("const char*", a->type, data))
@@ -1339,6 +1354,8 @@ fprintf_sqlite_exec_callback(FILE* fp, const struct query_group* g, const struct
             sqlite_type = "int64";
         else if (str_view_eq("int", a->type, data))
             sqlite_type = "int";
+        else if (str_view_eq("int", a->type, data))
+            { sqlite_type = "int"; cast = "(uint16_t)"; }
         else if (str_view_eq("struct str_view", a->type, data))
             { sqlite_type = "text"; cast = "(const char*)"; }
         else if (str_view_eq("const char*", a->type, data))
@@ -1385,11 +1402,13 @@ fprintf_sqlite_exec(FILE* fp, const struct root* root, const struct query_group*
 
         case QUERY_UPDATE:
         case QUERY_INSERT:
+        case QUERY_DELETE:
             fprintf(fp, "next_step:" NL);
             fprintf(fp, "    ret = sqlite3_step(ctx->");
             fprintf_func_name(fp, g, q, data);
             fprintf(fp, ");" NL);
             fprintf(fp, "    switch (ret)" NL "    {" NL);
+            fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
 
             if (q->return_name.len || q->cb_args)
                 fprintf(fp, "        case SQLITE_ROW:" NL);
@@ -1403,32 +1422,48 @@ fprintf_sqlite_exec(FILE* fp, const struct root* root, const struct query_group*
             }
 
             if (q->cb_args)
-                fprintf_sqlite_exec_callback(fp, g, q, data);
-
-            if (q->return_name.len || q->cb_args)
             {
+                fprintf_sqlite_exec_callback(fp, g, q, data);
+                if (q->return_name.len)
+                {
+                    fprintf(fp, "            if (ret < 0)" NL);
+                    fprintf(fp, "            {" NL);
+                    fprintf(fp, "                sqlite3_reset(ctx->");
+                    fprintf_func_name(fp, g, q, data);
+                    fprintf(fp, ");" NL);
+                    fprintf(fp, "                return ret;" NL);
+                    fprintf(fp, "            }" NL);
+                }
+                else
+                {
+                    fprintf(fp, "            sqlite3_reset(ctx->");
+                    fprintf_func_name(fp, g, q, data);
+                    fprintf(fp, ");" NL);
+                    fprintf(fp, "            return ret;" NL);
+                }
+            }
+            if (q->return_name.len || q->cb_args)
+                fprintf(fp, "        case SQLITE_DONE: goto done;" NL);
+            else
+            {
+                fprintf(fp, "        case SQLITE_DONE:" NL);
                 fprintf(fp, "            sqlite3_reset(ctx->");
                 fprintf_func_name(fp, g, q, data);
                 fprintf(fp, ");" NL);
-
-                if (q->return_name.len)
-                    fprintf(fp, "            return %.*s;" NL, q->return_name.len, data + q->return_name.off);
-                else
-                    fprintf(fp, "            return ret;" NL);
+                fprintf(fp, "            return 0;" NL);
             }
 
-            fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
-            fprintf(fp, "        case SQLITE_DONE:" NL);
-            fprintf(fp, "            sqlite3_reset(ctx->");
-            fprintf_func_name(fp, g, q, data);
-            fprintf(fp, ");" NL);
-            fprintf(fp, "            return 0;" NL);
             fprintf(fp, "    }" NL NL);
             fprintf(fp, "    log_sqlite_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL);
+            if (q->return_name.len || q->cb_args)
+                fprintf(fp, "done:" NL);
             fprintf(fp, "    sqlite3_reset(ctx->");
             fprintf_func_name(fp, g, q, data);
             fprintf(fp, ");" NL);
-            fprintf(fp, "    return -1;" NL);
+            if (q->return_name.len)
+                fprintf(fp, "    return %.*s;" NL, q->return_name.len, data + q->return_name.off);
+            else
+                fprintf(fp, "    return -1;" NL);
             break;
 
         case QUERY_SELECT_FIRST:
@@ -1642,6 +1677,27 @@ gen_source(const struct root* root, const char* data, const char* file_name)
     /* ------------------------------------------------------------------------
      * Query implementations
      * --------------------------------------------------------------------- */
+
+    q = root->queries;
+    while (q)
+    {
+        fprintf_func_decl(fp, root, NULL, q, data);
+        fprintf(fp, NL "{" NL);
+
+        /* Local variables */
+        fprintf(fp, "    int ret");
+        if (q->return_name.len)
+            fprintf(fp, ", %.*s = -1", q->return_name.len, data + q->return_name.off);
+        fprintf(fp, ";" NL);
+
+        fprintf_sqlite_prepare_stmt(fp, root, NULL, q, data);
+        fprintf_sqlite_bind_args(fp, root, NULL, q, data);
+        fprintf_sqlite_exec(fp, root, NULL, q, data);
+
+        fprintf(fp, "}" NL NL);
+
+        q = q->next;
+    }
 
     g = root->query_groups;
     while (g)

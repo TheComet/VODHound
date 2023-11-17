@@ -209,6 +209,275 @@ C_END
     type update pronouns
     table people
 }
+%query game,add_or_get(
+        int round_type_id null,
+        int round_number null,
+        int set_format_id,
+        int winner_team_id,
+        int stage_id,
+        uint64_t time_started,
+        int duration) {
+    type insert
+    table games
+    return id
+}
+%query game,get_all() {
+    type select-all
+    stmt {
+        WITH grouped_games AS (
+            SELECT
+                games.id,
+                time_started,
+                duration,
+                round_type_id,
+                round_number,
+                set_format_id,
+                winner_team_id,
+                stage_id,
+                teams.name team_name,
+                IFNULL(scores.score, '') scores,
+                group_concat(game_players.slot, '+') slots,
+                group_concat(REPLACE(IFNULL(sponsors.short_name, ''), '+', '\\+'), '+') sponsors,
+                group_concat(REPLACE(people.name, '+', '\\+'), '+') players,
+                group_concat(REPLACE(IFNULL(fighters.name, game_players.fighter_id), '+', '\\+'), '+') fighters,
+                group_concat(game_players.costume, '+') costumes
+            FROM game_players
+            INNER JOIN games ON games.id = game_players.game_id
+            INNER JOIN teams ON teams.id = game_players.team_id
+            LEFT JOIN scores ON scores.team_id = game_players.team_id AND scores.game_id = game_players.game_id
+            INNER JOIN people ON people.id = game_players.person_id
+            LEFT JOIN fighters ON fighters.id = game_players.fighter_id
+            LEFT JOIN sponsors ON sponsors.id = people.sponsor_id
+            GROUP BY games.id, game_players.team_id
+            ORDER BY game_players.slot)
+        SELECT
+            grouped_games.id,
+            time_started,
+            duration,
+            IFNULL(tournaments.name, '') tourney,
+            IFNULL(event_types.name, '') event,
+            IFNULL(stages.name, grouped_games.stage_id) stage,
+            IFNULL(round_types.short_name, '') || IFNULL(round_number, '') round,
+            set_formats.short_name format,
+            group_concat(REPLACE(grouped_games.team_name, ',', '\\,')) teams,
+            group_concat(grouped_games.scores) score,
+            group_concat(grouped_games.slots) slots,
+            group_concat(REPLACE(IFNULL(grouped_games.sponsors, ''), ',', '\\,')) sponsors,
+            group_concat(REPLACE(grouped_games.players, ',', '\\,')) players,
+            group_concat(REPLACE(grouped_games.fighters, ',', '\\,')) fighters,
+            group_concat(grouped_games.costumes) costumes
+        FROM grouped_games
+        LEFT JOIN tournament_games ON tournament_games.game_id = grouped_games.id
+        LEFT JOIN tournaments ON tournament_games.tournament_id = tournaments.id
+        LEFT JOIN event_games ON event_games.game_id = grouped_games.id
+        LEFT JOIN events ON event_games.event_id = events.id
+        LEFT JOIN event_types ON event_types.id = events.event_type_id
+        LEFT JOIN stages ON stages.id = grouped_games.stage_id
+        LEFT JOIN round_types ON grouped_games.round_type_id = round_types.id
+        INNER JOIN set_formats ON grouped_games.set_format_id = set_formats.id
+        GROUP BY grouped_games.id
+        ORDER BY time_started DESC;
+    }
+    callback
+        int game_id,
+        uint64_t time_started,
+        int duration,
+        const char* tournament,
+        const char* event,
+        const char* stage,
+        const char* round,
+        const char* format,
+        const char* teams,
+        const char* scores,
+        const char* slots,
+        const char* sponsors,
+        const char* players,
+        const char* fighters,
+        const char* costumes
+}
+%query game,get_events() {
+    type select-all
+    stmt {
+        SELECT
+            DATE(time_started/1000, 'unixepoch') date,
+            IFNULL(event_types.name, ''),
+            IFNULL(event_id, -1)
+        FROM games
+        LEFT JOIN event_games ON event_games.game_id=games.id
+        LEFT JOIN events ON events.id=event_id
+        LEFT JOIN event_types ON event_types.id=event_type_id
+        GROUP BY date, event_types.name
+        ORDER BY event_types.name;
+    }
+    callback
+        const char* date,
+        const char* name,
+        int event_id
+}
+%query game,get_all_in_event(int event_id, struct str_view date) {
+    /*
+     * We do a hack here of the form
+     *   SELECT * FROM table, (SELECT ? AS id) target
+     *   WHERE (table.event_id = target.id OR table.event_id IS target.id);
+     * Because we would like the be able to match NULL as well as regular
+     * values within the same statement. The reason for not using two ? here
+     * is because the code generator does not support binding the same value
+     * twice, so we bind it once into a subquery.
+     */
+    type select-all
+    stmt {
+        WITH grouped_games AS (
+            SELECT
+                event_id,
+                (SELECT ? AS id) target_event,
+                games.id,
+                time_started,
+                duration,
+                round_type_id,
+                round_number,
+                set_format_id,
+                winner_team_id,
+                stage_id,
+                teams.name team_name,
+                IFNULL(scores.score, '') scores,
+                group_concat(game_players.slot, '+') slots,
+                group_concat(REPLACE(IFNULL(sponsors.short_name, ''), '+', '\\+'), '+') sponsors,
+                group_concat(REPLACE(people.name, '+', '\\+'), '+') players,
+                group_concat(REPLACE(IFNULL(fighters.name, game_players.fighter_id), '+', '\\+'), '+') fighters,
+                group_concat(game_players.costume, '+') costumes
+            FROM game_players
+            INNER JOIN games ON games.id = game_players.game_id
+            INNER JOIN teams ON teams.id = game_players.team_id
+            LEFT JOIN scores ON scores.team_id = game_players.team_id AND scores.game_id = game_players.game_id
+            INNER JOIN people ON people.id = game_players.person_id
+            LEFT JOIN fighters ON fighters.id = game_players.fighter_id
+            LEFT JOIN sponsors ON sponsors.id = people.sponsor_id
+            GROUP BY games.id, game_players.team_id
+            ORDER BY game_players.slot)
+        SELECT
+            grouped_games.id,
+            time_started,
+            duration,
+            IFNULL(tournaments.name, '') tourney,
+            IFNULL(event_types.name, '') event,
+            IFNULL(stages.name, grouped_games.stage_id) stage,
+            IFNULL(round_types.short_name, '') || IFNULL(round_number, '') round,
+            set_formats.short_name format,
+            group_concat(REPLACE(grouped_games.team_name, ',', '\\,')) teams,
+            group_concat(grouped_games.scores) score,
+            group_concat(grouped_games.slots) slots,
+            group_concat(REPLACE(IFNULL(grouped_games.sponsors, ''), ',', '\\,')) sponsors,
+            group_concat(REPLACE(grouped_games.players, ',', '\\,')) players,
+            group_concat(REPLACE(grouped_games.fighters, ',', '\\,')) fighters,
+            group_concat(grouped_games.costumes) costumes
+        FROM grouped_games
+        LEFT JOIN tournament_games ON tournament_games.game_id = grouped_games.id
+        LEFT JOIN tournaments ON tournament_games.tournament_id = tournaments.id
+        LEFT JOIN event_games ON event_games.game_id = grouped_games.id
+        LEFT JOIN events ON event_games.event_id = events.id
+        LEFT JOIN event_types ON event_types.id = events.event_type_id
+        LEFT JOIN stages ON stages.id = grouped_games.stage_id
+        LEFT JOIN round_types ON grouped_games.round_type_id = round_types.id
+        INNER JOIN set_formats ON grouped_games.set_format_id = set_formats.id
+        WHERE
+            DATE(time_started/1000, 'unixepoch') = ?
+            AND (event_id IS target_event.d OR event_id = target_event.id)
+        GROUP BY grouped_games.id
+        ORDER BY time_started DESC;
+    }
+    callback
+        int game_id,
+        uint64_t time_started,
+        int duration,
+        const char* tournament,
+        const char* event,
+        const char* stage,
+        const char* round,
+        const char* format,
+        const char* teams,
+        const char* scores,
+        const char* slots,
+        const char* sponsors,
+        const char* players,
+        const char* fighters,
+        const char* costumes
+}
+%query game,associate_tournament(int game_id, int tournament_id) {
+    type insert
+    table tournament_games
+}
+%query game,associate_event(int game_id, int event_id) {
+    type insert
+    table event_games
+}
+%query game,associate_video(int game_id, int video_id, int64_t frame_offset) {
+    type insert
+    table game_videos
+}
+%query game,unassociate_video(int game_id, int video_id) {
+    type delete
+    table game_videos
+}
+%query game,get_videos(int game_id) {
+    type select-all
+    stmt {
+        SELECT file_name, path_hint, frame_offset
+        FROM game_videos
+        JOIN videos ON game_videos.video_id = videos.id
+        WHERE game_videos.game_id = ?;
+    }
+    callback const char* file_path, const char* path_hint, int64_t frame_offset
+}
+%query game,add_player(
+        int person_id,
+        int game_id,
+        int slot,
+        int team_id,
+        int fighter_id,
+        int costume,
+        int is_loser_side) {
+    type insert
+    table game_players
+}
+%query group,add_or_get(struct str_view name) {
+    type insert
+    table groups
+    return id
+}
+%query group,add_game(int group_id, int game_id) {
+    type insert
+    table game_groups
+}
+%query video,add_or_get(struct str_view file_name, struct str_view path_hint) {
+    type insert
+    table videos
+    return id
+}
+%query video,set_path_hint(struct str_view file_name, struct str_view path_hint) {
+    type update path_hint
+    table videos
+}
+%query video,add_path(struct str_view path) {
+    type insert
+    table video_paths
+}
+%query video,get_paths() {
+    type select-all
+    table video_paths
+    callback const char* path
+}
+%query score,add(int game_id, int team_id, int score) {
+    type insert
+    table scores
+}
+%query switch_info,add(struct str_view name, struct str_view ip, uint16_t port) {
+    type insert
+    table switch_info
+}
+%query stream_recording_sources,add(struct str_view path, int64_t frame_offset) {
+    type insert
+    table stream_recording_sources
+}
 
 %source-preamble {
 static int
@@ -354,21 +623,21 @@ struct newdb_interface* newdb(const char* type)
 }
 
 #if defined(VH_MEM_DEBUGGING)
-static int
-vh_mem_roundup(int size) { return size; }
-static int
-vh_mem_init(void* user) { (void)user; return 0; }
-static void
-vh_mem_deinit(void* user) { (void)user; }
+static void* dbgmem_malloc(int size) { return mem_alloc((mem_size)size); }
+static void* dbgmem_realloc(void* p, int size) { return mem_realloc(p, (mem_size)size); }
+static int dbgmem_allocated_size(void* p) { return (int)mem_allocated_size(p); }
+static int dbgmem_roundup(int size) { return size; }
+static int dbgmem_init(void* user) { (void)user; return 0; }
+static void dbgmem_deinit(void* user) { (void)user; }
 
 static struct sqlite3_mem_methods vh_mem_sqlite = {
-    mem_alloc,
+    dbgmem_malloc,
     mem_free,
-    mem_realloc,
-    mem_allocated_size,
-    vh_mem_roundup,
-    vh_mem_init,
-    vh_mem_deinit,
+    dbgmem_realloc,
+    dbgmem_allocated_size,
+    dbgmem_roundup,
+    dbgmem_init,
+    dbgmem_deinit,
     NULL
 };
 #endif
