@@ -26,10 +26,10 @@ macro (sqlgen_target name)
         message (FATAL_ERROR "sqlgen_target (<name> BACKENDS <sqlite [...]> INPUT <input file> [HEADER file] [SOURCE file])")
     endif ()
 
-    set (_input_file "${sqlgen_target_arg_INPUT}")
-    set (_output_header "${sqlgen_target_arg_HEADER}")
-    set (_output_source "${sqlgen_target_arg_SOURCE}")
-    
+    set (_input_file ${sqlgen_target_arg_INPUT})
+    set (_output_header ${sqlgen_target_arg_HEADER})
+    set (_output_source ${sqlgen_target_arg_SOURCE})
+
     get_filename_component (_input_name "${_input_file}" NAME)
     if (NOT _output_header)
         set (_output_header "${CMAKE_CURRENT_BINARY_DIR}/${_input_name}.h")
@@ -38,16 +38,16 @@ macro (sqlgen_target name)
         set (_output_source "${CMAKE_CURRENT_BINARY_DIR}/${_input_name}.c")
     endif ()
 
-    if (NOT IS_ABSOLUTE "${_input_file}")
+    if (NOT IS_ABSOLUTE ${_input_file})
         set (_input_file "${CMAKE_CURRENT_SOURCE_DIR}/${_input_file}")
     endif ()
-    if (NOT IS_ABSOLUTE "${_output_header}")
+    if (NOT IS_ABSOLUTE ${_output_header})
         set (_output_header "${CMAKE_CURRENT_BINARY_DIR}/${_output_header}")
     endif ()
 
     string (REPLACE ";" "," _backends ${sqlgen_target_arg_BACKENDS})
 
-    add_custom_command (OUTPUT "${_output_header}" "${_output_source}"
+    add_custom_command (OUTPUT ${_output_header} ${_output_source}
         COMMAND sqlgen
         ARGS -b ${_backends} -i ${_input_file} --header ${_output_header} --source ${_output_source}
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
@@ -58,8 +58,8 @@ macro (sqlgen_target name)
 
     set (SQLGEN_${name}_DEFINED TRUE)
     set (SQLGEN_${name}_OUTPUTS
-        "${_output_header}"
-        "${_output_source}")
+        ${_output_header}
+        ${_output_source})
 
     unset (_backends)
     unset (_output_source)

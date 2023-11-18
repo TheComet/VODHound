@@ -536,6 +536,7 @@ enum token
     TOK_TYPE,
     TOK_TABLE,
     TOK_STMT,
+    TOK_BIND,
     TOK_CALLBACK,
     TOK_RETURN
 };
@@ -679,6 +680,11 @@ scan_next_token(struct parser* p)
             p->head += sizeof("stmt") - 1;
             return TOK_STMT;
         }
+        if (memcmp(p->data + p->head, "bind", sizeof("bind") - 1) == 0)
+        {
+            p->head += sizeof("bind") - 1;
+            return TOK_BIND;
+        }
         if (memcmp(p->data + p->head, "callback", sizeof("callback") - 1) == 0)
         {
             p->head += sizeof("callback") - 1;
@@ -729,6 +735,7 @@ enum query_type
     QUERY_NONE,
     QUERY_INSERT,
     QUERY_UPDATE,
+    QUERY_UPSERT,
     QUERY_DELETE,
     QUERY_EXISTS,
     QUERY_SELECT_FIRST,
@@ -744,6 +751,7 @@ struct query
     struct str_view return_name;
     struct arg* in_args;
     struct arg* cb_args;
+    struct arg* bind_args;
     enum query_type type;
 };
 
@@ -1021,6 +1029,8 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                             query->type = QUERY_INSERT;
                         else if (str_view_eq("update", t, p->data))
                             query->type = QUERY_UPDATE;
+                        else if (str_view_eq("upsert", t, p->data))
+                            query->type = QUERY_UPSERT;
                         else if (str_view_eq("delete", t, p->data))
                             query->type = QUERY_DELETE;
                         else if (str_view_eq("exists", t, p->data))
@@ -1032,7 +1042,7 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                         else
                             return print_error(p, "Error: Unknown query type \"%.*s\"\n", t.len, p->data + t.off);
 
-                        if (query->type == QUERY_UPDATE)
+                        if (query->type == QUERY_UPDATE || query->type == QUERY_UPSERT)
                         {
                             do
                             {
@@ -1040,7 +1050,8 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                                 struct str_view find;
                                 tok = scan_next_token(p);
                                 if (tok != TOK_LABEL)
-                                    return print_error(p, "Error: Expected column name after \"update\"\n");
+                                    return print_error(p, "Error: Expected column name after \"%s\"\n",
+                                            query->type == QUERY_UPDATE ? "update" : "upsert");
                                 find = p->value.str;
 
                                 a = query->in_args;
@@ -1081,6 +1092,54 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                                 return print_error(p, "Error: Expected query statement after \"stmt\"\n");
                         }
                     } goto expect_next_stmt;
+
+                    case TOK_BIND: {
+                    expect_next_bind_param: tok = scan_next_token(p);
+                    switch_next_bind_param:
+                        switch (tok)
+                        {
+                            case ',':
+                                if (query->bind_args == NULL)
+                                    return print_error(p, "Error: Expected parameter after \"bind\"\n");
+                                if (scan_next_token(p) != TOK_LABEL)
+                                    return print_error(p, "Error: Expected parameter after \",\"\n");
+                                /* fallthrough */
+                            case TOK_LABEL: {
+                                struct arg* a;
+                                struct arg* arg = arg_alloc();
+                                arg->type = p->value.str;
+
+                                if (query->bind_args == NULL)
+                                    query->bind_args = arg;
+                                else
+                                {
+                                    struct arg* args = query->bind_args;
+                                    while (args->next)
+                                        args = args->next;
+                                    args->next = arg;
+                                }
+
+                                /* Get the type information and other data from the function's parameter list */
+                                a = query->in_args;
+                                while (a) {
+                                    if (a->name.len == p->value.str.len &&
+                                        memcmp(p->data + a->name.off, p->data + p->value.str.off, a->name.len) == 0)
+                                    {
+                                        arg->name = a->name;
+                                        arg->type = a->type;
+                                        arg->nullable = a->nullable;
+                                        goto expect_next_bind_param;
+                                    }
+                                    a = a->next;
+                                }
+
+                                return print_error(p, "Bind argument \"%.*s\" does not exist in function's parameter list\n",
+                                        p->value.str.len, p->data + p->value.str.off);
+                            } break;
+
+                            default: goto switch_next_stmt;
+                        }
+                    }
 
                     case TOK_RETURN: {
                         if (scan_next_token(p) != TOK_LABEL)
@@ -1290,7 +1349,29 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
 static int
 post_parse(struct root* root, const char* data)
 {
+    struct query_group* g;
+    struct query* q;
+
     /* TODO validate some things */
+
+    /* If "bind" was not specified, use the function arguments list instead */
+    q = root->queries;
+    while (q) {
+        if (q->bind_args == NULL)
+            q->bind_args = q->in_args;
+        q = q->next;
+    }
+    g = root->query_groups;
+    while (g) {
+        q = g->queries;
+        while (q) {
+            if (q->bind_args == NULL)
+                q->bind_args = q->in_args;
+            q = q->next;
+        }
+        g = g->next;
+    }
+
     return 0;
 }
 
@@ -1402,6 +1483,58 @@ write_sqlite_prepare_stmt(struct mstream* ms, const struct root* root, const str
     }
     else switch (q->type)
     {
+        case QUERY_UPSERT:
+            mstream_fmt(ms, "            \"INSERT INTO %S (", q->table_name, data);
+
+            a = q->in_args;
+            while (a) {
+                if (a != q->in_args) mstream_cstr(ms, ", ");
+                mstream_fmt(ms, "%S", a->name, data);
+                a = a->next;
+            }
+            mstream_cstr(ms, ") VALUES (");
+            a = q->in_args;
+            while (a) {
+                if (a != q->in_args) mstream_cstr(ms, ", ");
+                mstream_cstr(ms, "?");
+                a = a->next;
+            }
+            mstream_cstr(ms, ")");
+
+            mstream_cstr(ms, " \"" NL "            \"ON CONFLICT DO UPDATE SET ");
+            a = q->in_args;
+            while (a) {
+                if (a != q->in_args) mstream_cstr(ms, ", ");
+                mstream_fmt(ms, "%S=excluded.%S", a->name, data, a->name, data);
+                a = a->next;
+            }
+
+            if (q->return_name.len || q->cb_args)
+            {
+                /*
+                 * Have to re-insert a value to trigger the RETURNING statement.
+                 * Caution here: We DON'T want to reinsert "id" or "rowid" because
+                 * it will cause the id to auto-increment.
+                 */
+                struct str_view reinsert = q->in_args ? q->in_args->name : q->return_name;
+                mstream_cstr(ms, " \"" NL);
+                mstream_fmt(ms, "            \"RETURNING ",
+                    reinsert, data, reinsert, data);
+                if (q->return_name.len)
+                    mstream_fmt(ms, "%S", q->return_name, data);
+                a = q->cb_args;
+                while (a) {
+                    if (a != q->cb_args || q->return_name.len) mstream_cstr(ms, ", ");
+                    mstream_fmt(ms, "%S", a->name, data);
+                    a = a->next;
+                }
+                mstream_cstr(ms, ";\"," NL);
+            }
+            else
+                mstream_cstr(ms, ";\"," NL);
+
+            break;
+
         case QUERY_INSERT:
             if (q->return_name.len || q->cb_args)
                 mstream_fmt(ms, "            \"INSERT INTO %S (", q->table_name, data);
@@ -1547,11 +1680,11 @@ write_sqlite_bind_args(struct mstream* ms, const struct root* root, const struct
     int update_pass = 1;
     int first = 1;
 
-    if (q->in_args == NULL)
+    if (q->bind_args == NULL)
         return;
 
 again:
-    a = q->in_args;
+    a = q->bind_args;
     for (; a; a = a->next)
     {
         const char* sqlite_type = "";
@@ -1670,6 +1803,7 @@ write_sqlite_exec(struct mstream* ms, const struct root* root, const struct quer
 
         case QUERY_UPDATE:
         case QUERY_INSERT:
+        case QUERY_UPSERT:
         case QUERY_DELETE:
             mstream_cstr(ms, "next_step:" NL);
             mstream_cstr(ms, "    ret = sqlite3_step(ctx->");
