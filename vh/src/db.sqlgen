@@ -257,63 +257,78 @@ C_END
 }
 %query game,get_all() {
     type select-all
+    /*
+     * Each game has T number of teams, and P number of players per team.
+     * This query is designed to return a list of unique games. Therefore,
+     * we must first group all players into their respective teams in a
+     * subquery, then group those teams again per game in the final query.
+     *
+     * Player-specific columns are group-concatenated with "+" as a delimiter.
+     * Team-specific columns are group-concatenated with "," as a delimiter.
+     * This means e.g. in a 2v2 situation, the tags will appear as "P1+P2,P3+P4"
+     * in the final output.
+     */
     stmt {
-        WITH grouped_games AS (
+        WITH grouped_teams AS (
+            WITH grouped_players AS (
+                SELECT
+                    game_id,
+                    team_id,
+                    GROUP_CONCAT(game_players.slot, '+') slots,
+                    GROUP_CONCAT(game_players.fighter_id, '+') fighter_ids,
+                    GROUP_CONCAT(game_players.costume, '+') costumes,
+                    GROUP_CONCAT(REPLACE(people.name, '+', '\\+'), '+') player_names,
+                    GROUP_CONCAT(REPLACE(people.tag, '+', '\\+'), '+') player_tags
+                FROM game_players
+                INNER JOIN people ON people.id = game_players.person_id
+                GROUP BY game_id, team_id
+                ORDER BY slot)
             SELECT
-                games.id,
-                time_started,
-                duration,
-                round_type_id,
-                round_number,
-                set_format_id,
-                winner_team_id,
-                stage_id,
-                teams.name team_name,
-                IFNULL(scores.score, '') scores,
-                group_concat(game_players.slot, '+') slots,
-                group_concat(REPLACE(IFNULL(sponsors.short_name, ''), '+', '\\+'), '+') sponsors,
-                group_concat(REPLACE(people.name, '+', '\\+'), '+') players,
-                group_concat(REPLACE(IFNULL(fighters.name, game_players.fighter_id), '+', '\\+'), '+') fighters,
-                group_concat(game_players.costume, '+') costumes
-            FROM game_players
-            INNER JOIN games ON games.id = game_players.game_id
-            INNER JOIN teams ON teams.id = game_players.team_id
-            LEFT JOIN scores ON scores.team_id = game_players.team_id AND scores.game_id = game_players.game_id
-            INNER JOIN people ON people.id = game_players.person_id
-            LEFT JOIN fighters ON fighters.id = game_players.fighter_id
-            LEFT JOIN sponsors ON sponsors.id = people.sponsor_id
-            GROUP BY games.id, game_players.team_id
-            ORDER BY game_players.slot)
+                grouped_players.game_id,
+                GROUP_CONCAT(grouped_players.slots, ',') slots,
+                GROUP_CONCAT(grouped_players.fighter_ids, ',') fighter_ids,
+                GROUP_CONCAT(grouped_players.costumes, ',') costumes,
+                GROUP_CONCAT(grouped_players.player_names, ',') player_names,
+                GROUP_CONCAT(grouped_players.player_tags, ',') player_tags,
+                GROUP_CONCAT(REPLACE(teams.name, ',', '\\,'), ',') teams,
+                GROUP_CONCAT(scores.score) scores
+            FROM grouped_players
+            INNER JOIN teams ON teams.id = grouped_players.team_id
+            INNER JOIN scores
+                ON scores.team_id = grouped_players.team_id
+                AND scores.game_id = grouped_players.game_id
+            GROUP BY grouped_players.game_id)
         SELECT
-            grouped_games.id,
-            time_started,
-            duration,
-            IFNULL(tournaments.name, '') tourney,
+            grouped_teams.game_id,
+            IFNULL(events.id, -1) event_id,
+            games.time_started,
+            games.duration,
+            IFNULL(tournaments.name, '') tournament,
             IFNULL(event_types.name, '') event,
-            IFNULL(stages.name, grouped_games.stage_id) stage,
+            IFNULL(stages.name, '') stage,
             IFNULL(round_types.short_name, '') || IFNULL(round_number, '') round,
             set_formats.short_name format,
-            group_concat(REPLACE(grouped_games.team_name, ',', '\\,')) teams,
-            group_concat(grouped_games.scores) score,
-            group_concat(grouped_games.slots) slots,
-            group_concat(REPLACE(IFNULL(grouped_games.sponsors, ''), ',', '\\,')) sponsors,
-            group_concat(REPLACE(grouped_games.players, ',', '\\,')) players,
-            group_concat(REPLACE(grouped_games.fighters, ',', '\\,')) fighters,
-            group_concat(grouped_games.costumes) costumes
-        FROM grouped_games
-        LEFT JOIN tournament_games ON tournament_games.game_id = grouped_games.id
-        LEFT JOIN tournaments ON tournament_games.tournament_id = tournaments.id
-        LEFT JOIN event_games ON event_games.game_id = grouped_games.id
-        LEFT JOIN events ON event_games.event_id = events.id
+            grouped_teams.scores,
+            grouped_teams.slots,
+            grouped_teams.teams,
+            grouped_teams.player_names,
+            grouped_teams.fighter_ids,
+            grouped_teams.costumes
+        FROM grouped_teams
+        INNER JOIN games ON games.id = grouped_teams.game_id
+        INNER JOIN set_formats ON set_formats.id = games.set_format_id
+        LEFT JOIN tournament_games ON tournament_games.game_id=grouped_teams.game_id
+        LEFT JOIN tournaments ON tournaments.id = tournament_games.tournament_id
+        LEFT JOIN event_games ON event_games.game_id = grouped_teams.game_id
+        LEFT JOIN events ON events.id = event_games.event_id
         LEFT JOIN event_types ON event_types.id = events.event_type_id
-        LEFT JOIN stages ON stages.id = grouped_games.stage_id
-        LEFT JOIN round_types ON grouped_games.round_type_id = round_types.id
-        INNER JOIN set_formats ON grouped_games.set_format_id = set_formats.id
-        GROUP BY grouped_games.id
-        ORDER BY time_started DESC;
+        LEFT JOIN stages ON stages.id = games.stage_id
+        LEFT JOIN round_types ON round_types.id = games.round_type_id
+        ORDER BY games.time_started DESC;
     }
     callback
         int game_id,
+        int event_id,
         uint64_t time_started,
         int duration,
         const char* tournament,
@@ -321,12 +336,11 @@ C_END
         const char* stage,
         const char* round,
         const char* format,
-        const char* teams,
         const char* scores,
         const char* slots,
-        const char* sponsors,
+        const char* teams,
         const char* players,
-        const char* fighters,
+        const char* fighter_ids,
         const char* costumes
 }
 %query game,get_events() {
@@ -384,8 +398,8 @@ C_END
             INNER JOIN teams ON teams.id = game_players.team_id
             LEFT JOIN scores ON scores.team_id = game_players.team_id AND scores.game_id = game_players.game_id
             INNER JOIN people ON people.id = game_players.person_id
-            LEFT JOIN sponsors ON sponsors.id = people.sponsor_id
             LEFT JOIN fighters ON fighters.id = game_players.fighter_id
+            LEFT JOIN sponsors ON sponsors.id = people.sponsor_id
             WHERE
                 DATE(time_started/1000, 'unixepoch') = ?
                 AND (event_id IS target_event.id OR event_id = target_event.id)

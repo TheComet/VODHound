@@ -216,7 +216,7 @@ mfile_map_write(struct mfile* mf, const char* file_name, int size)
     open_failed                : utf_free(utf16_filename);
     utf16_conv_failed          : return -1;
 #else
-    int fd = fd = open(file_name, O_CREAT|O_RDWR|O_TRUNC, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
+    int fd = open(file_name, O_CREAT|O_RDWR|O_TRUNC, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
     if (fd < 0)
         goto open_failed;
 
@@ -1391,7 +1391,12 @@ write_sqlite_prepare_stmt(struct mstream* ms, const struct root* root, const str
                     mstream_cstr(ms, " \"" NL "            \"");
             }
             else if (data[q->stmt.off + p] != '\r')
-                mstream_putc(ms, data[q->stmt.off + p]);
+            {
+                char c = data[q->stmt.off + p];
+                if (c == '"')
+                    mstream_putc(ms, '\\');
+                mstream_putc(ms, c);
+            }
         }
         mstream_cstr(ms, "\"," NL);
     }

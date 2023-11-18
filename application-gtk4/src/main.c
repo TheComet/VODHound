@@ -36,11 +36,14 @@ enum game_list_column
 #undef X
 };
 
+struct _VhAppGameList;
+struct _VhAppGameList* vhapp_game_list_new(void);
+
 struct _VhAppGameListObject
 {
     GObject parent_instance;
     struct strlist columns;
-    int event_id;
+    struct _VhAppGameList* event_game_list;
 };
 
 #define VHAPP_TYPE_GAME_LIST_OBJECT (vhapp_game_list_object_get_type())
@@ -58,8 +61,7 @@ vhapp_game_list_object_finalize(GObject* object)
 VhAppGameListObject*
 vhapp_game_list_object_new_event(
     struct str_view date,
-    struct str_view event_name,
-    int event_id)
+    struct str_view event_name)
 {
     VhAppGameListObject* obj = g_object_new(VHAPP_TYPE_GAME_LIST_OBJECT, NULL);
 
@@ -67,7 +69,7 @@ vhapp_game_list_object_new_event(
     strlist_add_terminated(&obj->columns, date);
     strlist_add_terminated(&obj->columns, event_name);
 
-    obj->event_id = event_id;
+    obj->event_game_list = vhapp_game_list_new();
 
     return obj;
 }
@@ -95,7 +97,7 @@ vhapp_game_list_object_new_game(
     strlist_add_terminated(&obj->columns, game);
     strlist_add_terminated(&obj->columns, stage);
 
-    obj->event_id = INT_MIN;
+    obj->event_game_list = NULL;
 
     return obj;
 }
@@ -111,8 +113,6 @@ static void
 vhapp_game_list_object_init(VhAppGameListObject* class)
 {
 }
-
-#define vhapp_game_list_object_is_game(obj) ((obj)->event_id == INT_MIN)
 
 struct _VhAppGameList
 {
@@ -165,7 +165,10 @@ vhapp_game_list_dispose(GObject* object)
 {
     VhAppGameList* self = VHAPP_GAME_LIST(object);
     VEC_FOR_EACH(&self->items, GObject*, pobj)
-        g_object_unref(*pobj);
+        VhAppGameListObject* obj = VHAPP_GAME_LIST_OBJECT(*pobj);
+        if (obj->event_game_list)
+            g_object_unref(obj->event_game_list);
+        g_object_unref(obj);
     VEC_END_EACH
     vec_deinit(&self->items);
     G_OBJECT_CLASS(vhapp_game_list_parent_class)->dispose(object);
@@ -197,91 +200,16 @@ vhapp_game_list_append(VhAppGameList* self, VhAppGameListObject* item)
     g_list_model_items_changed(G_LIST_MODEL(self), vec_count(&self->items) - 1, 0, 1);
 }
 
-struct on_game_ctx
-{
-    VhAppGameList* game_list;
-};
-
-static int on_game(
-    int game_id,
-    uint64_t time_started,
-    int duration,
-    const char* tournament,
-    const char* event,
-    const char* stage,
-    const char* round,
-    const char* format,
-    const char* teams,
-    const char* scores,
-    const char* slots,
-    const char* sponsors,
-    const char* players,
-    const char* fighters,
-    const char* costumes,
-    void* user)
-{
-    struct on_game_ctx* ctx = user;
-    struct str_view team1 = { 0 }, team2 = { 0 };
-    struct str_view fighter1 = { 0 }, fighter2 = { 0 };
-    struct str_view score1 = { 0 }, score2 = { 0 };
-    int s1, s2, game_number;
-
-    char datetime[17];
-    char scores_str[36];  /* -2147483648 - -2147483648 */
-    char game_str[12];    /* -2147483648 */
-
-    time_started = time_started / 1000;
-    strftime(datetime, sizeof(datetime), "%y-%m-%d %H:%M", localtime((time_t*)&time_started));
-
-    str_split2(cstr_view(teams), ',', &team1, &team2);
-    str_split2(cstr_view(fighters), ',', &fighter1, &fighter2);
-    str_split2(cstr_view(scores), ',', &score1, &score2);
-    sprintf(scores_str, "%.*s-%.*s", score1.len, score1.data, score2.len, score2.data);
-
-    str_dec_to_int(score1, &s1);
-    str_dec_to_int(score2, &s2);
-    game_number = s1 + s2 + 1;
-    sprintf(game_str, "%d", game_number);
-
-    vhapp_game_list_append(ctx->game_list,
-        vhapp_game_list_object_new_game(
-            cstr_view(datetime),
-            team1, team2,
-            cstr_view(round),
-            cstr_view(format),
-            cstr_view(scores_str),
-            cstr_view(game_str),
-            cstr_view(stage)));
-
-    return 0;
-}
-
-struct expand_node_ctx
-{
-    struct db_interface* dbi;
-    struct db* db;
-};
-
 static GListModel*
 expand_node_cb(gpointer item, gpointer user_data)
 {
-    struct str_view date;
-    VhAppGameList* list;
-    struct on_game_ctx on_game_ctx;
-    struct expand_node_ctx* ctx = user_data;
-    VhAppGameListObject* game_object = VHAPP_GAME_LIST_OBJECT(item);
-    if (vhapp_game_list_object_is_game(game_object))
+    VhAppGameListObject* obj = VHAPP_GAME_LIST_OBJECT(item);
+
+    /* Can't expand nodes that aren't events */
+    if (obj->event_game_list == NULL)
         return NULL;
 
-    date = strlist_view(&game_object->columns, 0);
-    /*event_name = strlist_view(&game_object->columns, 1); */
-
-    list = vhapp_game_list_new();
-    log_dbg("expand_node_cb()\n");
-    on_game_ctx.game_list = list;
-    ctx->dbi->game.get_all_in_event(ctx->db, game_object->event_id, date, on_game, &on_game_ctx);
-
-    return G_LIST_MODEL(list);
+    return G_LIST_MODEL(g_object_ref(obj->event_game_list));
 }
 
 static void
@@ -331,33 +259,112 @@ bind_column_n_cb(GtkSignalListItemFactory* self, GtkListItem* item, gpointer use
     enum game_list_column column = (enum game_list_column)(intptr_t)user_data;
     GtkWidget* label = gtk_list_item_get_child(item);
     GtkTreeListRow* row = gtk_list_item_get_item(item);
-    VhAppGameListObject* game_object = gtk_tree_list_row_get_item(row);
+    VhAppGameListObject* game_list_obj = gtk_tree_list_row_get_item(row);
 
-    if (vhapp_game_list_object_is_game(game_object) || column < 2)
+    /*
+     * The event list object only has strings for the first two columns
+     * (date and name of the event), whereas game list objects have strings
+     * for all columns. Because the label widgets get re-used in the UI, we
+     * need to make sure to clear the text on the remaining columns if this is
+     * an event list object.
+     */
+    if (game_list_obj->event_game_list && column >= 2)
+        gtk_label_set_text(GTK_LABEL(label), "");
+    else
     {
-        struct str_view str = strlist_view(&game_object->columns, column);
+        /* NOTE: We made sure to null-terminate these strings in the strlist */
+        struct str_view str = strlist_view(&game_list_obj->columns, column);
         gtk_label_set_text(GTK_LABEL(label), str.data);
     }
 
-    g_object_unref(game_object);
+    g_object_unref(game_list_obj);
 }
 
-struct on_game_event_ctx
+struct on_game_ctx
 {
     VhAppGameList* event_list;
+    VhAppGameList* game_list;
+
+    /* Last date + event returned from the db.
+     * We use this to determine when to start a new root node */
+    int year, month, mday;
+    int event_id;
 };
 
-static int on_game_event(
-    const char* date,
-    const char* event_name,
+static int on_game(
+    int game_id,
     int event_id,
+    uint64_t time_started,
+    int duration,
+    const char* tournament,
+    const char* event,
+    const char* stage,
+    const char* round,
+    const char* format,
+    const char* scores,
+    const char* slots,
+    const char* teams,
+    const char* players,
+    const char* fighter_ids,
+    const char* costumes,
     void* user)
 {
-    struct on_game_event_ctx* ctx = user;
+    int s1, s2, game_number;
+    struct tm* tm;
+    struct on_game_ctx* ctx = user;
+    struct str_view team1 = {0}, team2 = {0};
+    struct str_view fighter1 = {0}, fighter2 = {0};
+    struct str_view score1 = {0}, score2 = {0};
 
-    vhapp_game_list_append(ctx->event_list,
-        vhapp_game_list_object_new_event(
-            cstr_view(date), cstr_view(event_name), event_id));
+    char time_str[6];    /* HH:MM */
+    char scores_str[36];  /* -2147483648 - -2147483648 */
+    char game_str[16];    /* -2147483648 */
+
+    time_started = time_started / 1000;
+    tm = localtime((time_t*)&time_started);
+    if (tm->tm_year > 9999)
+        tm->tm_year = 9999;
+    strftime(time_str, sizeof(time_str), "%H:%M", tm);
+
+    str_split2(cstr_view(teams), ',', &team1, &team2);
+    str_split2(cstr_view(fighter_ids), ',', &fighter1, &fighter2);
+    str_split2(cstr_view(scores), ',', &score1, &score2);
+    sprintf(scores_str, "%.*s-%.*s", score1.len, score1.data, score2.len, score2.data);
+
+    str_dec_to_int(score1, &s1);
+    str_dec_to_int(score2, &s2);
+    game_number = s1 + s2 + 1;
+    sprintf(game_str, "%d", game_number);
+
+    /* If the event changes, or if the date changes, start a new root node */
+    if (ctx->mday != tm->tm_mday ||
+         ctx->month != tm->tm_mon ||
+         ctx->year != tm->tm_year ||
+         ctx->event_id != event_id)
+    {
+        VhAppGameListObject* event_obj;
+        char date_str[11];  /* YYYY-MM-DD */
+        strftime(date_str, sizeof(date_str), "%Y-%m-%d", tm);
+        event_obj = vhapp_game_list_object_new_event(
+                cstr_view(date_str), cstr_view(event));
+        ctx->game_list = event_obj->event_game_list;
+        vhapp_game_list_append(ctx->event_list, event_obj);
+
+        ctx->mday = tm->tm_mday;
+        ctx->month = tm->tm_mon;
+        ctx->year = tm->tm_year;
+        ctx->event_id = event_id;
+    }
+
+    vhapp_game_list_append(ctx->game_list,
+        vhapp_game_list_object_new_game(
+            cstr_view(time_str),
+            team1, team2,
+            cstr_view(round),
+            cstr_view(format),
+            cstr_view(scores_str),
+            cstr_view(game_str),
+            cstr_view(stage)));
 
     return 0;
 }
@@ -365,26 +372,21 @@ static int on_game_event(
 static GtkWidget*
 game_list_new(struct db_interface* dbi, struct db* db)
 {
-    VhAppGameList* root;
     GtkTreeListModel* model;
     GtkMultiSelection* selection_model;
     GtkWidget* column_view;
     GtkListItemFactory* item_factory;
     GtkColumnViewColumn* column;
-    struct on_game_event_ctx event_ctx;
-    struct expand_node_ctx* expand_node_ctx;
+    VhAppGameList* event_list;
+    struct on_game_ctx on_game_ctx = {0};
 
-    root = vhapp_game_list_new();
+    log_dbg("Querying games...\n");
+    event_list = vhapp_game_list_new();
+    on_game_ctx.event_list = event_list;
+    dbi->game.get_all(db, on_game, &on_game_ctx);
+    log_dbg("Done\n");
 
-    event_ctx.event_list = root;
-    log_dbg("Querying game events...\n");
-    dbi->game.get_events(db, on_game_event, &event_ctx);
-    log_dbg("Loaded %d events\n", vhapp_game_list_get_n_items(G_LIST_MODEL(root)));
-
-    expand_node_ctx = mem_alloc(sizeof *expand_node_ctx);
-    expand_node_ctx->dbi = dbi;
-    expand_node_ctx->db = db;
-    model = gtk_tree_list_model_new(G_LIST_MODEL(root), FALSE, FALSE, expand_node_cb, expand_node_ctx, mem_free);
+    model = gtk_tree_list_model_new(G_LIST_MODEL(event_list), FALSE, FALSE, expand_node_cb, NULL, NULL);
 
     selection_model = gtk_multi_selection_new(G_LIST_MODEL(model));
     column_view = gtk_column_view_new(GTK_SELECTION_MODEL(selection_model));
