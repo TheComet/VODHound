@@ -363,7 +363,6 @@ C_END
         WITH grouped_games AS (
             SELECT
                 event_id,
-                (SELECT ? AS id) target_event,
                 games.id,
                 time_started,
                 duration,
@@ -374,22 +373,26 @@ C_END
                 stage_id,
                 teams.name team_name,
                 IFNULL(scores.score, '') scores,
+                group_concat(game_players.costume, '+') costumes,
                 group_concat(game_players.slot, '+') slots,
-                group_concat(REPLACE(IFNULL(sponsors.short_name, ''), '+', '\\+'), '+') sponsors,
                 group_concat(REPLACE(people.name, '+', '\\+'), '+') players,
-                group_concat(REPLACE(IFNULL(fighters.name, game_players.fighter_id), '+', '\\+'), '+') fighters,
-                group_concat(game_players.costume, '+') costumes
-            FROM game_players
+                group_concat(REPLACE(IFNULL(sponsors.short_name, ''), '+', '\\+'), '+') sponsors,
+                group_concat(REPLACE(IFNULL(fighters.name, game_players.fighter_id), '+', '\\+'), '+') fighters
+            FROM game_players, (SELECT ? AS id) target_event
             INNER JOIN games ON games.id = game_players.game_id
+            LEFT JOIN event_games ON event_games.game_id = games.id
             INNER JOIN teams ON teams.id = game_players.team_id
             LEFT JOIN scores ON scores.team_id = game_players.team_id AND scores.game_id = game_players.game_id
             INNER JOIN people ON people.id = game_players.person_id
-            LEFT JOIN fighters ON fighters.id = game_players.fighter_id
             LEFT JOIN sponsors ON sponsors.id = people.sponsor_id
+            LEFT JOIN fighters ON fighters.id = game_players.fighter_id
+            WHERE
+                DATE(time_started/1000, 'unixepoch') = ?
+                AND (event_id IS target_event.id OR event_id = target_event.id)
             GROUP BY games.id, game_players.team_id
             ORDER BY game_players.slot)
         SELECT
-            grouped_games.id,
+            grouped_games.id
             time_started,
             duration,
             IFNULL(tournaments.name, '') tourney,
@@ -407,17 +410,14 @@ C_END
         FROM grouped_games
         LEFT JOIN tournament_games ON tournament_games.game_id = grouped_games.id
         LEFT JOIN tournaments ON tournament_games.tournament_id = tournaments.id
-        LEFT JOIN event_games ON event_games.game_id = grouped_games.id
-        LEFT JOIN events ON event_games.event_id = events.id
+        LEFT JOIN events ON event_id = events.id
         LEFT JOIN event_types ON event_types.id = events.event_type_id
         LEFT JOIN stages ON stages.id = grouped_games.stage_id
         LEFT JOIN round_types ON grouped_games.round_type_id = round_types.id
         INNER JOIN set_formats ON grouped_games.set_format_id = set_formats.id
-        WHERE
-            DATE(time_started/1000, 'unixepoch') = ?
-            AND (event_id IS target_event.d OR event_id = target_event.id)
         GROUP BY grouped_games.id
         ORDER BY time_started DESC;
+
     }
     callback
         int game_id,

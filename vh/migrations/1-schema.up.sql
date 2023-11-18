@@ -259,10 +259,7 @@ CREATE TABLE IF NOT EXISTS stream_recording_sources (
     path TEXT NOT NULL,
     frame_offset INTEGER NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_fighters_id ON fighters(id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_stages_id ON stages(id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_motions_hash40 ON motions (hash40);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_status_enums ON status_enums(id, fighter_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_motions_hash40 ON motions(hash40);
 CREATE INDEX IF NOT EXISTS idx_games_timestamps ON games(time_started);
-CREATE INDEX IF NOT EXISTS idx_motion_labels ON motion_labels(hash40, fighter_id);
+--CREATE INDEX IF NOT EXISTS idx_motion_labels ON motion_labels(hash40, fighter_id);
 

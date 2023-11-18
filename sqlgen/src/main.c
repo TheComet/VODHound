@@ -1903,6 +1903,18 @@ write_debug_wrapper(struct mstream* ms, const struct root* root, const struct qu
     }
     mstream_cstr(ms, ");" NL);
 
+    if (q->cb_args)
+        mstream_fmt(ms, "    %S(\"  ", LOG_DBG(root->log_dbg, data));
+    a = q->cb_args;
+    while (a)
+    {
+        if (a != q->cb_args) mstream_cstr(ms, " | ");
+        mstream_str(ms, a->name, data);
+        a = a->next;
+    }
+    if (q->cb_args)
+        mstream_fmt(ms, "\\n\");" NL);
+
     mstream_cstr(ms, "    result = db_sqlite3.");
     if (g)
         mstream_fmt(ms, "%S.", g->name, data);
