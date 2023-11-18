@@ -1,20 +1,21 @@
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdarg.h>
-#include <ctype.h>
-
 #if defined(WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #define NL "\r\n"
 #else
+#define _GNU_SOURCE
 #include <unistd.h>
 #include <sys/fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #define NL "\n"
 #endif
+
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <ctype.h>
 
 #define DEFAULT_PREFIX "sqlgen"
 #define DEFAULT_MALLOC "malloc"
@@ -23,17 +24,17 @@
 #define DEFAULT_LOG_ERR "printf"
 #define DEFAULT_LOG_SQL_ERR "sqlgen_error"
 #define PREFIX(sv, data) \
-        (sv).len ? (sv).len : (int)sizeof(DEFAULT_PREFIX) - 1, (sv).len ? (data) + (sv).off : DEFAULT_PREFIX
+        (sv).len ? (sv) : str_view(DEFAULT_PREFIX), (sv).len ? (data) : DEFAULT_PREFIX
 #define MALLOC(sv, data) \
-        (sv).len ? (sv).len : (int)sizeof(DEFAULT_MALLOC) - 1, (sv).len ? (data) + (sv).off : DEFAULT_MALLOC
+        (sv).len ? (sv) : str_view(DEFAULT_MALLOC), (sv).len ? (data) : DEFAULT_MALLOC
 #define FREE(sv, data) \
-        (sv).len ? (sv).len : (int)sizeof(DEFAULT_FREE) - 1, (sv).len ? (data) + (sv).off : DEFAULT_FREE
+        (sv).len ? (sv) : str_view(DEFAULT_FREE), (sv).len ? (data) : DEFAULT_FREE
 #define LOG_DBG(sv, data) \
-        (sv).len ? (sv).len : (int)sizeof(DEFAULT_LOG_DBG) - 1, (sv).len ? (data) + (sv).off : DEFAULT_LOG_DBG
+        (sv).len ? (sv) : str_view(DEFAULT_LOG_DBG), (sv).len ? (data) : DEFAULT_LOG_DBG
 #define LOG_ERR(sv, data) \
-        (sv).len ? (sv).len : (int)sizeof(DEFAULT_LOG_ERR) - 1, (sv).len ? (data) + (sv).off : DEFAULT_LOG_ERR
+        (sv).len ? (sv) : str_view(DEFAULT_LOG_ERR), (sv).len ? (data) : DEFAULT_LOG_ERR
 #define LOG_SQL_ERR(sv, data) \
-        (sv).len ? (sv).len : (int)sizeof(DEFAULT_LOG_SQL_ERR) - 1, (sv).len ? (data) + (sv).off : DEFAULT_LOG_SQL_ERR
+        (sv).len ? (sv) : str_view(DEFAULT_LOG_SQL_ERR), (sv).len ? (data) : DEFAULT_LOG_SQL_ERR
 
 struct mfile
 {
@@ -71,7 +72,7 @@ utf_free(void* utf)
 #endif
 
 static int
-mfile_map(struct mfile* mf, const char* file_name)
+mfile_map_read(struct mfile* mf, const char* file_name)
 {
 #if defined(WIN32)
     HANDLE hFile;
@@ -145,7 +146,7 @@ mfile_map(struct mfile* mf, const char* file_name)
     if (!S_ISREG(stbuf.st_mode))
         goto fstat_failed;
     mf->address = mmap(NULL, (size_t)stbuf.st_size, PROT_READ, MAP_PRIVATE | MAP_NORESERVE, fd, 0);
-    if (mf->address == NULL)
+    if (mf->address == MAP_FAILED)
         goto mmap_failed;
 
     /* file descriptor no longer required */
@@ -160,6 +161,85 @@ mfile_map(struct mfile* mf, const char* file_name)
 #endif
 }
 
+static int
+mfile_map_write(struct mfile* mf, const char* file_name, int size)
+{
+#if defined(WIN32)
+    HANDLE hFile;
+    HANDLE mapping;
+    wchar_t* utf16_filename;
+
+    utf16_filename = utf8_to_utf16(file_name, (int)strlen(file_name));
+    if (utf16_filename == NULL)
+        goto utf16_conv_failed;
+
+    /* Try to open the file */
+    hFile = CreateFileW(
+        utf16_filename,         /* File name */
+        GENERIC_READ | GENERIC_WRITE, /* Read/write */
+        0,
+        NULL,                   /* Default security */
+        CREATE_ALWAYS,          /* Overwrite any existing, otherwise create */
+        FILE_ATTRIBUTE_NORMAL,  /* Default attributes */
+        NULL);                  /* No attribute template */
+    if (hFile == INVALID_HANDLE_VALUE)
+        goto open_failed;
+
+    mapping = CreateFileMappingW(
+        hFile,                 /* File handle */
+        NULL,                  /* Default security attributes */
+        PAGE_READWRITE,        /* Read + Write */
+        0, size,               /* High/Low size of mapping */
+        NULL);                 /* Don't name the mapping */
+    if (mapping == NULL)
+        goto create_file_mapping_failed;
+
+    mf->address = MapViewOfFile(
+        mapping,               /* File mapping handle */
+        FILE_MAP_READ | FILE_MAP_WRITE, /* Read + Write */
+        0, 0,                  /* High/Low offset of where the mapping should begin in the file */
+        0);                    /* Length of mapping. Zero means entire file */
+    if (mf->address == NULL)
+        goto map_view_failed;
+
+    /* The file mapping isn't required anymore */
+    CloseHandle(mapping);
+    CloseHandle(hFile);
+    utf_free(utf16_filename);
+
+    mf->size = size;
+
+    return 0;
+
+    map_view_failed            : CloseHandle(mapping);
+    create_file_mapping_failed : CloseHandle(hFile);
+    open_failed                : utf_free(utf16_filename);
+    utf16_conv_failed          : return -1;
+#else
+    int fd = fd = open(file_name, O_CREAT|O_RDWR|O_TRUNC, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
+    if (fd < 0)
+        goto open_failed;
+
+    /* When truncating the file, it must be expanded again, otherwise writes to
+     * the memory will cause SIGBUS.
+     * NOTE: If this ever gets ported to non-Linux, see posix_fallocate() */
+    if (fallocate(fd, 0, 0, size) != 0)
+        goto mmap_failed;
+    mf->address = mmap(NULL, (size_t)size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (mf->address == MAP_FAILED)
+        goto mmap_failed;
+
+    /* file descriptor no longer required */
+    close(fd);
+
+    mf->size = size;
+    return 0;
+
+    mmap_failed    : close(fd);
+    open_failed    : return -1;
+#endif
+}
+
 void
 mfile_unmap(struct mfile* mf)
 {
@@ -168,6 +248,126 @@ mfile_unmap(struct mfile* mf)
 #else
     munmap(mf->address, (size_t)mf->size);
 #endif
+}
+
+struct str_view
+{
+    int off, len;
+};
+
+static struct str_view
+str_view(const char* cstr)
+{
+    struct str_view str;
+    str.off = 0;
+    str.len = strlen(cstr);
+    return str;
+}
+
+static int
+str_view_eq(const char* s1, struct str_view s2, const char* data)
+{
+    int len = (int)strlen(s1);
+    return len == s2.len && memcmp(data + s2.off, s1, len) == 0;
+}
+
+struct mstream
+{
+    void* address;
+    int size;
+    int idx;
+};
+
+static struct mstream mstream_init_writeable(void)
+{
+    struct mstream ms;
+    ms.address = NULL;
+    ms.size = 0;
+    ms.idx = 0;
+    return ms;
+}
+
+static inline void mstream_pad(struct mstream* ms, int additional_size)
+{
+    while (ms->size < ms->idx + additional_size)
+    {
+        ms->size = ms->size == 0 ? 32 : ms->size * 2;
+        ms->address = realloc(ms->address, ms->size);
+    }
+}
+
+static inline void mstream_putc(struct mstream* ms, char c)
+{
+    mstream_pad(ms, 1);
+    ((char*)ms->address)[ms->idx++] = c;
+}
+
+static inline void mstream_write_int(struct mstream* ms, int value)
+{
+    char* dst;
+    int digit = 1000000000;
+    mstream_pad(ms, sizeof("-2147483648") - 1);
+    if (value < 0)
+    {
+        ((char*)ms->address)[ms->idx++] = '-';
+        value = -value;
+    }
+    if (value == 0)
+    {
+        ((char*)ms->address)[ms->idx++] = '0';
+        return;
+    }
+    while (digit)
+    {
+        ((char*)ms->address)[ms->idx] = '0';
+        if (value >= digit)
+            ms->idx++;
+        while (value >= digit)
+        {
+            value -= digit;
+            ((char*)ms->address)[ms->idx-1]++;
+        }
+        digit /= 10;
+    }
+}
+
+static inline void mstream_cstr(struct mstream* ms, const char* cstr)
+{
+    int len = (int)strlen(cstr);
+    mstream_pad(ms, len);
+    memcpy((char*)ms->address + ms->idx, cstr, len);
+    ms->idx += len;
+}
+
+static inline void mstream_str(struct mstream* ms, struct str_view str, const char* data)
+{
+    mstream_pad(ms, str.len);
+    memcpy((char*)ms->address + ms->idx, data + str.off, str.len);
+    ms->idx += str.len;
+}
+
+static inline void mstream_fmt(struct mstream* ms, const char* fmt, ...)
+{
+    int i;
+    va_list va;
+    va_start(va, fmt);
+    for (i = 0; fmt[i]; ++i)
+    {
+        if (fmt[i] == '%')
+            switch (fmt[++i])
+            {
+                case 's': mstream_cstr(ms, va_arg(va, const char*)); continue;
+                case 'i':
+                case 'd': mstream_write_int(ms, va_arg(va, int)); continue;
+                case 'S': {
+                    struct str_view str = va_arg(va, struct str_view);
+                    const char* data = va_arg(va, const char*);
+                    mstream_str(ms, str, data);
+                } continue;
+            }
+        mstream_putc(ms, fmt[i]);
+    }
+    va_end(va);
 }
 
 enum backend
@@ -296,18 +496,6 @@ parse_cmdline(int argc, char** argv, struct cfg* cfg)
     }
 
     return 0;
-}
-
-struct str_view
-{
-    int off, len;
-};
-
-static int
-str_view_eq(const char* s1, struct str_view s2, const char* data)
-{
-    int len = (int)strlen(s1);
-    return len == s2.len && memcmp(data + s2.off, s1, len) == 0;
 }
 
 struct parser
@@ -1107,127 +1295,82 @@ post_parse(struct root* root, const char* data)
 }
 
 static void
-fprintf_func_name(FILE* fp, const struct query_group* g, const struct query* q, const char* data)
+write_func_name(struct mstream* ms, const struct query_group* g, const struct query* q, const char* data)
 {
     if (g)
-        fprintf(fp, "%.*s_", g->name.len, data + g->name.off);
-    fprintf(fp, "%.*s", q->name.len, data + q->name.off);
+    {
+        mstream_str(ms, g->name, data);
+        mstream_putc(ms, '_');
+    }
+    mstream_str(ms, q->name, data);
 }
 
 static void
-fprintf_func_decl(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
+write_func_param_list(struct mstream* ms, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
 {
     struct arg* a;
 
-    fprintf(fp, "static int" NL);
-    fprintf_func_name(fp, g, q, data);
-    fprintf(fp, "(struct %.*s* ctx", PREFIX(root->prefix, data));
+    mstream_fmt(ms, "struct %S* ctx", PREFIX(root->prefix, data));
 
     a = q->in_args;
     while (a)
     {
-        fprintf(fp, ", %.*s %.*s",
-            a->type.len, data + a->type.off,
-            a->name.len, data + a->name.off);
+        mstream_fmt(ms, ", %S %S", a->type, data, a->name, data);
         a = a->next;
     }
 
     if (q->cb_args)
-        fprintf(fp, ", int (*on_row)(");
+        mstream_cstr(ms, ", int (*on_row)(");
     a = q->cb_args;
     while (a)
     {
-        if (a != q->cb_args) fprintf(fp, ", ");
-        fprintf(fp, "%.*s %.*s",
-            a->type.len, data + a->type.off,
-            a->name.len, data + a->name.off);
+        if (a != q->cb_args) mstream_cstr(ms, ", ");
+        mstream_fmt(ms, "%S %S", a->type, data, a->name, data);
         a = a->next;
     }
     if (q->cb_args)
-        fprintf(fp, ", void* user_data), void* user_data");
-
-    fprintf(fp, ")");
+        mstream_cstr(ms, ", void* user_data), void* user_data");
 }
 
 static void
-fprintf_dbg_func_decl(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
+write_func_decl(struct mstream* ms, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
 {
-    struct arg* a;
-
-    fprintf(fp, "static int" NL "dbg_");
-    fprintf_func_name(fp, g, q, data);
-    fprintf(fp, "(struct %.*s* ctx", PREFIX(root->prefix, data));
-
-    a = q->in_args;
-    while (a)
-    {
-        fprintf(fp, ", %.*s %.*s",
-            a->type.len, data + a->type.off,
-            a->name.len, data + a->name.off);
-        a = a->next;
-    }
-
-    if (q->cb_args)
-        fprintf(fp, ", int (*on_row)(");
-    a = q->cb_args;
-    while (a)
-    {
-        if (a != q->cb_args) fprintf(fp, ", ");
-        fprintf(fp, "%.*s %.*s",
-            a->type.len, data + a->type.off,
-            a->name.len, data + a->name.off);
-        a = a->next;
-    }
-    if (q->cb_args)
-        fprintf(fp, ", void* user_data), void* user_data");
-
-    fprintf(fp, ")");
+    mstream_cstr(ms, "static int" NL);
+    write_func_name(ms, g, q, data);
+    mstream_putc(ms, '(');
+    write_func_param_list(ms, root, g, q, data);
+    mstream_putc(ms, ')');
 }
 
 static void
-fprintf_func_ptr_decl(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
+write_dbg_func_decl(struct mstream* ms, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
 {
-    struct arg* a;
-
-    fprintf(fp, "int (*");
-    fprintf_func_name(fp, g, q, data);
-    fprintf(fp, ")(struct %.*s* ctx", PREFIX(root->prefix, data));
-
-    a = q->in_args;
-    while (a)
-    {
-        fprintf(fp, ", %.*s %.*s",
-            a->type.len, data + a->type.off,
-            a->name.len, data + a->name.off);
-        a = a->next;
-    }
-
-    if (q->cb_args)
-        fprintf(fp, ", int (*on_row)(");
-    a = q->cb_args;
-    while (a)
-    {
-        if (a != q->cb_args) fprintf(fp, ", ");
-        fprintf(fp, "%.*s %.*s",
-            a->type.len, data + a->type.off,
-            a->name.len, data + a->name.off);
-        a = a->next;
-    }
-    if (q->cb_args)
-        fprintf(fp, ", void* user_data), void* user_data");
-
-    fprintf(fp, ")");
+    mstream_cstr(ms, "static int" NL "dbg_");
+    write_func_name(ms, g, q, data);
+    mstream_putc(ms, '(');
+    write_func_param_list(ms, root, g, q, data);
+    mstream_putc(ms, ')');
 }
 
 static void
-fprintf_sqlite_prepare_stmt(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
+write_func_ptr_decl(struct mstream* ms, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
+{
+    mstream_cstr(ms, "int (*");
+    write_func_name(ms, g, q, data);
+    mstream_cstr(ms, ")(");
+    write_func_param_list(ms, root, g, q, data);
+    mstream_putc(ms, ')');
+}
+
+static void
+write_sqlite_prepare_stmt(struct mstream* ms, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
 {
     struct arg* a;
 
-    fprintf(fp, "    if (ctx->");
-    fprintf_func_name(fp, g, q, data);
-    fprintf(fp, " == NULL)" NL);
-    fprintf(fp, "        if ((ret = sqlite3_prepare_v2(ctx->db," NL);
+    mstream_cstr(ms, "    if (ctx->");
+    write_func_name(ms, g, q, data);
+    mstream_cstr(ms, " == NULL)" NL);
+    mstream_cstr(ms, "        if ((ret = sqlite3_prepare_v2(ctx->db," NL);
 
     if (q->stmt.len)
     {
@@ -1236,7 +1379,7 @@ fprintf_sqlite_prepare_stmt(FILE* fp, const struct root* root, const struct quer
             if (!isspace(data[q->stmt.off + p]) && data[q->stmt.off + p] != '\r' && data[q->stmt.off + p] != '\n')
                 break;
 
-        fprintf(fp, "            \"");
+        mstream_cstr(ms, "            \"");
         for (; p != q->stmt.len; ++p)
         {
             if (data[q->stmt.off + p] == '\n')
@@ -1245,73 +1388,72 @@ fprintf_sqlite_prepare_stmt(FILE* fp, const struct root* root, const struct quer
                     if (!isspace(data[q->stmt.off + p + 1]))
                         break;
                 if (p + 1 < q->stmt.len)
-                    fprintf(fp, " \"" NL "            \"");
+                    mstream_cstr(ms, " \"" NL "            \"");
             }
             else if (data[q->stmt.off + p] != '\r')
-                fprintf(fp, "%c", data[q->stmt.off + p]);
+                mstream_putc(ms, data[q->stmt.off + p]);
         }
-        fprintf(fp, "\"," NL);
+        mstream_cstr(ms, "\"," NL);
     }
     else switch (q->type)
     {
         case QUERY_INSERT:
             if (q->return_name.len || q->cb_args)
-                fprintf(fp, "            \"INSERT INTO %.*s (", q->table_name.len, data + q->table_name.off);
+                mstream_fmt(ms, "            \"INSERT INTO %S (", q->table_name, data);
             else
-                fprintf(fp, "            \"INSERT OR IGNORE INTO %.*s (", q->table_name.len, data + q->table_name.off);
+                mstream_fmt(ms, "            \"INSERT OR IGNORE INTO %S (", q->table_name, data);
 
             a = q->in_args;
             while (a) {
-                if (a != q->in_args) fprintf(fp, ", ");
-                fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+                if (a != q->in_args) mstream_cstr(ms, ", ");
+                mstream_fmt(ms, "%S", a->name, data);
                 a = a->next;
             }
-            fprintf(fp, ") VALUES (");
+            mstream_cstr(ms, ") VALUES (");
             a = q->in_args;
             while (a) {
-                if (a != q->in_args) fprintf(fp, ", ");
-                fprintf(fp, "?");
+                if (a != q->in_args) mstream_cstr(ms, ", ");
+                mstream_cstr(ms, "?");
                 a = a->next;
             }
-            fprintf(fp, ")");
+            mstream_cstr(ms, ")");
 
             if (q->return_name.len || q->cb_args)
             {
-                /* 
+                /*
                  * Have to re-insert a value to trigger the RETURNING statement.
                  * Caution here: We DON'T want to reinsert "id" or "rowid" because
                  * it will cause the id to auto-increment.
                  */
                 struct str_view reinsert = q->in_args ? q->in_args->name : q->return_name;
-                fprintf(fp, " \"" NL);
-                fprintf(fp, "            \"ON CONFLICT DO UPDATE SET %.*s=excluded.%.*s RETURNING ",
-                    reinsert.len, data + reinsert.off,
-                    reinsert.len, data + reinsert.off);
+                mstream_cstr(ms, " \"" NL);
+                mstream_fmt(ms, "            \"ON CONFLICT DO UPDATE SET %S=excluded.%S RETURNING ",
+                    reinsert, data, reinsert, data);
                 if (q->return_name.len)
-                    fprintf(fp, "%.*s", q->return_name.len, data + q->return_name.off);
+                    mstream_fmt(ms, "%S", q->return_name, data);
                 a = q->cb_args;
                 while (a) {
-                    if (a != q->cb_args || q->return_name.len) fprintf(fp, ", ");
-                    fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+                    if (a != q->cb_args || q->return_name.len) mstream_cstr(ms, ", ");
+                    mstream_fmt(ms, "%S", a->name, data);
                     a = a->next;
                 }
-                fprintf(fp, ";\"," NL);
+                mstream_cstr(ms, ";\"," NL);
             }
             else
-                fprintf(fp, ";\"," NL);
+                mstream_cstr(ms, ";\"," NL);
 
             break;
 
         case QUERY_DELETE:
         case QUERY_UPDATE: {
             char first;
-            fprintf(fp, "            \"");
-            fprintf(fp, "%s", q->type == QUERY_UPDATE ? "UPDATE" : "DELETE FROM");
+            mstream_cstr(ms, "            \"");
+            mstream_cstr(ms, q->type == QUERY_UPDATE ? "UPDATE" : "DELETE FROM");
 
-            fprintf(fp, " %.*s ",
-                    q->table_name.len, data + q->table_name.off);
+            mstream_fmt(ms, " %S ",
+                    q->table_name, data);
             if (q->type == QUERY_UPDATE)
-                fprintf(fp, "SET ");
+                mstream_cstr(ms, "SET ");
 
             /* SET ... */
             first = 1;
@@ -1319,8 +1461,8 @@ fprintf_sqlite_prepare_stmt(FILE* fp, const struct root* root, const struct quer
             while (a) {
                 if (a->update)
                 {
-                    if (!first) fprintf(fp, ", ");
-                    fprintf(fp, "%.*s=?", a->name.len, data + a->name.off);
+                    if (!first) mstream_cstr(ms, ", ");
+                    mstream_fmt(ms, "%S=?", a->name, data);
                     first = 0;
                 }
                 a = a->next;
@@ -1332,65 +1474,68 @@ fprintf_sqlite_prepare_stmt(FILE* fp, const struct root* root, const struct quer
             while (a) {
                 if (!a->update)
                 {
-                    if (first) fprintf(fp, " WHERE ");
-                    else       fprintf(fp, " AND ");
-                    fprintf(fp, "%.*s=?", a->name.len, data + a->name.off);
+                    if (first) mstream_cstr(ms, " WHERE ");
+                    else       mstream_cstr(ms, " AND ");
+                    mstream_fmt(ms, "%S=?", a->name, data);
                     first = 0;
                 }
                 a = a->next;
             }
-            fprintf(fp, ";\"," NL);
+            mstream_cstr(ms, ";\"," NL);
         } break;
 
         case QUERY_EXISTS:
-            fprintf(fp, "            \"SELECT 1 FROM %.*s", q->table_name.len, data + q->table_name.off);
+            mstream_fmt(ms, "            \"SELECT 1 FROM %S", q->table_name, data);
             a = q->in_args;
             while (a) {
-                if (a == q->in_args) fprintf(fp, " \"" NL "            \"WHERE "); else fprintf(fp, " AND ");
-                fprintf(fp, "%.*s=?", a->name.len, data + a->name.off);
+                if (a == q->in_args) mstream_cstr(ms, " \"" NL "            \"WHERE ");
+                else                 mstream_cstr(ms, " AND ");
+                mstream_fmt(ms, "%S=?", a->name, data);
                 a = a->next;
             }
-            fprintf(fp, " LIMIT 1;\"," NL);
+            mstream_cstr(ms, " LIMIT 1;\"," NL);
             break;
 
         case QUERY_SELECT_FIRST:
         case QUERY_SELECT_ALL:
-            fprintf(fp, "            \"SELECT ");
+            mstream_cstr(ms, "            \"SELECT ");
             if (q->return_name.len)
-                fprintf(fp, "%.*s", q->return_name.len, data + q->return_name.off);
+                mstream_fmt(ms, "%S", q->return_name, data);
             a = q->cb_args;
             while (a) {
-                if (a != q->cb_args || q->return_name.len) fprintf(fp, ", ");
-                fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+                if (a != q->cb_args || q->return_name.len) mstream_cstr(ms, ", ");
+                mstream_fmt(ms, "%S", a->name, data);
                 a = a->next;
             }
-            fprintf(fp, " FROM %.*s", q->table_name.len, data + q->table_name.off);
+            mstream_fmt(ms, " FROM %S", q->table_name, data);
 
             a = q->in_args;
             while (a) {
-                if (a == q->in_args) fprintf(fp, " \"" NL "            \"WHERE "); else fprintf(fp, " AND ");
-                fprintf(fp, "%.*s=?", a->name.len, data + a->name.off);
+                if (a == q->in_args) mstream_cstr(ms, " \"" NL "            \"WHERE ");
+                else                 mstream_cstr(ms, " AND ");
+                mstream_fmt(ms, "%S=?", a->name, data);
                 a = a->next;
             }
 
             if (q->type == QUERY_SELECT_FIRST)
-                fprintf(fp, " LIMIT 1");
+                mstream_cstr(ms, " LIMIT 1");
 
-            fprintf(fp, ";\"," NL);
+            mstream_cstr(ms, ";\"," NL);
             break;
     }
 
-    fprintf(fp, "            -1, &ctx->");
-    fprintf_func_name(fp, g, q, data);
-    fprintf(fp, ", NULL)) != SQLITE_OK)" NL);
-    fprintf(fp, "        {" NL);
-    fprintf(fp, "            %.*s(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
-    fprintf(fp, "            return -1;" NL);
-    fprintf(fp, "        }" NL NL);
+    mstream_cstr(ms, "            -1, &ctx->");
+    write_func_name(ms, g, q, data);
+    mstream_cstr(ms, ", NULL)) != SQLITE_OK)" NL);
+    mstream_cstr(ms, "        {" NL);
+    mstream_fmt(ms, "            %S(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL,
+                LOG_SQL_ERR(root->log_sql_err, data));
+    mstream_cstr(ms, "            return -1;" NL);
+    mstream_cstr(ms, "        }" NL NL);
 }
 
 static void
-fprintf_sqlite_bind_args(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
+write_sqlite_bind_args(struct mstream* ms, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
 {
     struct arg* a;
     int i = 1;
@@ -1410,8 +1555,8 @@ again:
         if (update_pass != a->update)
             continue;
 
-        if (first) fprintf(fp, "    if ((ret = ");
-        else fprintf(fp, " ||" NL "        (ret = ");
+        if (first) mstream_cstr(ms, "    if ((ret = ");
+        else mstream_cstr(ms, " ||" NL "        (ret = ");
         first = 0;
 
         if (str_view_eq("uint64_t", a->type, data))
@@ -1429,19 +1574,19 @@ again:
 
         if (a->nullable)
         {
-            fprintf(fp, "%.*s < 0 ? sqlite3_bind_null(ctx->", a->name.len, data + a->name.off);
-            fprintf_func_name(fp, g, q, data);
-            fprintf(fp, ", %d) : ", i);
+            mstream_fmt(ms, "%S < 0 ? sqlite3_bind_null(ctx->", a->name, data);
+            write_func_name(ms, g, q, data);
+            mstream_fmt(ms, ", %d) : ", i);
         }
-        fprintf(fp, "sqlite3_bind_%s(ctx->", sqlite_type);
-        fprintf_func_name(fp, g, q, data);
-        fprintf(fp, ", %d, %s%.*s", i, cast, a->name.len, data + a->name.off);
+        mstream_fmt(ms, "sqlite3_bind_%s(ctx->", sqlite_type);
+        write_func_name(ms, g, q, data);
+        mstream_fmt(ms, ", %d, %s%S", i, cast, a->name, data);
 
         if (str_view_eq("struct str_view", a->type, data))
-            fprintf(fp, ".data, %.*s.len, SQLITE_STATIC", a->name.len, data + a->name.off);
+            mstream_fmt(ms, ".data, %S.len, SQLITE_STATIC", a->name, data);
         else if (str_view_eq("const char*", a->type, data))
-            fprintf(fp, ", -1, SQLITE_STATIC");
-        fprintf(fp, ")) != SQLITE_OK");
+            mstream_cstr(ms, ", -1, SQLITE_STATIC");
+        mstream_cstr(ms, ")) != SQLITE_OK");
 
         i++;
     }
@@ -1449,18 +1594,19 @@ again:
     if (update_pass--)
         goto again;
 
-    fprintf(fp, ")" NL "    {" NL);
-    fprintf(fp, "        %.*s(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
-    fprintf(fp, "        return -1;" NL "    }" NL NL);
+    mstream_cstr(ms, ")" NL "    {" NL);
+    mstream_fmt(ms, "        %S(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL,
+                LOG_SQL_ERR(root->log_sql_err, data));
+    mstream_cstr(ms, "        return -1;" NL "    }" NL NL);
 }
 
 static void
-fprintf_sqlite_exec_callback(FILE* fp, const struct query_group* g, const struct query* q, const char* data)
+write_sqlite_exec_callback(struct mstream* ms, const struct query_group* g, const struct query* q, const char* data)
 {
     struct arg* a = q->cb_args;
     int i = q->return_name.len ? 1 : 0;
 
-    fprintf(fp, "            ret = on_row(" NL);
+    mstream_cstr(ms, "            ret = on_row(" NL);
     for (; a; a = a->next, i++)
     {
         const char* sqlite_type = "";
@@ -1479,309 +1625,311 @@ fprintf_sqlite_exec_callback(FILE* fp, const struct query_group* g, const struct
         else if (str_view_eq("const char*", a->type, data))
             { sqlite_type = "text"; cast = "(const char*)"; }
 
-        fprintf(fp, "                %ssqlite3_column_%s(ctx->", cast, sqlite_type);
-        fprintf_func_name(fp, g, q, data);
-        fprintf(fp, ", %d)," NL, i);
+        mstream_fmt(ms, "                %ssqlite3_column_%s(ctx->", cast, sqlite_type);
+        write_func_name(ms, g, q, data);
+        mstream_fmt(ms, ", %d)," NL, i);
     }
-    fprintf(fp, "                user_data);" NL);
+    mstream_cstr(ms, "                user_data);" NL);
 }
 
 static void
-fprintf_sqlite_exec(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
+write_sqlite_exec(struct mstream* ms, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
 {
     switch (q->type)
     {
         case QUERY_EXISTS:
-            fprintf(fp, "next_step:" NL);
-            fprintf(fp, "    ret = sqlite3_step(ctx->");
-            fprintf_func_name(fp, g, q, data);
-            fprintf(fp, ");" NL);
-            fprintf(fp, "    switch (ret)" NL "    {" NL);
-            fprintf(fp, "        case SQLITE_ROW:" NL);
-            fprintf(fp, "            sqlite3_reset(ctx->");
-            fprintf_func_name(fp, g, q, data);
-            fprintf(fp, "); " NL);
-            fprintf(fp, "            return 1;" NL);
-            fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
-            fprintf(fp, "        case SQLITE_DONE:" NL);
-            fprintf(fp, "            sqlite3_reset(ctx->");
-            fprintf_func_name(fp, g, q, data);
-            fprintf(fp, ");" NL);
-            fprintf(fp, "            return 0;" NL);
-            fprintf(fp, "    }" NL NL);
-            fprintf(fp, "    %.*s(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
-            fprintf(fp, "    sqlite3_reset(ctx->");
-            fprintf_func_name(fp, g, q, data);
-            fprintf(fp, ");" NL);
-            fprintf(fp, "    return -1;" NL);
+            mstream_cstr(ms, "next_step:" NL);
+            mstream_cstr(ms, "    ret = sqlite3_step(ctx->");
+            write_func_name(ms, g, q, data);
+            mstream_cstr(ms, ");" NL);
+            mstream_cstr(ms, "    switch (ret)" NL "    {" NL);
+            mstream_cstr(ms, "        case SQLITE_BUSY: goto next_step;" NL);
+            mstream_cstr(ms, "        case SQLITE_ROW:" NL);
+            mstream_cstr(ms, "            sqlite3_reset(ctx->");
+            write_func_name(ms, g, q, data);
+            mstream_cstr(ms, "); " NL);
+            mstream_cstr(ms, "            return 1;" NL);
+            mstream_cstr(ms, "        case SQLITE_DONE:" NL);
+            mstream_cstr(ms, "            sqlite3_reset(ctx->");
+            write_func_name(ms, g, q, data);
+            mstream_cstr(ms, ");" NL);
+            mstream_cstr(ms, "            return 0;" NL);
+            mstream_cstr(ms, "    }" NL NL);
+            mstream_fmt(ms, "    %S(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL,
+                        LOG_SQL_ERR(root->log_sql_err, data));
+            mstream_cstr(ms, "    sqlite3_reset(ctx->");
+            write_func_name(ms, g, q, data);
+            mstream_cstr(ms, ");" NL);
+            mstream_cstr(ms, "    return -1;" NL);
             break;
 
         case QUERY_UPDATE:
         case QUERY_INSERT:
         case QUERY_DELETE:
-            fprintf(fp, "next_step:" NL);
-            fprintf(fp, "    ret = sqlite3_step(ctx->");
-            fprintf_func_name(fp, g, q, data);
-            fprintf(fp, ");" NL);
-            fprintf(fp, "    switch (ret)" NL "    {" NL);
-            fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
+            mstream_cstr(ms, "next_step:" NL);
+            mstream_cstr(ms, "    ret = sqlite3_step(ctx->");
+            write_func_name(ms, g, q, data);
+            mstream_cstr(ms, ");" NL);
+            mstream_cstr(ms, "    switch (ret)" NL "    {" NL);
+            mstream_cstr(ms, "        case SQLITE_BUSY: goto next_step;" NL);
 
             if (q->return_name.len || q->cb_args)
-                fprintf(fp, "        case SQLITE_ROW:" NL);
+                mstream_cstr(ms, "        case SQLITE_ROW:" NL);
 
             if (q->return_name.len)
             {
-                fprintf(fp, "            %.*s = sqlite3_column_int(ctx->",
-                    q->return_name.len, data + q->return_name.off);
-                fprintf_func_name(fp, g, q, data);
-                fprintf(fp, ", 0);" NL);
+                mstream_fmt(ms, "            %S = sqlite3_column_int(ctx->",
+                    q->return_name, data);
+                write_func_name(ms, g, q, data);
+                mstream_cstr(ms, ", 0);" NL);
             }
 
             if (q->cb_args)
             {
-                fprintf_sqlite_exec_callback(fp, g, q, data);
+                write_sqlite_exec_callback(ms, g, q, data);
                 if (q->return_name.len)
                 {
-                    fprintf(fp, "            if (ret < 0)" NL);
-                    fprintf(fp, "            {" NL);
-                    fprintf(fp, "                sqlite3_reset(ctx->");
-                    fprintf_func_name(fp, g, q, data);
-                    fprintf(fp, ");" NL);
-                    fprintf(fp, "                return ret;" NL);
-                    fprintf(fp, "            }" NL);
+                    mstream_cstr(ms, "            if (ret < 0)" NL);
+                    mstream_cstr(ms, "            {" NL);
+                    mstream_cstr(ms, "                sqlite3_reset(ctx->");
+                    write_func_name(ms, g, q, data);
+                    mstream_cstr(ms, ");" NL);
+                    mstream_cstr(ms, "                return ret;" NL);
+                    mstream_cstr(ms, "            }" NL);
                 }
                 else
                 {
-                    fprintf(fp, "            sqlite3_reset(ctx->");
-                    fprintf_func_name(fp, g, q, data);
-                    fprintf(fp, ");" NL);
-                    fprintf(fp, "            return ret;" NL);
+                    mstream_cstr(ms, "            sqlite3_reset(ctx->");
+                    write_func_name(ms, g, q, data);
+                    mstream_cstr(ms, ");" NL);
+                    mstream_cstr(ms, "            return ret;" NL);
                 }
             }
             if (q->return_name.len || q->cb_args)
-                fprintf(fp, "        case SQLITE_DONE: goto done;" NL);
+                mstream_cstr(ms, "        case SQLITE_DONE: goto done;" NL);
             else
             {
-                fprintf(fp, "        case SQLITE_DONE:" NL);
-                fprintf(fp, "            sqlite3_reset(ctx->");
-                fprintf_func_name(fp, g, q, data);
-                fprintf(fp, ");" NL);
-                fprintf(fp, "            return 0;" NL);
+                mstream_cstr(ms, "        case SQLITE_DONE:" NL);
+                mstream_cstr(ms, "            sqlite3_reset(ctx->");
+                write_func_name(ms, g, q, data);
+                mstream_cstr(ms, ");" NL);
+                mstream_cstr(ms, "            return 0;" NL);
             }
 
-            fprintf(fp, "    }" NL NL);
-            fprintf(fp, "    %.*s(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
+            mstream_cstr(ms, "    }" NL NL);
+            mstream_fmt(ms, "    %S(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL,
+                        LOG_SQL_ERR(root->log_sql_err, data));
             if (q->return_name.len || q->cb_args)
-                fprintf(fp, "done:" NL);
-            fprintf(fp, "    sqlite3_reset(ctx->");
-            fprintf_func_name(fp, g, q, data);
-            fprintf(fp, ");" NL);
+                mstream_cstr(ms, "done:" NL);
+            mstream_cstr(ms, "    sqlite3_reset(ctx->");
+            write_func_name(ms, g, q, data);
+            mstream_cstr(ms, ");" NL);
             if (q->return_name.len)
-                fprintf(fp, "    return %.*s;" NL, q->return_name.len, data + q->return_name.off);
+                mstream_fmt(ms, "    return %S;" NL, q->return_name, data);
             else
-                fprintf(fp, "    return -1;" NL);
+                mstream_cstr(ms, "    return -1;" NL);
             break;
 
         case QUERY_SELECT_FIRST:
         case QUERY_SELECT_ALL:
-            fprintf(fp, "next_step:" NL);
-            fprintf(fp, "    ret = sqlite3_step(ctx->");
-            fprintf_func_name(fp, g, q, data);
-            fprintf(fp, ");" NL);
-            fprintf(fp, "    switch (ret)" NL "    {" NL);
-            fprintf(fp, "        case SQLITE_ROW:" NL);
+            mstream_cstr(ms, "next_step:" NL);
+            mstream_cstr(ms, "    ret = sqlite3_step(ctx->");
+            write_func_name(ms, g, q, data);
+            mstream_cstr(ms, ");" NL);
+            mstream_cstr(ms, "    switch (ret)" NL "    {" NL);
+            mstream_cstr(ms, "        case SQLITE_ROW:" NL);
 
             if (q->return_name.len)
             {
-                fprintf(fp, "            %.*s = sqlite3_column_int(ctx->",
-                    q->return_name.len, data + q->return_name.off);
-                fprintf_func_name(fp, g, q, data);
-                fprintf(fp, ", 0);" NL);
+                mstream_fmt(ms, "            %S = sqlite3_column_int(ctx->",
+                    q->return_name, data);
+                write_func_name(ms, g, q, data);
+                mstream_cstr(ms, ", 0);" NL);
             }
 
             if (q->cb_args)
-                fprintf_sqlite_exec_callback(fp, g, q, data);
+                write_sqlite_exec_callback(ms, g, q, data);
 
             if (q->type != QUERY_SELECT_FIRST && q->cb_args)
             {
-                fprintf(fp, "            if (ret == 0) goto next_step;" NL);
+                mstream_cstr(ms, "            if (ret == 0) goto next_step;" NL);
 
-                fprintf(fp, "            sqlite3_reset(ctx->");
-                fprintf_func_name(fp, g, q, data);
-                fprintf(fp, ");" NL);
+                mstream_cstr(ms, "            sqlite3_reset(ctx->");
+                write_func_name(ms, g, q, data);
+                mstream_cstr(ms, ");" NL);
 
                 if (q->return_name.len)
-                    fprintf(fp, "            return %.*s;" NL, q->return_name.len, data + q->return_name.off);
+                    mstream_fmt(ms, "            return %S;" NL, q->return_name, data);
                 else
-                    fprintf(fp, "            return ret;" NL);
+                    mstream_cstr(ms, "            return ret;" NL);
             }
 
-            fprintf(fp, "        case SQLITE_BUSY: goto next_step;" NL);
-            fprintf(fp, "        case SQLITE_DONE:" NL);
-            fprintf(fp, "            sqlite3_reset(ctx->");
-            fprintf_func_name(fp, g, q, data);
-            fprintf(fp, ");" NL);
+            mstream_cstr(ms, "        case SQLITE_BUSY: goto next_step;" NL);
+            mstream_cstr(ms, "        case SQLITE_DONE:" NL);
+            mstream_cstr(ms, "            sqlite3_reset(ctx->");
+            write_func_name(ms, g, q, data);
+            mstream_cstr(ms, ");" NL);
 
             if (q->return_name.len)
-                fprintf(fp, "            return %.*s;" NL, q->return_name.len, data + q->return_name.off);
+                mstream_fmt(ms, "            return %S;" NL, q->return_name, data);
             else
-                fprintf(fp, "            return 0;" NL);
+                mstream_cstr(ms, "            return 0;" NL);
 
-            fprintf(fp, "    }" NL NL);
-            fprintf(fp, "    %.*s(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
-            fprintf(fp, "    sqlite3_reset(ctx->");
-            fprintf_func_name(fp, g, q, data);
-            fprintf(fp, ");" NL);
-            fprintf(fp, "    return -1;" NL);
+            mstream_cstr(ms, "    }" NL NL);
+            mstream_fmt(ms, "    %S(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL,
+                        LOG_SQL_ERR(root->log_sql_err, data));
+            mstream_cstr(ms, "    sqlite3_reset(ctx->");
+            write_func_name(ms, g, q, data);
+            mstream_cstr(ms, ");" NL);
+            mstream_cstr(ms, "    return -1;" NL);
             break;
     }
 }
 
 static void
-fprintf_debug_wrapper(FILE* fp, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
+write_debug_wrapper(struct mstream* ms, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
 {
     struct arg* a;
     if (q->cb_args)
     {
-        fprintf(fp, "static int" NL "dbg_");
-        fprintf_func_name(fp, g, q, data);
-        fprintf(fp, "_on_row(");
+        mstream_cstr(ms, "static int" NL "dbg_");
+        write_func_name(ms, g, q, data);
+        mstream_cstr(ms, "_on_row(");
 
         a = q->cb_args;
         while (a)
         {
-            if (a != q->cb_args) fprintf(fp, ", ");
-            fprintf(fp, "%.*s %.*s",
-                a->type.len, data + a->type.off,
-                a->name.len, data + a->name.off);
+            if (a != q->cb_args) mstream_cstr(ms, ", ");
+            mstream_fmt(ms, "%S %S", a->type, data, a->name, data);
             a = a->next;
         }
-        fprintf(fp, ", void* user_data)" NL "{" NL);
+        mstream_cstr(ms, ", void* user_data)" NL "{" NL);
 
-        fprintf(fp, "    void** dbg = user_data;" NL);
+        mstream_cstr(ms, "    void** dbg = user_data;" NL);
 
-        fprintf(fp, "    %.*s(\"  ", LOG_DBG(root->log_dbg, data));
+        mstream_fmt(ms, "    %S(\"  ", LOG_DBG(root->log_dbg, data));
         a = q->cb_args;
         while (a)
         {
-            if (a != q->cb_args) fprintf(fp, " | ");
+            if (a != q->cb_args) mstream_cstr(ms, " | ");
             if (str_view_eq("const char*", a->type, data))
-                fprintf(fp, "\\\"%%s\\\"");
+                mstream_cstr(ms, "\\\"%s\\\"");
             else
-                fprintf(fp, "%%d");
+                mstream_cstr(ms, "%d");
             a = a->next;
         }
-        fprintf(fp, "\\n\", ");
+        mstream_cstr(ms, "\\n\", ");
         a = q->cb_args;
         while (a)
         {
-            if (a != q->cb_args) fprintf(fp, ", ");
+            if (a != q->cb_args) mstream_cstr(ms, ", ");
             if (str_view_eq("const char*", a->type, data)) {}
             else
-                fprintf(fp, "(int)");
-            fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+                mstream_cstr(ms, "(int)");
+            mstream_str(ms, a->name, data);
             a = a->next;
         }
-        fprintf(fp, ");" NL);
+        mstream_cstr(ms, ");" NL);
 
-        fprintf(fp, "    return (*(int(*)(");
+        mstream_cstr(ms, "    return (*(int(*)(");
         a = q->cb_args;
         while (a)
         {
-            if (a != q->cb_args) fprintf(fp, ", ");
-            fprintf(fp, "%.*s", a->type.len, data + a->type.off);
+            if (a != q->cb_args) mstream_cstr(ms, ", ");
+            mstream_str(ms, a->type, data);
             a = a->next;
         }
-        fprintf(fp, ",void*))dbg[0])(");
+        mstream_cstr(ms, ",void*))dbg[0])(");
         a = q->cb_args;
         while (a)
         {
-            if (a != q->cb_args) fprintf(fp, ", ");
-            fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+            if (a != q->cb_args) mstream_cstr(ms, ", ");
+            mstream_str(ms, a->name, data);
             a = a->next;
         }
-        fprintf(fp, ", dbg[1]);" NL);
-        fprintf(fp, "}" NL);
+        mstream_cstr(ms, ", dbg[1]);" NL);
+        mstream_cstr(ms, "}" NL);
     }
 
-    fprintf_dbg_func_decl(fp, root, g, q, data);
-    fprintf(fp, NL "{" NL);
+    write_dbg_func_decl(ms, root, g, q, data);
+    mstream_cstr(ms, NL "{" NL);
 
-    fprintf(fp, "    int result;" NL);
-    fprintf(fp, "    char* sql;" NL);
+    mstream_cstr(ms, "    int result;" NL);
+    mstream_cstr(ms, "    char* sql;" NL);
     if (q->cb_args)
-        fprintf(fp, "    void* dbg[2] = { (void*)on_row, user_data };" NL);
+        mstream_cstr(ms, "    void* dbg[2] = { (void*)on_row, user_data };" NL);
 
-    fprintf(fp, "    %.*s(\"db_sqlite3.", LOG_DBG(root->log_dbg, data));
+    mstream_fmt(ms, "    %S(\"db_sqlite3.", LOG_DBG(root->log_dbg, data));
     if (g)
-        fprintf(fp, "%.*s.", g->name.len, data + g->name.off);
-    fprintf(fp, "%.*s", q->name.len, data + q->name.off);
-    fprintf(fp, "(");
+        mstream_fmt(ms, "%S.", g->name, data);
+    mstream_str(ms, q->name, data);
+    mstream_cstr(ms, "(");
     a = q->in_args;
     while (a)
     {
-        if (a != q->in_args) fprintf(fp, ", ");
+        if (a != q->in_args)
+            mstream_cstr(ms, ", ");
+
         if (str_view_eq("const char*", a->type, data))
-            fprintf(fp, "\\\"%%s\\\"");
+            mstream_cstr(ms, "\\\"%s\\\"");
         else if (str_view_eq("struct str_view", a->type, data))
-            fprintf(fp, "\\\"%%.*s\\\"");
+            mstream_cstr(ms, "\\\"%.*s\\\"");
         else if (str_view_eq("int64_t", a->type, data))
-            fprintf(fp, "%%\" PRIi64\"");
+            mstream_cstr(ms, "%\" PRIi64\"");
         else if (str_view_eq("uint64_t", a->type, data))
-            fprintf(fp, "%%\" PRIu64\"");
+            mstream_cstr(ms, "%\" PRIu64\"");
         else
-            fprintf(fp, "%%d");
+            mstream_cstr(ms, "%d");
         a = a->next;
     }
-    fprintf(fp, ")\\n\"");
+    mstream_cstr(ms, ")\\n\"");
     if (q->in_args)
-        fprintf(fp, ", ");
+        mstream_cstr(ms, ", ");
     a = q->in_args;
     while (a)
     {
-        if (a != q->in_args) fprintf(fp, ", ");
+        if (a != q->in_args) mstream_cstr(ms, ", ");
         if (str_view_eq("const char*", a->type, data))
-            fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+            mstream_str(ms, a->name, data);
         else if (str_view_eq("struct str_view", a->type, data))
-            fprintf(fp, "%.*s.len, %.*s.data",
-                a->name.len, data + a->name.off,
-                a->name.len, data + a->name.off);
+            mstream_fmt(ms, "%S.len, %S.data", a->name, data, a->name, data);
         else if (str_view_eq("int64_t", a->type, data))
-            fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+            mstream_str(ms, a->name, data);
         else if (str_view_eq("uint64_t", a->type, data))
-            fprintf(fp, "%.*s", a->name.len, data + a->name.off);
+            mstream_str(ms, a->name, data);
         else
-            fprintf(fp, "(int)%.*s", a->name.len, data + a->name.off);
+            mstream_fmt(ms, "(int)%S", a->name, data);
         a = a->next;
     }
-    fprintf(fp, ");" NL);
+    mstream_cstr(ms, ");" NL);
 
-    fprintf(fp, "    result = db_sqlite3.");
+    mstream_cstr(ms, "    result = db_sqlite3.");
     if (g)
-        fprintf(fp, "%.*s.", g->name.len, data + g->name.off);
-    fprintf(fp, "%.*s", q->name.len, data + q->name.off);
-    fprintf(fp, "(ctx");
+        mstream_fmt(ms, "%S.", g->name, data);
+    mstream_str(ms, q->name, data);
+    mstream_cstr(ms, "(ctx");
     a = q->in_args;
     while (a)
     {
-        fprintf(fp, ", %.*s", a->name.len, data + a->name.off);
+        mstream_fmt(ms, ", %S", a->name, data);
         a = a->next;
     }
     if (q->cb_args)
     {
-        fprintf(fp, ", dbg_");
-        fprintf_func_name(fp, g, q, data);
-        fprintf(fp, "_on_row, dbg");
+        mstream_cstr(ms, ", dbg_");
+        write_func_name(ms, g, q, data);
+        mstream_cstr(ms, "_on_row, dbg");
     }
-    fprintf(fp, ");" NL);
+    mstream_cstr(ms, ");" NL);
 
-    fprintf(fp, "    sql = sqlite3_expanded_sql(ctx->");
-    fprintf_func_name(fp, g, q, data);
-    fprintf(fp, ");" NL);
-    fprintf(fp, "    %.*s(\"retval=%%d\\n%%s\\n\\n\", result, sql);" NL, LOG_DBG(root->log_dbg, data));
-    fprintf(fp, "    sqlite3_free(sql);" NL);
-    fprintf(fp, "    return result;" NL);
-    fprintf(fp, "}" NL NL);
+    mstream_cstr(ms, "    sql = sqlite3_expanded_sql(ctx->");
+    write_func_name(ms, g, q, data);
+    mstream_cstr(ms, ");" NL);
+    mstream_fmt(ms, "    %S(\"retval=%%d\\n%%s\\n\\n\", result, sql);" NL,
+                LOG_DBG(root->log_dbg, data));
+    mstream_cstr(ms, "    sqlite3_free(sql);" NL);
+    mstream_cstr(ms, "    return result;" NL);
+    mstream_cstr(ms, "}" NL NL);
 }
 
 static int
@@ -1792,42 +1940,36 @@ gen_header(const struct root* root, const char* data, const char* file_name,
     struct query_group* g;
     struct function* f;
     struct arg* a;
-    FILE* fp = fopen(file_name, "wb");
-    if (fp == NULL)
-    {
-        fprintf(stderr, "Error: Failed to open file for writing \"%s\"\n", file_name);
-        return -1;
-    }
+    struct mfile mf;
+    struct mstream ms = mstream_init_writeable();
 
     if (root->header_preamble.len)
-        fprintf(fp, "%.*s" NL, root->header_preamble.len, data + root->header_preamble.off);
+        mstream_str(&ms, root->header_preamble, data);
 
-    fprintf(fp, "struct %.*s;" NL, PREFIX(root->prefix, data));
-    fprintf(fp, "struct %.*s_interface" NL "{" NL, PREFIX(root->prefix, data));
+    mstream_fmt(&ms, "struct %S;" NL, PREFIX(root->prefix, data));
+    mstream_fmt(&ms, "struct %S_interface" NL "{" NL, PREFIX(root->prefix, data));
 
     /* Open and close functions are hard-coded */
-    fprintf(fp, "    struct %.*s* (*open)(const char* uri);" NL,
+    mstream_fmt(&ms, "    struct %S* (*open)(const char* uri);" NL,
             PREFIX(root->prefix, data));
-    fprintf(fp, "    void (*close)(struct %.*s* ctx);" NL NL,
+    mstream_fmt(&ms, "    void (*close)(struct %S* ctx);" NL NL,
             PREFIX(root->prefix, data));
 
     /* Functions */
     f = root->functions;
     while (f)
     {
-        fprintf(fp, "    int (*%.*s)(struct %.*s* ctx",
-                f->name.len, data + f->name.off,
+        mstream_fmt(&ms, "    int (*%S)(struct %S* ctx",
+                f->name, data,
                 PREFIX(root->prefix, data));
         a = f->args;
         while (a)
         {
-            fprintf(fp, ", ");
-            fprintf(fp, "%.*s %.*s",
-                a->type.len, data + a->type.off,
-                a->name.len, data + a->name.off);
+            mstream_cstr(&ms, ", ");
+            mstream_fmt(&ms, "%S %S", a->type, data, a->name, data);
             a = a->next;
         }
-        fprintf(fp, ");" NL);
+        mstream_cstr(&ms, ");" NL);
 
         f = f->next;
     }
@@ -1836,43 +1978,57 @@ gen_header(const struct root* root, const char* data, const char* file_name,
     q = root->queries;
     while (q)
     {
-        fprintf(fp, "    ");
-        fprintf_func_ptr_decl(fp, root, NULL, q, data);
-        fprintf(fp, ";" NL);
+        mstream_cstr(&ms, "    ");
+        write_func_ptr_decl(&ms, root, NULL, q, data);
+        mstream_cstr(&ms, ";" NL);
         q = q->next;
     }
-    fprintf(fp, NL);
+    mstream_cstr(&ms, NL);
 
     /* Grouped queries */
     g = root->query_groups;
     while (g)
     {
-        fprintf(fp, "    struct {" NL);
+        mstream_cstr(&ms, "    struct {" NL);
         q = g->queries;
         while (q)
         {
-            fprintf(fp, "        ");
-            fprintf_func_ptr_decl(fp, root, NULL, q, data);
-            fprintf(fp, ";" NL);
+            mstream_cstr(&ms, "        ");
+            write_func_ptr_decl(&ms, root, NULL, q, data);
+            mstream_cstr(&ms, ";" NL);
             q = q->next;
         }
-        fprintf(fp, "    } %.*s;" NL NL, g->name.len, data + g->name.off);
+        mstream_fmt(&ms, "    } %S;" NL NL, g->name, data);
         g = g->next;
     }
-    fprintf(fp, "};" NL NL);
+    mstream_cstr(&ms, "};" NL NL);
 
     /* API */
     if (!custom_init)
-        fprintf(fp, "int %.*s_init(void);" NL, PREFIX(root->prefix, data));
+        mstream_fmt(&ms, "int %S_init(void);" NL, PREFIX(root->prefix, data));
     if (!custom_deinit)
-        fprintf(fp, "void %.*s_deinit(void);" NL, PREFIX(root->prefix, data));
+        mstream_fmt(&ms, "void %S_deinit(void);" NL, PREFIX(root->prefix, data));
     if (!custom_api)
-        fprintf(fp, "struct %.*s_interface* %.*s(const char* backend);" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
+        mstream_fmt(&ms, "struct %S_interface* %S(const char* backend);" NL,
+                PREFIX(root->prefix, data), PREFIX(root->prefix, data));
 
     if (root->header_postamble.len)
-        fprintf(fp, "%.*s" NL, root->header_postamble.len, data + root->header_postamble.off);
+        mstream_fmt(&ms, "%S" NL, root->header_postamble, data);
 
-    fclose(fp);
+    /* Don't write header if it is identical to the existing one -- causes less
+     * rebuilds */
+    if (mfile_map_read(&mf, file_name) == 0)
+    {
+        if (mf.size == ms.idx && memcmp(mf.address, ms.address, mf.size) == 0)
+            return 0;
+        mfile_unmap(&mf);
+    }
+
+    if (mfile_map_write(&mf, file_name, ms.idx) != 0)
+        return -1;
+    memcpy(mf.address, ms.address, ms.idx);
+    mfile_unmap(&mf);
+
     return 0;
 }
 
@@ -1884,32 +2040,28 @@ gen_source(const struct root* root, const char* data, const char* file_name,
     struct query_group* g;
     struct function* f;
     struct arg* a;
-    FILE* fp = fopen(file_name, "wb");
-    if (fp == NULL)
-    {
-        fprintf(stderr, "Error: Failed to open file for writing \"%s\"" NL, file_name);
-        return -1;
-    }
+    struct mfile mf;
+    struct mstream ms = mstream_init_writeable();
 
     if (root->source_includes.len)
-        fprintf(fp, "%.*s" NL, root->source_includes.len, data + root->source_includes.off);
+        mstream_str(&ms, root->source_includes, data);
 
-    fprintf(fp, "#include <stdlib.h>" NL);
-    fprintf(fp, "#include <string.h>" NL);
-    fprintf(fp, "#include <stdio.h>" NL);
+    mstream_cstr(&ms, "#include <stdlib.h>" NL);
+    mstream_cstr(&ms, "#include <string.h>" NL);
+    mstream_cstr(&ms, "#include <stdio.h>" NL);
 
     /* ------------------------------------------------------------------------
      * Context structure declaration
      * --------------------------------------------------------------------- */
 
-    fprintf(fp, "struct %.*s" NL "{" NL,
+    mstream_fmt(&ms, "struct %S" NL "{" NL,
             PREFIX(root->prefix, data));
-    fprintf(fp, "    sqlite3* db;" NL);
+    mstream_fmt(&ms, "    sqlite3* db;" NL);
     /* Global queries */
     q = root->queries;
     while (q)
     {
-        fprintf(fp, "    sqlite3_stmt* %.*s;" NL, q->name.len, data + q->name.off);
+        mstream_fmt(&ms, "    sqlite3_stmt* %S;" NL, q->name, data);
         q = q->next;
     }
     /* Grouped queries */
@@ -1919,25 +2071,23 @@ gen_source(const struct root* root, const char* data, const char* file_name,
         q = g->queries;
         while (q)
         {
-            fprintf(fp, "    sqlite3_stmt* %.*s_%.*s;" NL,
-                    g->name.len, data + g->name.off,
-                    q->name.len, data + q->name.off);
+            mstream_fmt(&ms, "    sqlite3_stmt* %S_%S;" NL, g->name, data, q->name, data);
             q = q->next;
         }
         g = g->next;
     }
-    fprintf(fp, "};" NL);
+    mstream_cstr(&ms, "};" NL);
 
     /* Error function */
     if (root->log_sql_err.len == 0)
     {
-        fprintf(fp, "static void" NL "sqlgen_error(int error_code, const char* error_code_str, const char* error_msg)" NL "{" NL);
-        fprintf(fp, "    printf(\"SQL Error: %%s (%%d): %%s\\n\", error_code_str, error_code, error_msg);" NL);
-        fprintf(fp, "}" NL NL);
+        mstream_cstr(&ms, "static void" NL "sqlgen_error(int error_code, const char* error_code_str, const char* error_msg)" NL "{" NL);
+        mstream_cstr(&ms, "    printf(\"SQL Error: %s (%d): %s\\n\", error_code_str, error_code, error_msg);" NL);
+        mstream_cstr(&ms, "}" NL NL);
     }
 
     if (root->source_preamble.len)
-        fprintf(fp, "%.*s" NL, root->source_preamble.len, data + root->source_preamble.off);
+        mstream_str(&ms, root->source_preamble, data);
 
     /* ------------------------------------------------------------------------
      * Functions
@@ -1946,20 +2096,17 @@ gen_source(const struct root* root, const char* data, const char* file_name,
     f = root->functions;
     while (f)
     {
-        fprintf(fp, "static int" NL "%.*s(struct %.*s* ctx",
-                f->name.len, data + f->name.off,
+        mstream_fmt(&ms, "static int" NL "%S(struct %S* ctx", f->name, data,
                 PREFIX(root->prefix, data));
         a = f->args;
         while (a)
         {
-            fprintf(fp, ", %.*s %.*s",
-                a->type.len, data + a->type.off,
-                a->name.len, data + a->name.off);
+            mstream_fmt(&ms, ", %S %S", a->type, data, a->name, data);
             a = a->next;
         }
-        fprintf(fp, ")" NL "{");
-        fprintf(fp, "%.*s", f->body.len, data + f->body.off);
-        fprintf(fp, "}" NL NL);
+        mstream_cstr(&ms, ")" NL "{");
+        mstream_str(&ms, f->body, data);
+        mstream_cstr(&ms, "}" NL NL);
 
         f = f->next;
     }
@@ -1971,20 +2118,20 @@ gen_source(const struct root* root, const char* data, const char* file_name,
     q = root->queries;
     while (q)
     {
-        fprintf_func_decl(fp, root, NULL, q, data);
-        fprintf(fp, NL "{" NL);
+        write_func_decl(&ms, root, NULL, q, data);
+        mstream_cstr(&ms, NL "{" NL);
 
         /* Local variables */
-        fprintf(fp, "    int ret");
+        mstream_cstr(&ms, "    int ret");
         if (q->return_name.len)
-            fprintf(fp, ", %.*s = -1", q->return_name.len, data + q->return_name.off);
-        fprintf(fp, ";" NL);
+            mstream_fmt(&ms, ", %S = -1", q->return_name, data);
+        mstream_cstr(&ms, ";" NL);
 
-        fprintf_sqlite_prepare_stmt(fp, root, NULL, q, data);
-        fprintf_sqlite_bind_args(fp, root, NULL, q, data);
-        fprintf_sqlite_exec(fp, root, NULL, q, data);
+        write_sqlite_prepare_stmt(&ms, root, NULL, q, data);
+        write_sqlite_bind_args(&ms, root, NULL, q, data);
+        write_sqlite_exec(&ms, root, NULL, q, data);
 
-        fprintf(fp, "}" NL NL);
+        mstream_cstr(&ms, "}" NL NL);
 
         q = q->next;
     }
@@ -1995,20 +2142,20 @@ gen_source(const struct root* root, const char* data, const char* file_name,
         q = g->queries;
         while (q)
         {
-            fprintf_func_decl(fp, root, g, q, data);
-            fprintf(fp, NL "{" NL);
+            write_func_decl(&ms, root, g, q, data);
+            mstream_cstr(&ms, NL "{" NL);
 
             /* Local variables */
-            fprintf(fp, "    int ret");
+            mstream_cstr(&ms, "    int ret");
             if (q->return_name.len)
-                fprintf(fp, ", %.*s = -1", q->return_name.len, data + q->return_name.off);
-            fprintf(fp, ";" NL);
+                mstream_fmt(&ms, ", %S = -1", q->return_name, data);
+            mstream_cstr(&ms, ";" NL);
 
-            fprintf_sqlite_prepare_stmt(fp, root, g, q, data);
-            fprintf_sqlite_bind_args(fp, root, g, q, data);
-            fprintf_sqlite_exec(fp, root, g, q, data);
+            write_sqlite_prepare_stmt(&ms, root, g, q, data);
+            write_sqlite_bind_args(&ms, root, g, q, data);
+            write_sqlite_exec(&ms, root, g, q, data);
 
-            fprintf(fp, "}" NL NL);
+            mstream_cstr(&ms, "}" NL NL);
 
             q = q->next;
         }
@@ -2019,33 +2166,33 @@ gen_source(const struct root* root, const char* data, const char* file_name,
      * Open and close
      * --------------------------------------------------------------------- */
 
-    fprintf(fp, "static struct %.*s*" NL "%.*s_open(const char* uri)" NL "{" NL,
+    mstream_fmt(&ms, "static struct %S*" NL "%S_open(const char* uri)" NL "{" NL,
             PREFIX(root->prefix, data),
             PREFIX(root->prefix, data));
-    fprintf(fp, "    int ret;" NL);
-    fprintf(fp, "    struct %.*s* ctx = %.*s(sizeof *ctx);" NL,
+    mstream_fmt(&ms, "    int ret;" NL);
+    mstream_fmt(&ms, "    struct %S* ctx = %S(sizeof *ctx);" NL,
             PREFIX(root->prefix, data),
             MALLOC(root->malloc, data));
-    fprintf(fp, "    if (ctx == NULL)" NL);
-    fprintf(fp, "        return NULL;" NL);
-    fprintf(fp, "    memset(ctx, 0, sizeof *ctx);" NL NL);
-    fprintf(fp, "    ret = sqlite3_open_v2(uri, &ctx->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL);" NL);
-    fprintf(fp, "    if (ret == SQLITE_OK)" NL);
-    fprintf(fp, "        return ctx;" NL NL);
-    fprintf(fp, "    %.*s(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
-    fprintf(fp, "    %.*s(ctx);" NL,
-            FREE(root->free, data));
-    fprintf(fp, "    return NULL;" NL);
-    fprintf(fp, "}" NL NL);
+    mstream_cstr(&ms, "    if (ctx == NULL)" NL);
+    mstream_cstr(&ms, "        return NULL;" NL);
+    mstream_cstr(&ms, "    memset(ctx, 0, sizeof *ctx);" NL NL);
+    mstream_cstr(&ms, "    ret = sqlite3_open_v2(uri, &ctx->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL);" NL);
+    mstream_cstr(&ms, "    if (ret == SQLITE_OK)" NL);
+    mstream_cstr(&ms, "        return ctx;" NL NL);
+    mstream_fmt(&ms, "    %S(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL,
+                LOG_SQL_ERR(root->log_sql_err, data));
+    mstream_fmt(&ms, "    %S(ctx);" NL, FREE(root->free, data));
+    mstream_cstr(&ms, "    return NULL;" NL);
+    mstream_cstr(&ms, "}" NL NL);
 
-    fprintf(fp, "static void" NL "%.*s_close(struct %.*s* ctx)" NL "{" NL,
+    mstream_fmt(&ms, "static void" NL "%S_close(struct %S* ctx)" NL "{" NL,
             PREFIX(root->prefix, data),
             PREFIX(root->prefix, data));
     /* Global queries */
     q = root->queries;
     while (q)
     {
-        fprintf(fp, "    sqlite3_finalize(ctx->%.*s);" NL, q->name.len, data + q->name.off);
+        mstream_fmt(&ms, "    sqlite3_finalize(ctx->%S);" NL, q->name.len, data + q->name.off);
         q = q->next;
     }
     /* Grouped queries */
@@ -2055,57 +2202,52 @@ gen_source(const struct root* root, const char* data, const char* file_name,
         q = g->queries;
         while (q)
         {
-            fprintf(fp, "    sqlite3_finalize(ctx->%.*s_%.*s);" NL,
-                    g->name.len, data + g->name.off,
-                    q->name.len, data + q->name.off);
+            mstream_fmt(&ms, "    sqlite3_finalize(ctx->%S_%S);" NL, g->name, data, q->name, data);
             q = q->next;
         }
         g = g->next;
     }
-    fprintf(fp, "    sqlite3_close(ctx->db);" NL);
-    fprintf(fp, "    %.*s(ctx);" NL,
-            root->free.len ? root->free.len : 6, root->free.len ? data + root->free.off : "free");
-    fprintf(fp, "}" NL NL);
+    mstream_cstr(&ms, "    sqlite3_close(ctx->db);" NL);
+    mstream_fmt(&ms, "    %S(ctx);" NL, FREE(root->free, data));
+    mstream_cstr(&ms, "}" NL NL);
 
     /* ------------------------------------------------------------------------
      * Interface
      * --------------------------------------------------------------------- */
 
-    fprintf(fp, "static struct %.*s_interface db_sqlite3 = {" NL, PREFIX(root->prefix, data));
-    fprintf(fp, "    %.*s_open," NL "    %.*s_close," NL,
+    mstream_fmt(&ms, "static struct %S_interface db_sqlite3 = {" NL, PREFIX(root->prefix, data));
+    mstream_fmt(&ms, "    %S_open," NL "    %S_close," NL,
             PREFIX(root->prefix, data),
             PREFIX(root->prefix, data));
     /* Functions */
     f = root->functions;
     while (f)
     {
-        fprintf(fp, "    %.*s," NL, f->name.len, data + f->name.off);
+        mstream_fmt(&ms, "    %S," NL, f->name, data);
         f = f->next;
     }
     /* Global queries */
     q = root->queries;
     while (q)
     {
-        fprintf(fp, "    %.*s," NL, q->name.len, data + q->name.off);
+        mstream_fmt(&ms, "    %S," NL, q->name, data);
         q = q->next;
     }
     /* Grouped queries */
     g = root->query_groups;
     while (g)
     {
-        fprintf(fp, "    {" NL);
+        mstream_cstr(&ms, "    {" NL);
         q = g->queries;
         while (q)
         {
-            fprintf(fp, "        %.*s_%.*s," NL,
-                    g->name.len, data + g->name.off,
-                    q->name.len, data + q->name.off);
+            mstream_fmt(&ms, "        %S_%S," NL, g->name, data, q->name, data);
             q = q->next;
         }
-        fprintf(fp, "    }," NL);
+        mstream_cstr(&ms, "    }," NL);
         g = g->next;
     }
-    fprintf(fp, "};" NL NL);
+    mstream_cstr(&ms, "};" NL NL);
 
     /* ------------------------------------------------------------------------
      * Debug layer
@@ -2116,7 +2258,7 @@ gen_source(const struct root* root, const char* data, const char* file_name,
         q = root->queries;
         while (q)
         {
-            fprintf_debug_wrapper(fp, root, NULL, q, data);
+            write_debug_wrapper(&ms, root, NULL, q, data);
             q = q->next;
         }
         g = root->query_groups;
@@ -2125,57 +2267,55 @@ gen_source(const struct root* root, const char* data, const char* file_name,
             q = g->queries;
             while (q)
             {
-                fprintf_debug_wrapper(fp, root, g, q, data);
+                write_debug_wrapper(&ms, root, g, q, data);
                 q = q->next;
             }
             g = g->next;
         }
 
         /* Open and close wrappers */
-        fprintf(fp, "static struct %.*s* dbg_%.*s_open(const char* uri)" NL "{" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
-        fprintf(fp, "    %.*s(\"Opening database \\\"%%s\\\"\\n\", uri);" NL, LOG_DBG(root->log_dbg, data));
-        fprintf(fp, "    return db_sqlite3.open(uri);" NL);
-        fprintf(fp, "}" NL NL);
-        fprintf(fp, "static void dbg_%.*s_close(struct %.*s* ctx)" NL "{" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
-        fprintf(fp, "    %.*s(\"Closing database\\n\");" NL, LOG_DBG(root->log_dbg, data));
-        fprintf(fp, "    db_sqlite3.close(ctx);" NL);
-        fprintf(fp, "}" NL NL);
+        mstream_fmt(&ms, "static struct %S* dbg_%S_open(const char* uri)" NL "{" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
+        mstream_fmt(&ms, "    %S(\"Opening database \\\"%%s\\\"\\n\", uri);" NL, LOG_DBG(root->log_dbg, data));
+        mstream_cstr(&ms, "    return db_sqlite3.open(uri);" NL);
+        mstream_cstr(&ms, "}" NL NL);
+        mstream_fmt(&ms, "static void dbg_%S_close(struct %S* ctx)" NL "{" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
+        mstream_fmt(&ms, "    %S(\"Closing database\\n\");" NL, LOG_DBG(root->log_dbg, data));
+        mstream_cstr(&ms, "    db_sqlite3.close(ctx);" NL);
+        mstream_cstr(&ms, "}" NL NL);
 
-        fprintf(fp, "static struct %.*s_interface dbg_db_sqlite3 = {" NL, PREFIX(root->prefix, data));
-        fprintf(fp, "    dbg_%.*s_open," NL "    dbg_%.*s_close," NL,
+        mstream_fmt(&ms, "static struct %S_interface dbg_db_sqlite3 = {" NL, PREFIX(root->prefix, data));
+        mstream_fmt(&ms, "    dbg_%S_open," NL "    dbg_%S_close," NL,
                 PREFIX(root->prefix, data),
                 PREFIX(root->prefix, data));
         /* Functions */
         f = root->functions;
         while (f)
         {
-            fprintf(fp, "    %.*s," NL, f->name.len, data + f->name.off);
+            mstream_fmt(&ms, "    %S," NL, f->name, data);
             f = f->next;
         }
         /* Global queries */
         q = root->queries;
         while (q)
         {
-            fprintf(fp, "    dbg_%.*s," NL, q->name.len, data + q->name.off);
+            mstream_fmt(&ms, "    dbg_%S," NL, q->name, data);
             q = q->next;
         }
         /* Grouped queries */
         g = root->query_groups;
         while (g)
         {
-            fprintf(fp, "    {" NL);
+            mstream_cstr(&ms, "    {" NL);
             q = g->queries;
             while (q)
             {
-                fprintf(fp, "        dbg_%.*s_%.*s," NL,
-                        g->name.len, data + g->name.off,
-                        q->name.len, data + q->name.off);
+                mstream_fmt(&ms, "        dbg_%S_%S," NL, g->name, data, q->name, data);
                 q = q->next;
             }
-            fprintf(fp, "    }," NL);
+            mstream_cstr(&ms, "    }," NL);
             g = g->next;
         }
-        fprintf(fp, "};" NL NL);
+        mstream_cstr(&ms, "};" NL NL);
     }
 
     /* ------------------------------------------------------------------------
@@ -2184,37 +2324,41 @@ gen_source(const struct root* root, const char* data, const char* file_name,
 
     if (!custom_init)
     {
-        fprintf(fp, "int" NL "%.*s_init(void)" NL "{" NL, PREFIX(root->prefix, data));
-        fprintf(fp, "    if (sqlite3_initialize() != SQLITE_OK)" NL);
-        fprintf(fp, "        return -1;" NL);
-        fprintf(fp, "    return 0;" NL);
-        fprintf(fp, "}" NL NL);
+        mstream_fmt(&ms, "int" NL "%S_init(void)" NL "{" NL, PREFIX(root->prefix, data));
+        mstream_cstr(&ms, "    if (sqlite3_initialize() != SQLITE_OK)" NL);
+        mstream_cstr(&ms, "        return -1;" NL);
+        mstream_cstr(&ms, "    return 0;" NL);
+        mstream_cstr(&ms, "}" NL NL);
     }
 
     if (!custom_deinit)
     {
-        fprintf(fp, "void" NL "%.*s_deinit(void)" NL "{" NL, PREFIX(root->prefix, data));
-        fprintf(fp, "    sqlite3_shutdown();" NL);
-        fprintf(fp, "}" NL NL);
+        mstream_fmt(&ms, "void" NL "%S_deinit(void)" NL "{" NL, PREFIX(root->prefix, data));
+        mstream_cstr(&ms, "    sqlite3_shutdown();" NL);
+        mstream_cstr(&ms, "}" NL NL);
     }
 
     if (!custom_api)
     {
-        fprintf(fp, "struct %.*s_interface* %.*s(const char* backend)" NL "{" NL,
+        mstream_fmt(&ms, "struct %S_interface* %S(const char* backend)" NL "{" NL,
             PREFIX(root->prefix, data),
             PREFIX(root->prefix, data));
-        fprintf(fp, "    if (strcmp(\"sqlite3\", backend) == 0)" NL);
-        fprintf(fp, "        return &%sdb_sqlite3;" NL, debug_layer ? "dbg_" : "");
-        fprintf(fp, "    %.*s(\"%.*s(): Unknown backend \\\"%%s\\\"\", backend);" NL,
+        mstream_cstr(&ms, "    if (strcmp(\"sqlite3\", backend) == 0)" NL);
+        mstream_fmt(&ms, "        return &%sdb_sqlite3;" NL, debug_layer ? "dbg_" : "");
+        mstream_fmt(&ms, "    %S(\"%S(): Unknown backend \\\"%%s\\\"\", backend);" NL,
             LOG_ERR(root->log_err, data), PREFIX(root->prefix, data));
-        fprintf(fp, "    return NULL;" NL);
-        fprintf(fp, "}" NL);
+        mstream_cstr(&ms, "    return NULL;" NL);
+        mstream_cstr(&ms, "}" NL);
     }
 
     if (root->source_postamble.len)
-        fprintf(fp, "%.*s" NL, root->source_postamble.len, data + root->source_postamble.off);
+        mstream_str(&ms, root->source_postamble, data);
 
-    fclose(fp);
+    if (mfile_map_write(&mf, file_name, ms.idx) != 0)
+        return -1;
+    memcpy(mf.address, ms.address, ms.idx);
+    mfile_unmap(&mf);
+
     return 0;
 }
 
@@ -2227,7 +2371,7 @@ int main(int argc, char** argv)
     if (parse_cmdline(argc, argv, &cfg) != 0)
         return -1;
 
-    if (mfile_map(&mf, cfg.input_file) < 0)
+    if (mfile_map_read(&mf, cfg.input_file) < 0)
         return -1;
 
     root_init(&root);

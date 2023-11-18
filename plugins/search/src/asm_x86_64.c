@@ -32,7 +32,9 @@ alloc_page_rw(int size)
 #if defined(_WIN32)
     return VirtualAlloc(NULL, size, MEM_COMMIT, PAGE_READWRITE);
 #else
-    return mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    void* mem = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (mem == MAP_FAILED)
+        return NULL;
 #endif
 }
 static void

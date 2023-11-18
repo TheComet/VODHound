@@ -24,7 +24,7 @@ int mfile_map(struct mfile* mf, const char* file_name)
         goto file_too_large;*/
 
     mf->address = mmap(NULL, (size_t)stbuf.st_size, PROT_READ, MAP_PRIVATE | MAP_NORESERVE, fd, 0);
-    if (mf->address == NULL)
+    if (mf->address == MAP_FAILED)
         goto mmap_failed;
 
     /* file descriptor no longer required */

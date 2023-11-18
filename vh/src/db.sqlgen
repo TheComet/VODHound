@@ -46,27 +46,27 @@ C_END
 
 %query transaction,begin() {
     type insert
-    stmt { BEGIN TRANSACTION }
+    stmt { BEGIN TRANSACTION; }
 }
 %query transaction,commit() {
     type insert
-    stmt { COMMIT TRANSACTION }
+    stmt { COMMIT TRANSACTION; }
 }
 %query transaction,rollback() {
     type insert
-    stmt { ROLLBACK TRANSACTION }
+    stmt { ROLLBACK TRANSACTION; }
 }
 %query transaction,begin_nested(struct str_view name) {
     type insert
-    stmt { SAVEPOINT ? }
+    stmt { SAVEPOINT ?; }
 }
 %query transaction,commit_nested(struct str_view name) {
     type insert
-    stmt { RELEASE SAVEPOINT ? }
+    stmt { RELEASE SAVEPOINT ?; }
 }
 %query transaction,rollback_nested(struct str_view name) {
     type insert
-    stmt { ROLLBACK TO SAVEPOINT ? }
+    stmt { ROLLBACK TO SAVEPOINT ?; }
 }
 
 %query motion,add(uint64_t hash40, struct str_view string) {

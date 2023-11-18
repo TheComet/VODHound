@@ -67,7 +67,7 @@ if (VODHOUND_UI MATCHES "IUP")
         PROPERTY VS_STARTUP_PROJECT application)
 elseif (VODHOUND_UI MATCHES "GTK4")
     add_subdirectory ("application-gtk4")
-    
+
     # "application" target should be the startup project in VS
     set_property(
         DIRECTORY "${PROJECT_SOURCE_DIR}"
