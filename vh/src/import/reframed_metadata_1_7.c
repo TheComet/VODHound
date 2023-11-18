@@ -251,7 +251,7 @@ import_reframed_metadata_1_7(
             winner_team_id = team_id;
     }
 
-    int game_id = dbi->game.add_or_get(db,
+    int game_id = dbi->game.add(db,
         round_type_id,
         round_number,
         set_format_id,

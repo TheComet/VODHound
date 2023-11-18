@@ -179,7 +179,7 @@ C_END
 }
 %query event,add_or_get(int event_type_id, struct str_view url) {
     type insert
-    table event_types
+    table events
     return id
 }
 %query round,add_or_get_type(struct str_view short_name, struct str_view long_name) {
@@ -192,14 +192,14 @@ C_END
     table set_formats
     return id
 }
-%query team,add_or_get(struct str_view short_name, struct str_view url) {
+%query team,add_or_get(struct str_view name, struct str_view url) {
     type insert
     table teams
     return id
 }
 %query team,add_member(int team_id, int person_id) {
     type insert
-    table teams
+    table team_members
 }
 %query sponsor,add_or_get(struct str_view short_name, struct str_view full_name, struct str_view website) {
     type insert
@@ -214,7 +214,18 @@ C_END
         struct str_view pronouns) {
     type insert
     table people
-    callback int id, int sponsor_id, const char* name, const char* tag, const char* social, const char* pronouns
+    return id
+}
+%query person,merge_social_and_pronouns(int id, struct str_view social, struct str_view pronouns) {
+    type insert
+    stmt {
+        UPDATE people
+        SET
+            social = CASE WHEN social='' THEN ? ELSE social END,
+            pronouns = CASE WHEN pronouns='' THEN ? ELSE pronouns END
+        WHERE id = ?;
+    }
+    bind social, pronouns, id
 }
 %query person,get_id_from_name(struct str_view name) {
     type select-first
@@ -243,7 +254,7 @@ C_END
     type update pronouns
     table people
 }
-%query game,add_or_get(
+%query game,add(
         int round_type_id null,
         int round_number null,
         int set_format_id,
@@ -363,15 +374,6 @@ C_END
         int event_id
 }
 %query game,get_all_in_event(int event_id, struct str_view date) {
-    /*
-     * We do a hack here of the form
-     *   SELECT * FROM table, (SELECT ? AS id) target
-     *   WHERE (table.event_id = target.id OR table.event_id IS target.id);
-     * Because we would like the be able to match NULL as well as regular
-     * values within the same statement. The reason for not using two ? here
-     * is because the code generator does not support binding the same value
-     * twice, so we bind it once into a subquery.
-     */
     type select-all
     stmt {
         WITH grouped_games AS (
@@ -392,7 +394,7 @@ C_END
                 group_concat(REPLACE(people.name, '+', '\\+'), '+') players,
                 group_concat(REPLACE(IFNULL(sponsors.short_name, ''), '+', '\\+'), '+') sponsors,
                 group_concat(REPLACE(IFNULL(fighters.name, game_players.fighter_id), '+', '\\+'), '+') fighters
-            FROM game_players, (SELECT ? AS id) target_event
+            FROM game_players
             INNER JOIN games ON games.id = game_players.game_id
             LEFT JOIN event_games ON event_games.game_id = games.id
             INNER JOIN teams ON teams.id = game_players.team_id
@@ -401,8 +403,8 @@ C_END
             LEFT JOIN fighters ON fighters.id = game_players.fighter_id
             LEFT JOIN sponsors ON sponsors.id = people.sponsor_id
             WHERE
+                AND (event_id IS ? OR event_id = ?)
                 DATE(time_started/1000, 'unixepoch') = ?
-                AND (event_id IS target_event.id OR event_id = target_event.id)
             GROUP BY games.id, game_players.team_id
             ORDER BY game_players.slot)
         SELECT
@@ -433,6 +435,12 @@ C_END
         ORDER BY time_started DESC;
 
     }
+    /*
+     * Because we would like the be able to match NULL as well as regular
+     * values within the same statement, we bind event_id twice for the
+     * (event_id IS ? OR event_id = ?) statement.
+     */
+    bind event_id, event_id, date
     callback
         int game_id,
         uint64_t time_started,

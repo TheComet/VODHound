@@ -186,7 +186,6 @@ CREATE TABLE IF NOT EXISTS games (
     FOREIGN KEY (set_format_id) REFERENCES set_formats(id),
     FOREIGN KEY (winner_team_id) REFERENCES teams(id),
     FOREIGN KEY (stage_id) REFERENCES stages(id),
-    UNIQUE (time_started),
     CHECK (round_type_id > 0),
     CHECK (round_number > 0),
     CHECK (set_format_id > 0),
@@ -261,5 +260,5 @@ CREATE TABLE IF NOT EXISTS stream_recording_sources (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_motions_hash40 ON motions(hash40);
 CREATE INDEX IF NOT EXISTS idx_games_timestamps ON games(time_started);
---CREATE INDEX IF NOT EXISTS idx_motion_labels ON motion_labels(hash40, fighter_id);
+CREATE INDEX IF NOT EXISTS idx_motion_labels ON motion_labels(hash40, fighter_id);
 
