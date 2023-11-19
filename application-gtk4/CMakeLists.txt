@@ -6,7 +6,20 @@ project (appliciation-gtk4
 find_package (GTK4 REQUIRED COMPONENTS
     gtk glib cairo pango harfbuzz gdk-pixbuf graphene)
 
+gtk_compile_resource (
+    "res/vodhound.gresource.xml"
+    "src/vodhound.gresource.c")
+
 add_executable (application-gtk4
+    "res/vodhound.gresource.xml"
+
+    "include/application/fighter_icons.h"
+    "include/application/game_list.h"
+
+    "src/fighter_icons.c"
+    "src/game_list.c"
+
+    "${PROJECT_BINARY_DIR}/src/vodhound.gresource.c"
     "src/main.c")
 target_include_directories (application-gtk4
     PRIVATE

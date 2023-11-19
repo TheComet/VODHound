@@ -190,6 +190,10 @@ find_file (GTK4_freetype_RUNTIME
     NAMES "freetype-6.dll"
     PATHS
         "${GTK4_ROOT}/bin")
+
+find_program (GTK4_glib_compile_resources_PROGRAM
+    NAMES "glib-compile-resources")
+
 set (GTK4_RUNTIMES
     ${GTK4_gtk_RUNTIME}
     ${GTK4_glib_RUNTIME}
@@ -235,3 +239,31 @@ foreach (_component IN LISTS GTK4_FIND_COMPONENTS)
             "include: ${GTK4_${_component}_INCLUDE_DIRS}\n")
     endif ()
 endforeach ()
+
+macro (gtk_compile_resource in_file out_file)
+    set (_input_file ${in_file})
+    set (_output_file ${out_file})
+    if (NOT IS_ABSOLUTE ${_input_file})
+        set (_input_file "${CMAKE_CURRENT_SOURCE_DIR}/${_input_file}")
+    endif ()
+    if (NOT IS_ABSOLUTE "${_output_file}")
+        set (_output_file "${CMAKE_CURRENT_BINARY_DIR}/${_output_file}")
+    endif ()
+
+    get_filename_component (_work_dir ${_input_file} DIRECTORY)
+    get_filename_component (_out_dir ${_output_file} DIRECTORY)
+
+    add_custom_command (OUTPUT ${_output_file}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${_out_dir}
+        COMMAND ${GTK4_glib_compile_resources_PROGRAM}
+        ARGS --generate --target=${_output_file} ${_input_file}
+        WORKING_DIRECTORY ${_work_dir}
+        MAIN_DEPENDENCY ${_input_file}
+        COMMENT "Compiling resource ${_input_file}"
+        VERBATIM)
+
+    unset (_out_dir)
+    unset (_work_dir)
+    unset (_output_file)
+    unset (_input_file)
+endmacro()
