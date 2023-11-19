@@ -4,7 +4,7 @@
 #include "json-c/json.h"
 
 int
-reframed_add_person_to_db(
+reframed_add_or_get_person_to_db(
     struct db_interface* dbi, struct db* db,
     int sponsor_id,
     struct str_view name, struct str_view tag,
@@ -104,7 +104,9 @@ import_reframed_metadata_1_5(
     int winner_team_id = -1;
     if (player_info && json_object_get_type(player_info) != json_type_array)
         return -1;
-    for (int i = 0; i != (int)json_object_array_length(player_info); ++i)
+    int player_count = (int)json_object_array_length(player_info);
+    int people_ids[4] = {-1, -1, -1, -1};
+    for (int i = 0; i != player_count; ++i)
     {
         struct json_object* player = json_object_array_get_idx(player_info, (size_t)i);
         const char* name = json_object_get_string(json_object_object_get(player, "name"));
@@ -129,7 +131,7 @@ import_reframed_metadata_1_5(
         const char* social = "";
         const char* pronouns = "";
 
-        int person_id = reframed_add_person_to_db(
+        int person_id = reframed_add_or_get_person_to_db(
             dbi, db,
             sponsor_id,
             cstr_view(name),
@@ -138,6 +140,8 @@ import_reframed_metadata_1_5(
             cstr_view(pronouns ? pronouns : ""));
         if (person_id < 0)
             return -1;
+        if (i < 4)
+            people_ids[i] = person_id;
 
         int team_id = dbi->team.add_or_get(db, cstr_view(name), cstr_view(""));
         if (team_id < 0)
@@ -149,6 +153,16 @@ import_reframed_metadata_1_5(
         if (winner == i)
             winner_team_id = team_id;
     }
+
+    /*
+     * Checks if a game with the same timestamp and same people exists.
+     * The reason for checking for person_id as well as timestamp is because
+     * it is possible for two games to have the same timestamp but with
+     * different players. By also checking if the game has the same players,
+     * we support importing games with identical timestamps.
+     */
+    if (dbi->game.exists(db, time_started, people_ids, player_count))
+        return -1;
 
     int game_id = dbi->game.add(db,
         round_type_id,

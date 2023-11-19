@@ -1,7 +1,7 @@
 #include "vh/db.h"
 
 int
-reframed_add_person_to_db(
+reframed_add_or_get_person_to_db(
     struct db_interface* dbi, struct db* db,
     int sponsor_id,
     struct str_view name, struct str_view tag,

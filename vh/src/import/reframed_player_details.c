@@ -4,7 +4,7 @@
 #include "json-c/json.h"
 
 int
-reframed_add_person_to_db(
+reframed_add_or_get_person_to_db(
     struct db_interface* dbi, struct db* db,
     int sponsor_id,
     struct str_view name, struct str_view tag,
@@ -48,7 +48,7 @@ import_reframed_player_details(
                 if (sponsor_id < 0)
                     goto fail;
             }
-            if (reframed_add_person_to_db(dbi, db,
+            if (reframed_add_or_get_person_to_db(dbi, db,
                 sponsor_id,
                 cstr_view(name),
                 tag,
