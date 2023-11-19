@@ -695,7 +695,7 @@ scan_next_token(struct parser* p)
             p->head += sizeof("return") - 1;
             return TOK_RETURN;
         }
-        if (isalpha(p->data[p->head]))
+        if (isalpha(p->data[p->head]) || p->data[p->head] == '_')
         {
             p->value.str.off = p->head++;
             while (p->head != p->len && (isalnum(p->data[p->head]) ||
@@ -728,6 +728,22 @@ arg_alloc(void)
     struct arg* a = malloc(sizeof *a);
     memset(a, 0, sizeof *a);
     return a;
+}
+
+struct function
+{
+    struct function* next;
+    struct str_view name;
+    struct str_view body;
+    struct arg* args;
+};
+
+static struct function*
+function_alloc(void)
+{
+    struct function* f = malloc(sizeof *f);
+    memset(f, 0, sizeof *f);
+    return f;
 }
 
 enum query_type
@@ -767,6 +783,7 @@ struct query_group
 {
     struct query_group* next;
     struct query* queries;
+    struct function* functions;
     struct str_view name;
 };
 
@@ -776,22 +793,6 @@ query_group_alloc(void)
     struct query_group* g = malloc(sizeof *g);
     memset(g, 0, sizeof *g);
     return g;
-}
-
-struct function
-{
-    struct function* next;
-    struct str_view name;
-    struct str_view body;
-    struct arg* args;
-};
-
-static struct function*
-function_alloc(void)
-{
-    struct function* f = malloc(sizeof *f);
-    memset(f, 0, sizeof *f);
-    return f;
 }
 
 struct root
@@ -1264,17 +1265,30 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
             } break;
 
             case TOK_FUNCTION: {
+                struct str_view group_name = {0};
                 struct function* func = function_alloc();
 
-                /* Parse function name */
+                /* Parse "group,name" or "name"*/
                 if (scan_next_token(p) != TOK_LABEL)
-                    return print_error(p, "Error: Expected label or group for %%query\n");
+                    return print_error(p, "Error: Expected label or group for %%function\n");
                 func->name = p->value.str;
-                if (scan_next_token(p) != '(')
-                    return print_error(p, "Error: Expected \"(\"\n");
+                switch (scan_next_token(p)) {
+                    case '(': break;
+                    case ',':
+                        if (scan_next_token(p) != TOK_LABEL)
+                            return print_error(p, "Error: Expected label for %%function\n");
+                        group_name = func->name;
+                        func->name = p->value.str;
+
+                        if (scan_next_token(p) == '(')
+                            break;
+                        /* fallthrough */
+                    default:
+                        return print_error(p, "Error: Expected \"(\"\n");
+                }
 
                 /* Parse parameter list */
-            expect_next_param_func:
+            expect_next_func_param:
                 switch (scan_next_token(p))
                 {
                     case ')': break;
@@ -1285,10 +1299,19 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                             return print_error(p, "Error: Expected parameter after \",\"\n");
                         /* fallthrough */
                     case TOK_LABEL: {
-                        struct arg* arg;
-
-                        arg = arg_alloc();
+                        struct arg* arg = arg = arg_alloc();
                         arg->type = p->value.str;
+
+                        if (func->args == NULL)
+                            func->args = arg;
+                        else
+                        {
+                            struct arg* args = func->args;
+                            while (args->next)
+                                args = args->next;
+                            args->next = arg;
+                        }
+
                         /* Special case, struct -> expect another label */
                         if (str_view_eq("struct", arg->type, p->data))
                         {
@@ -1308,17 +1331,7 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                             return print_error(p, "Error: struct without name\n");
                         arg->name = p->value.str;
 
-                        if (func->args == NULL)
-                            func->args = arg;
-                        else
-                        {
-                            struct arg* args = func->args;
-                            while (args->next)
-                                args = args->next;
-                            args->next = arg;
-                        }
-
-                        goto expect_next_param_func;
+                        goto expect_next_func_param;
                     } break;
 
                     default:
@@ -1329,14 +1342,54 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                     return -1;
                 func->body = p->value.str;
 
-                if (root->functions == NULL)
-                    root->functions = func;
+                if (group_name.len)
+                {
+                    struct query_group* g = root->query_groups;
+                    while (g)
+                    {
+                        if (g->name.len == group_name.len &&
+                            memcmp(p->data + g->name.off, p->data + group_name.off, g->name.len) == 0)
+                        {
+                            break;
+                        }
+                        g = g->next;
+                    }
+                    if (g == NULL)
+                    {
+                        g = query_group_alloc();
+                        g->name = group_name;
+                        if (root->query_groups == NULL)
+                            root->query_groups = g;
+                        else
+                        {
+                            struct query_group* node = root->query_groups;
+                            while (node->next)
+                                node = node->next;
+                            node->next = g;
+                        }
+                    }
+
+                    if (g->functions == NULL)
+                        g->functions = func;
+                    else
+                    {
+                        struct function* f = g->functions;
+                        while (f->next)
+                            f = f->next;
+                        f->next = func;
+                    }
+                }
                 else
                 {
-                    struct function* f = root->functions;
-                    while (f->next)
-                        f = f->next;
-                    f->next = func;
+                    if (root->functions == NULL)
+                        root->functions = func;
+                    else
+                    {
+                        struct function* f = root->functions;
+                        while (f->next)
+                            f = f->next;
+                        f->next = func;
+                    }
                 }
             } break;
 
@@ -1805,6 +1858,7 @@ write_sqlite_exec(struct mstream* ms, const struct root* root, const struct quer
         case QUERY_INSERT:
         case QUERY_UPSERT:
         case QUERY_DELETE:
+        case QUERY_SELECT_FIRST:
             mstream_cstr(ms, "next_step:" NL);
             mstream_cstr(ms, "    ret = sqlite3_step(ctx->");
             write_func_name(ms, g, q, data);
@@ -1869,7 +1923,6 @@ write_sqlite_exec(struct mstream* ms, const struct root* root, const struct quer
                 mstream_cstr(ms, "    return -1;" NL);
             break;
 
-        case QUERY_SELECT_FIRST:
         case QUERY_SELECT_ALL:
             mstream_cstr(ms, "next_step:" NL);
             mstream_cstr(ms, "    ret = sqlite3_step(ctx->");
@@ -1889,16 +1942,22 @@ write_sqlite_exec(struct mstream* ms, const struct root* root, const struct quer
             if (q->cb_args)
                 write_sqlite_exec_callback(ms, g, q, data);
 
-            if (q->type != QUERY_SELECT_FIRST && q->cb_args)
+            if (q->cb_args)
             {
-                mstream_cstr(ms, "            if (ret == 0) goto next_step;" NL);
+                if (q->type == QUERY_SELECT_ALL)
+                    mstream_cstr(ms, "            if (ret == 0) goto next_step;" NL);
+            }
 
+            if (q->cb_args)
+            {
                 mstream_cstr(ms, "            sqlite3_reset(ctx->");
                 write_func_name(ms, g, q, data);
                 mstream_cstr(ms, ");" NL);
-
                 if (q->return_name.len)
+                {
+                    mstream_cstr(ms, "            if (ret < 0) return -1;" NL);
                     mstream_fmt(ms, "            return %S;" NL, q->return_name, data);
+                }
                 else
                     mstream_cstr(ms, "            return ret;" NL);
             }
@@ -1908,7 +1967,6 @@ write_sqlite_exec(struct mstream* ms, const struct root* root, const struct quer
             mstream_cstr(ms, "            sqlite3_reset(ctx->");
             write_func_name(ms, g, q, data);
             mstream_cstr(ms, ");" NL);
-
             if (q->return_name.len)
                 mstream_fmt(ms, "            return %S;" NL, q->return_name, data);
             else
@@ -2106,7 +2164,18 @@ gen_header(const struct root* root, const char* data, const char* file_name,
     mstream_fmt(&ms, "    void (*close)(struct %S* ctx);" NL NL,
             PREFIX(root->prefix, data));
 
-    /* Functions */
+    /* Global queries */
+    q = root->queries;
+    while (q)
+    {
+        mstream_cstr(&ms, "    ");
+        write_func_ptr_decl(&ms, root, NULL, q, data);
+        mstream_cstr(&ms, ";" NL);
+        q = q->next;
+    }
+    mstream_cstr(&ms, NL);
+
+    /* Global functions */
     f = root->functions;
     while (f)
     {
@@ -2125,22 +2194,13 @@ gen_header(const struct root* root, const char* data, const char* file_name,
         f = f->next;
     }
 
-    /* Global queries */
-    q = root->queries;
-    while (q)
-    {
-        mstream_cstr(&ms, "    ");
-        write_func_ptr_decl(&ms, root, NULL, q, data);
-        mstream_cstr(&ms, ";" NL);
-        q = q->next;
-    }
-    mstream_cstr(&ms, NL);
-
     /* Grouped queries */
     g = root->query_groups;
     while (g)
     {
         mstream_cstr(&ms, "    struct {" NL);
+
+        /* Queries */
         q = g->queries;
         while (q)
         {
@@ -2149,6 +2209,25 @@ gen_header(const struct root* root, const char* data, const char* file_name,
             mstream_cstr(&ms, ";" NL);
             q = q->next;
         }
+
+        /* Functions */
+        f = g->functions;
+        while (f)
+        {
+            mstream_fmt(&ms, "        int (*%S)(struct %S* ctx",
+                    f->name, data,
+                    PREFIX(root->prefix, data));
+            a = f->args;
+            while (a)
+            {
+                mstream_cstr(&ms, ", ");
+                mstream_fmt(&ms, "%S %S", a->type, data, a->name, data);
+                a = a->next;
+            }
+            mstream_cstr(&ms, ");" NL);
+            f = f->next;
+        }
+
         mstream_fmt(&ms, "    } %S;" NL NL, g->name, data);
         g = g->next;
     }
@@ -2241,28 +2320,6 @@ gen_source(const struct root* root, const char* data, const char* file_name,
         mstream_str(&ms, root->source_preamble, data);
 
     /* ------------------------------------------------------------------------
-     * Functions
-     * --------------------------------------------------------------------- */
-
-    f = root->functions;
-    while (f)
-    {
-        mstream_fmt(&ms, "static int" NL "%S(struct %S* ctx", f->name, data,
-                PREFIX(root->prefix, data));
-        a = f->args;
-        while (a)
-        {
-            mstream_fmt(&ms, ", %S %S", a->type, data, a->name, data);
-            a = a->next;
-        }
-        mstream_cstr(&ms, ")" NL "{");
-        mstream_str(&ms, f->body, data);
-        mstream_cstr(&ms, "}" NL NL);
-
-        f = f->next;
-    }
-
-    /* ------------------------------------------------------------------------
      * Query implementations
      * --------------------------------------------------------------------- */
 
@@ -2309,6 +2366,54 @@ gen_source(const struct root* root, const char* data, const char* file_name,
             mstream_cstr(&ms, "}" NL NL);
 
             q = q->next;
+        }
+        g = g->next;
+    }
+
+    /* ------------------------------------------------------------------------
+     * Functions
+     * --------------------------------------------------------------------- */
+
+    f = root->functions;
+    while (f)
+    {
+        mstream_fmt(&ms, "static int" NL "%S(struct %S* ctx", f->name, data,
+                PREFIX(root->prefix, data));
+        a = f->args;
+        while (a)
+        {
+            mstream_fmt(&ms, ", %S %S", a->type, data, a->name, data);
+            a = a->next;
+        }
+        mstream_cstr(&ms, ")" NL "{");
+        mstream_str(&ms, f->body, data);
+        mstream_cstr(&ms, "}" NL NL);
+
+        f = f->next;
+    }
+
+
+    g = root->query_groups;
+    while (g)
+    {
+        f = g->functions;
+        while (f)
+        {
+            mstream_fmt(&ms, "static int" NL "%S_%S(struct %S* ctx",
+                    g->name, data,
+                    f->name, data,
+                    PREFIX(root->prefix, data));
+            a = f->args;
+            while (a)
+            {
+                mstream_fmt(&ms, ", %S %S", a->type, data, a->name, data);
+                a = a->next;
+            }
+            mstream_cstr(&ms, ")" NL "{");
+            mstream_str(&ms, f->body, data);
+            mstream_cstr(&ms, "}" NL NL);
+
+            f = f->next;
         }
         g = g->next;
     }
@@ -2370,13 +2475,7 @@ gen_source(const struct root* root, const char* data, const char* file_name,
     mstream_fmt(&ms, "    %S_open," NL "    %S_close," NL,
             PREFIX(root->prefix, data),
             PREFIX(root->prefix, data));
-    /* Functions */
-    f = root->functions;
-    while (f)
-    {
-        mstream_fmt(&ms, "    %S," NL, f->name, data);
-        f = f->next;
-    }
+
     /* Global queries */
     q = root->queries;
     while (q)
@@ -2384,20 +2483,41 @@ gen_source(const struct root* root, const char* data, const char* file_name,
         mstream_fmt(&ms, "    %S," NL, q->name, data);
         q = q->next;
     }
+
+    /* Global functions */
+    f = root->functions;
+    while (f)
+    {
+        mstream_fmt(&ms, "    %S," NL, f->name, data);
+        f = f->next;
+    }
+
     /* Grouped queries */
     g = root->query_groups;
     while (g)
     {
         mstream_cstr(&ms, "    {" NL);
+
+        /* Queries */
         q = g->queries;
         while (q)
         {
             mstream_fmt(&ms, "        %S_%S," NL, g->name, data, q->name, data);
             q = q->next;
         }
+
+        /* Functions */
+        f = g->functions;
+        while (f)
+        {
+            mstream_fmt(&ms, "        %S_%S," NL, g->name, data, f->name, data);
+            f = f->next;
+        }
+
         mstream_cstr(&ms, "    }," NL);
         g = g->next;
     }
+
     mstream_cstr(&ms, "};" NL NL);
 
     /* ------------------------------------------------------------------------
