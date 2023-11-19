@@ -7,7 +7,7 @@
 %option custom-init
 %option custom-deinit
 %option custom-api-decl
-%option debug-layer
+//%option debug-layer
 
 %header-preamble {
 #include "vh/config.h"
