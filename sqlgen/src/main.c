@@ -1828,6 +1828,12 @@ write_sqlite_exec(struct mstream* ms, const struct root* root, const struct quer
 {
     switch (q->type)
     {
+        /*
+         * Exists should return:
+         *   1 if a row was found.
+         *   0 if no rows were found.
+         *   -1 if an error occurs.
+         */
         case QUERY_EXISTS:
             mstream_cstr(ms, "next_step:" NL);
             mstream_cstr(ms, "    ret = sqlite3_step(ctx->");
@@ -1854,6 +1860,21 @@ write_sqlite_exec(struct mstream* ms, const struct root* root, const struct quer
             mstream_cstr(ms, "    return -1;" NL);
             break;
 
+        /*
+         * All of these query types either return a single value, or return
+         * nothing. Both "callback" and "return" statements can be used.
+         *
+         * If both "return" and "callback" are specified, then "return" has
+         * a higher priority this value is returned. If the callback function
+         * returns negative (error occurs), then we must return -1 instead of
+         * the return value.
+         *
+         * If only "callback" is specified, then we return the value returned
+         * by the callback.
+         *
+         * If only "return" is specified, then we return the value returned by
+         * the callback.
+         */
         case QUERY_UPDATE:
         case QUERY_INSERT:
         case QUERY_UPSERT:
@@ -1923,6 +1944,9 @@ write_sqlite_exec(struct mstream* ms, const struct root* root, const struct quer
                 mstream_cstr(ms, "    return -1;" NL);
             break;
 
+        /*
+         * These query types return multiple values.
+         */
         case QUERY_SELECT_ALL:
             mstream_cstr(ms, "next_step:" NL);
             mstream_cstr(ms, "    ret = sqlite3_step(ctx->");
@@ -2624,6 +2648,15 @@ gen_source(const struct root* root, const char* data, const char* file_name,
 
     if (root->source_postamble.len)
         mstream_str(&ms, root->source_postamble, data);
+
+    /* Don't write source if it is identical to the existing one -- causes less
+     * rebuilds */
+    if (mfile_map_read(&mf, file_name) == 0)
+    {
+        if (mf.size == ms.idx && memcmp(mf.address, ms.address, mf.size) == 0)
+            return 0;
+        mfile_unmap(&mf);
+    }
 
     if (mfile_map_write(&mf, file_name, ms.idx) != 0)
         return -1;

@@ -5,6 +5,10 @@ project ("search"
     LANGUAGES C CXX)
 
 include (VODHoundPlugin)
+
+find_package (GTK4 REQUIRED COMPONENTS
+    gtk glib cairo pango harfbuzz gdk-pixbuf graphene)
+
 vodhound_add_plugin (${PROJECT_NAME}
     SOURCES
         "src/asm_x86_64.c"
@@ -40,7 +44,13 @@ vodhound_add_plugin (${PROJECT_NAME}
         "tests/test_nfa.cpp"
     LIBS
         VODHound::vh
-        IUP::iup)
+        GTK4::glib
+        GTK4::cairo
+        GTK4::pango
+        GTK4::harfbuzz
+        GTK4::gdk-pixbuf
+        GTK4::graphene
+        GTK4::gtk)
 
 if (VODHOUND_${PLUGIN_NAME})
     option (${PLUGIN_NAME}_EXPORT_DOT "Export AST/NFA/DFA of each stage as DOT format, and export transition tables" ON)

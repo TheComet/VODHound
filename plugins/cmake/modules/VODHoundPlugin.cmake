@@ -34,6 +34,7 @@ function (vodhound_add_plugin NAME)
             message (FATAL_ERROR "Don't know how to define visibility macros for this compiler")
         endif ()
 
+        message (STATUS "Adding plugin: ${TARGET_NAME}")
         add_library (${TARGET_NAME} SHARED
             ${${PLUGIN_NAME}_SOURCES}
             ${${PLUGIN_NAME}_HEADERS})

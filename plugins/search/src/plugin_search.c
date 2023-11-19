@@ -6,7 +6,7 @@
 #include "search/nfa.h"
 #include "search/parser.h"
 
-#include "vh/db_ops.h"
+#include "vh/db.h"
 #include "vh/frame_data.h"
 #include "vh/hm.h"
 #include "vh/log.h"
@@ -14,7 +14,7 @@
 #include "vh/plugin.h"
 #include "vh/str.h"
 
-#include "iup.h"
+#include <gtk/gtk.h>
 
 #include <string.h>
 #include <stdio.h>
@@ -24,7 +24,6 @@ struct plugin_ctx
 {
     struct db_interface* dbi;
     struct db* db;
-    Ihandle* error_label;
     struct parser parser;
     struct ast ast;
     struct asm_dfa asm_dfa;
@@ -112,6 +111,14 @@ sequence_from_search_result(struct sequence* seq, const union symbol* symbols, s
     return 0;
 }
 
+static int
+on_notation_label(const char* label, void* user_data)
+{
+    struct str* str = user_data;
+    cstr_set(str, label);
+    return 0;
+}
+
 static void
 run_search(struct plugin_ctx* ctx)
 {
@@ -121,6 +128,7 @@ run_search(struct plugin_ctx* ctx)
     struct sequence seq;
     struct str label;
     int fighter_id = 8;
+    int usage_id = 1;  /* hard coded for now to "NOTATION" */
 
     if (ctx->asm_dfa.size == 0)
         return;
@@ -141,7 +149,7 @@ run_search(struct plugin_ctx* ctx)
         {
             uint64_t motion = ((uint64_t)symbols[i].motionh << 32) | symbols[i].motionl;
             str_clear(&label);
-            if (ctx->dbi->motion_label.to_notation_label(ctx->db, fighter_id, motion, &label) < 1)
+            if (ctx->dbi->motion_label.to_notation_label(ctx->db, fighter_id, motion, usage_id, on_notation_label, &label) != 0)
                 str_fmt(&label, "0x%" PRIx64, motion);
             if (i != r->start) fprintf(stderr, " -> ");
             fprintf(stderr, "%.*s", label.len, label.data);
@@ -157,7 +165,7 @@ run_search(struct plugin_ctx* ctx)
         SEQ_FOR_EACH(&seq, i)
             uint64_t motion = ((uint64_t)symbols[i].motionh << 32) | symbols[i].motionl;
         str_clear(&label);
-        if (ctx->dbi->motion_label.to_notation_label(ctx->db, fighter_id, motion, &label) < 1)
+        if (ctx->dbi->motion_label.to_notation_label(ctx->db, fighter_id, motion, usage_id, on_notation_label, &label) != 0)
             str_fmt(&label, "0x%" PRIx64, motion);
             if (i != seq_first(&seq)) fprintf(stderr, " -> ");
             fprintf(stderr, "%.*s", label.len, label.data);
@@ -172,11 +180,11 @@ run_search(struct plugin_ctx* ctx)
 }
 
 static int
-on_search_text_changed(Ihandle* search_box, int c, char* new_value)
+on_search_text_changed(GtkWidget* search_box, int c, char* new_value)
 {
     struct nfa_graph nfa;
     struct dfa_table dfa;
-    struct plugin_ctx* ctx = (struct plugin_ctx*)IupGetAttribute(search_box, "plugin_ctx");
+    struct plugin_ctx* ctx = NULL;  /* todo */
     int fighter_id = 8;
 
     if (ctx->asm_dfa.size)
@@ -209,23 +217,15 @@ on_search_text_changed(Ihandle* search_box, int c, char* new_value)
     dfa_compile_failed   : nfa_deinit(&nfa);
     nfa_compile_failed   :
     patch_motions_failed :
-    parse_failed         : return IUP_DEFAULT;
+    parse_failed         : return -1;
 }
 
-static Ihandle* ui_create(struct plugin_ctx* ctx)
+static GtkWidget* ui_create(struct plugin_ctx* ctx)
 {
-    Ihandle* search_box = IupSetAttributes(IupText(NULL), "EXPAND=HORIZONTAL");
-    IupSetCallback(search_box, "ACTION", (Icallback)on_search_text_changed);
-    IupSetAttribute(search_box, "plugin_ctx", (char*)ctx);
-
-    ctx->error_label = IupSetAttributes(IupLabel(""), "PADDING=10x5");
-    IupHide(ctx->error_label);
-
-    return IupSetAttributes(IupVbox(search_box, ctx->error_label, NULL), "MINSIZE=300x0");
+    return NULL;
 }
-static void ui_destroy(struct plugin_ctx* ctx, Ihandle* ui)
+static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
 {
-    IupDestroy(ui);
 }
 
 static struct ui_pane_interface ui = {

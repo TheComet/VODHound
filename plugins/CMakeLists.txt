@@ -11,5 +11,5 @@ install (
     DESTINATION "${VODHOUND_BUILD_CMAKEDIR}/modules")
 
 add_subdirectory ("search")
-add_subdirectory ("video-ffmpeg")
-add_subdirectory ("vod-review")
+#add_subdirectory ("video-ffmpeg")
+#add_subdirectory ("vod-review")

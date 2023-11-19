@@ -2,7 +2,7 @@
 #include "search/ast_ops.h"
 #include "search/ast_post.h"
 
-#include "vh/db_ops.h"
+#include "vh/db.h"
 #include "vh/hash40.h"
 #include "vh/hm.h"
 #include "vh/log.h"
@@ -10,11 +10,43 @@
 #include "vh/str.h"
 #include "vh/vec.h"
 
+struct on_motion_ctx
+{
+    struct ast* ast;
+    int node;
+    int replace_node;
+    int row_count;
+};
+
+static int on_motion(uint64_t hash40, void* user_data)
+{
+    struct on_motion_ctx* ctx;
+    struct strlist_str* hm_label;
+    struct YYLTYPE* loc = (struct YYLTYPE*)&ctx->ast->nodes[ctx->node].info.loc;
+    int n = ast_motion(ctx->ast, hash40, loc);
+    if (n < 0)
+        return -1;
+
+    ctx->replace_node = ctx->replace_node == -1 ? n :
+        ast_union(ctx->ast, ctx->replace_node, n, loc);
+    if (ctx->replace_node < 0)
+        return -1;
+
+    switch (hm_insert(&ctx->ast->merged_labels, &hash40, (void**)&hm_label))
+    {
+        case 1  : *hm_label = ctx->ast->nodes[ctx->node].label.label;
+        case 0  : break;
+        default : return -1;
+    }
+
+    ctx->row_count++;
+    return 0;
+}
+
 static int
 try_patch_user_defined(
     struct ast* ast, int node,
     struct db_interface* dbi, struct db* db, int fighter_id,
-    struct vec* motions,
     struct str_view label)
 {
 
@@ -25,46 +57,23 @@ try_patch_user_defined(
      * "(attack_air_n|landing_air_n)+". This will match all patterns of
      * "nair".
      */
-    vec_clear(motions);
-    switch (dbi->motion_label.to_motions(db, fighter_id, label, motions))
+    struct on_motion_ctx ctx = { ast, node, -1, 0 };
+    if (dbi->motion_label.to_motions(db, fighter_id, label, on_motion, &ctx) < 0)
+        return -1;
+
+    if (ctx.row_count == 0)
+        return 0;
+
+    /* Only need repetition if there is more than 1 label */
+    if (ctx.row_count > 1)
     {
-        case 1: {
-            int root = -1;
-            VEC_FOR_EACH(motions, uint64_t, motion)
-                struct strlist_str* hm_label;
-                int n = ast_motion(ast, *motion, (struct YYLTYPE*)&ast->nodes[node].info.loc);
-                if (n < 0)
-                    return -1;
-
-                root = root == -1 ? n :
-                    ast_union(ast, root, n, (struct YYLTYPE*)&ast->nodes[node].info.loc);
-                if (root < 0)
-                    return -1;
-
-                switch (hm_insert(&ast->merged_labels, motion, (void**)&hm_label))
-                {
-                    case 1  : *hm_label = ast->nodes[node].label.label;
-                    case 0  : break;
-                    default : return -1;
-                }
-            VEC_END_EACH
-
-            /* Only need repetition if there is more than 1 label */
-            if (vec_count(motions) > 1)
-            {
-                root = ast_repetition(ast, root, 1, -1, (struct YYLTYPE*)&ast->nodes[node].info.loc);
-                if (root < 0)
-                    return -1;
-            }
-
-            ast_collapse_into(ast, root, node);
-
-            return 1;
-        }
-
-        case 0  : return 0;
-        default : return -1;
+        ctx.replace_node = ast_repetition(ast, ctx.replace_node, 1, -1, (struct YYLTYPE*)&ast->nodes[node].info.loc);
+        if (ctx.replace_node < 0)
+            return -1;
     }
+
+    ast_collapse_into(ast, ctx.replace_node, node);
+    return 0;
 }
 
 static int
@@ -94,8 +103,6 @@ ast_post_labels_to_motions(struct ast* ast, struct db_interface* dbi, struct db*
     struct vec motions;
     int n;
 
-    vec_init(&motions, sizeof(uint64_t));
-
     for (n = 0; n != ast->node_count; ++n)
     {
         struct str_view label;
@@ -103,31 +110,26 @@ ast_post_labels_to_motions(struct ast* ast, struct db_interface* dbi, struct db*
             continue;
         label = strlist_to_view(&ast->labels, ast->nodes[n].label.label);
 
-        switch (try_patch_user_defined(ast, n, dbi, db, fighter_id, &motions, label))
+        switch (try_patch_user_defined(ast, n, dbi, db, fighter_id, label))
         {
             case 1  : continue;
             case 0  : break;
-            default : goto error;
+            default : return -1;
         }
 
         switch (try_patch_existing_hash40(ast, n, dbi, db, label))
         {
             case 1  : continue;
             case 0  : break;
-            default : goto error;
+            default : return -1;
         }
 
         /* Was unable to find a label that matches a motion value. Error out */
         log_err("No motion value found for label '%.*s'\n", label.len, label.data);
-        goto error;
+        return -1;
     }
 
-    vec_deinit(&motions);
     return 0;
-
-error:
-    vec_deinit(&motions);
-    return -1;
 }
 
 void
@@ -385,8 +387,8 @@ ast_post_timing(struct ast* ast)
             }
             else
             {
-                /* 
-                 * Iterate over all other subtrees in the ast that match the 
+                /*
+                 * Iterate over all other subtrees in the ast that match the
                  * "rel_to" subtree. There could be multiple matches. The goal
                  * is to find a match occuring as "early" as possible.
                  */
@@ -429,7 +431,7 @@ ast_post_damage_tighten_bounds(struct ast* ast, int parent)
         cfrom = ast->nodes[child].damage.from;
         cto = ast->nodes[child].damage.to;
 
-        /* 
+        /*
          * If the parent has specified ">x", then all children's lower bounds
          * will need to be greater than x as well. Conversely, if the parent
          * has specified "<x" then all children's upper bounds will need to be

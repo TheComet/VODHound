@@ -8,18 +8,18 @@ C_BEGIN
 struct db;
 struct db_interface;
 struct plugin_ctx;
-typedef struct Ihandle_ Ihandle;
+typedef struct _GtkWidget GtkWidget;
 
 struct ui_center_interface
 {
-    Ihandle* (*create)(struct plugin_ctx* plugin);
-    void (*destroy)(struct plugin_ctx* plugin, Ihandle* view);
+    GtkWidget* (*create)(struct plugin_ctx* plugin);
+    void (*destroy)(struct plugin_ctx* plugin, GtkWidget* view);
 };
 
 struct ui_pane_interface
 {
-    Ihandle* (*create)(struct plugin_ctx* plugin);
-    void (*destroy)(struct plugin_ctx* plugin, Ihandle* view);
+    GtkWidget* (*create)(struct plugin_ctx* plugin);
+    void (*destroy)(struct plugin_ctx* plugin, GtkWidget* view);
 };
 
 struct replay_interface

@@ -75,7 +75,7 @@ elseif (VODHOUND_UI MATCHES "GTK4")
 endif ()
 
 if (VODHOUND_UI)
-    #add_subdirectory ("plugins")
+    add_subdirectory ("plugins")
 endif ()
 
 # All subprojects have added targets to this export

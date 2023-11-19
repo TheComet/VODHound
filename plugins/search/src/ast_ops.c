@@ -1,6 +1,8 @@
 #include "search/ast.h"
 #include "search/ast_ops.h"
 
+#include "vh/log.h"
+
 void ast_set_root(struct ast* ast, int node)
 {
     ast_swap_node_idxs(ast, 0, node);
@@ -52,6 +54,7 @@ void ast_swap_node_values(struct ast* ast, int n1, int n2)
     switch (ast->nodes[n1].info.type)
     {
         case AST_STATEMENT: break;
+        case AST_WILDCARD: break;
         case AST_REPETITION:
             SWAP(int, ast->nodes[n1].repetition.min_reps, ast->nodes[n2].repetition.min_reps);
             SWAP(int, ast->nodes[n1].repetition.max_reps, ast->nodes[n2].repetition.max_reps);

@@ -464,11 +464,11 @@ game_list_new(struct db_interface* dbi, struct db* db)
     log_dbg("Querying games...\n");
     on_game_ctx.event_list = event_list;
     dbi->game.get_all(db, on_game, &on_game_ctx);
-    log_dbg("Done\n");
+    log_dbg("Loaded %d games\n", dbi->game.count(db));
 
     selection_model = gtk_multi_selection_new(G_LIST_MODEL(model));
     column_view = gtk_column_view_new(GTK_SELECTION_MODEL(selection_model));
-    gtk_column_view_set_show_row_separators(GTK_COLUMN_VIEW(column_view), TRUE);
+    /*gtk_column_view_set_show_row_separators(GTK_COLUMN_VIEW(column_view), TRUE);*/
     gtk_widget_set_vexpand(column_view, TRUE);
 
 #define X(name, setup, bind, str)                                           \

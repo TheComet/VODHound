@@ -119,7 +119,7 @@ C_END
     return id
 }
 %query motion_label,to_motions(int fighter_id, struct str_view label) {
-    type select-first
+    type select-all
     table motion_labels
     callback uint64_t hash40
 }
