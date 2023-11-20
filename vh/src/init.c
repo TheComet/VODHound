@@ -5,11 +5,6 @@
 #include "vh/mem.h"
 #include "vh/init.h"
 
-#if !defined(VH_MEM_BACKTRACE)
-int backtrace_init(void) { return 0; }
-void backtrace_deinit(void) {}
-#endif
-
 /* ------------------------------------------------------------------------- */
 int
 vh_init(void)

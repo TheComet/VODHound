@@ -14,7 +14,7 @@ static void
 overlay_dummy_get_size(GtkWidget* canvas, int* w, int* h) { (void)canvas; *w = 0; *h = 0; }
 
 static void
-overlay_gfxcanvas_set_layer(GtkWidget* gfxcanvas, int idx, const void* data)
+overlay_gtk_canvas_set_layer(GtkWidget* gfxcanvas, int idx, const void* data)
 {
     /*
     char attr[9];
@@ -23,7 +23,7 @@ overlay_gfxcanvas_set_layer(GtkWidget* gfxcanvas, int idx, const void* data)
 }
 
 static void
-overlay_gfxcanvas_get_size(GtkWidget* gfxcanvas, int* w, int* h)
+overlay_gtk_canvas_get_size(GtkWidget* gfxcanvas, int* w, int* h)
 {
     /*
     struct str_view size = cstr_view(IupGetAttribute(gfxcanvas, "TEXSIZE"));
@@ -54,6 +54,8 @@ struct plugin_ctx
 
 static int try_load_video_driver_plugin(struct plugin_ctx* ctx)
 {
+    struct str_view class_name;
+
     ctx->video_ctx = ctx->video_plugin.i->create(ctx->dbi, ctx->db);
     if (ctx->video_ctx == NULL)
         goto create_video_ctx_failed;
@@ -65,26 +67,28 @@ static int try_load_video_driver_plugin(struct plugin_ctx* ctx)
     if (ctx->video_ui == NULL)
         goto create_video_ui_failed;
 
-    /*
-    struct str_view class_name = cstr_view(IupGetClassName(ctx->video_ui));
-    if (cstr_equal(class_name, "gfxcanvas"))
+    class_name = cstr_view(
+        G_OBJECT_CLASS_NAME(
+            G_OBJECT_GET_CLASS(ctx->video_ui)));
+    if (cstr_equal(class_name, "GtkCanvas"))
     {
-        ctx->overlay.get_canvas_size = overlay_gfxcanvas_get_size;
-        ctx->overlay.set_layer = overlay_gfxcanvas_set_layer;
+        ctx->overlay.get_canvas_size = overlay_gtk_canvas_get_size;
+        ctx->overlay.set_layer = overlay_gtk_canvas_set_layer;
+        return 0;
     }
-    else
-    {
-        log_err("Video plugin '%s' uses unsupported IUP class '%s'. Overlays won't work.\n",
-                ctx->video_plugin.i->info->name, class_name.data);
-        goto unsupported_video_ui;
-    }*/
 
-    return 0;
+    log_warn("Video plugin '%s' uses unsupported class '%s'. Overlays won't work.\n",
+            ctx->video_plugin.i->info->name, class_name.data);
 
-    unsupported_video_ui       :
-    create_video_ui_failed     : ctx->video_plugin.i->ui_center->destroy(ctx->video_ctx, ctx->video_ui);
-    plugin_has_no_ui_interface : ctx->video_plugin.i->destroy(ctx->video_ctx);
-    create_video_ctx_failed    : return -1;
+unsupported_video_ui:
+    ctx->video_plugin.i->ui_center->destroy(ctx->video_ctx, ctx->video_ui);
+    ctx->video_ui = NULL;
+create_video_ui_failed: 
+plugin_has_no_ui_interface:
+    ctx->video_plugin.i->destroy(ctx->video_ctx);
+    ctx->video_ctx = NULL;
+create_video_ctx_failed:
+    return -1;
 }
 
 static int on_scan_plugin_prefer_ffmpeg(struct plugin_lib lib, void* user)
@@ -111,6 +115,7 @@ static int on_scan_plugin_any_video_driver(struct plugin_lib lib, void* user)
         ctx->video_plugin = lib;
         if (try_load_video_driver_plugin(ctx) == 0)
             return 1;
+        return -1;
     }
 
     return 0;
@@ -128,7 +133,15 @@ create(struct db_interface* dbi, struct db* db)
     ctx->overlay.set_layer = overlay_dummy_set_layer;
 
     if (plugins_scan(on_scan_plugin_prefer_ffmpeg, ctx) <= 0)
-        plugins_scan(on_scan_plugin_any_video_driver, ctx);
+    {
+        log_warn("Trying all possible video driver plugins...\n");
+        if (plugins_scan(on_scan_plugin_any_video_driver, ctx) <= 0)
+        {
+            log_err("Failed to find a suitable video driver plugin. Videos cannot be loaded.\n");
+            ctx->overlay.get_canvas_size = overlay_dummy_get_size;
+            ctx->overlay.set_layer = overlay_dummy_set_layer;
+        }
+    }
 
     return ctx;
 }
@@ -164,44 +177,46 @@ static void ui_add_timeline(struct plugin_ctx* ctx)
 
 static GtkWidget* ui_create(struct plugin_ctx* ctx)
 {
-#if 0
-    Ihandle* slider = IupVal("HORIZONTAL");
-    IupSetAttribute(slider, "EXPAND", "HORIZONTAL");
+    GtkWidget* slider;
+    GtkWidget* time;
+    GtkWidget* play;
+    GtkWidget* seekb;
+    GtkWidget* seekf;
+    GtkWidget* controls;
+    GtkAdjustment* adj;
+    GtkWidget* video_canvas;
+    
+    adj = gtk_adjustment_new(0, 0, 100, 0.1, 1, 0);
 
-    Ihandle* time = IupLabel("00:00:00 / 00:00:00");
-    IupSetAttribute(time, "ALIGNMENT", "ACENTER");
+    slider = gtk_scale_new(GTK_ORIENTATION_HORIZONTAL, adj);
+    gtk_widget_set_hexpand(slider, TRUE);
 
-    Ihandle* play = IupButton(">", NULL);
-    IupSetAttribute(play, "PADDING", "6x");
+    time = gtk_label_new("00:00:00 / 00:00:00");
+    play = gtk_button_new();
+    seekb = gtk_button_new();
+    seekf = gtk_button_new();
 
-    Ihandle* seekb = IupButton("<<", NULL);
-    IupSetAttribute(seekb, "PADDING", "6x");
+    controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_box_append(GTK_BOX(controls), play);
+    gtk_box_append(GTK_BOX(controls), seekb);
+    gtk_box_append(GTK_BOX(controls), seekf);
+    gtk_box_append(GTK_BOX(controls), slider);
+    gtk_box_append(GTK_BOX(controls), time);
 
-    Ihandle* seekf = IupButton(">>", NULL);
-    IupSetAttribute(seekf, "PADDING", "6x");
+    video_canvas = ctx->video_ui ? ctx->video_ui : gtk_image_new();
+    gtk_widget_set_vexpand(video_canvas, TRUE);
 
-    ctx->controls = IupGridBox(play, seekb, seekf, slider, time, NULL);
-    IupSetAttribute(ctx->controls, "ORIENTATION", "HORIZONTAL");
-    IupSetAttribute(ctx->controls, "NUMDIV", "5");
-    IupSetAttribute(ctx->controls, "NUMDIV", "5");
-    IupSetAttribute(ctx->controls, "SIZECOL", "3");  /* Use the slider's height as reference for calculating row heights */
-
-    ctx->ui = IupVbox(
-        ctx->video_ui ? ctx->video_ui : IupCanvas(NULL),
-        ctx->controls,
-        NULL);
-#endif
-    ctx->ui = gtk_button_new();
+    ctx->ui = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_box_append(GTK_BOX(ctx->ui), video_canvas);
+    gtk_box_append(GTK_BOX(ctx->ui), controls);
 
     return g_object_ref_sink(ctx->ui);
 }
 static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
 {
-    /*
-    if (ctx->video_ui)
-        IupDetach(ctx->video_ui);
+    /*if (ctx->video_ui)
+        IupDetach(ctx->video_ui);*/
 
-    IupDestroy(ui);*/
     g_object_unref(ui);
 }
 

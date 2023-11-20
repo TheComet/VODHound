@@ -231,7 +231,10 @@ static GtkWidget* ui_create(struct plugin_ctx* ctx)
     GtkWidget* vbox;
     
     search_box = gtk_entry_new();
+
     label = gtk_label_new("Search:");
+    gtk_label_set_xalign(GTK_LABEL(label), 0);
+
     vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     gtk_box_append(GTK_BOX(vbox), label);
     gtk_box_append(GTK_BOX(vbox), search_box);

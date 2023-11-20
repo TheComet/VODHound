@@ -165,7 +165,7 @@ target_compile_definitions (vh
 target_link_libraries (vh
     PRIVATE
         $<$<PLATFORM_ID:Linux>:${CMAKE_DL_LIBS}>
-        $<$<PLATFORM_ID:Windows>:$<$<BOOL:${VH_MEM_BACKTRACE}>:Dbghelp>>
+        $<$<PLATFORM_ID:Windows>:Dbghelp>
         $<$<PLATFORM_ID:Windows>:wsock32>
         $<$<PLATFORM_ID:Windows>:ws2_32>
         VODHound::json-c

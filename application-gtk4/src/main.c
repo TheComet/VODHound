@@ -184,6 +184,7 @@ game_browser_new(struct db_interface* dbi, struct db* db)
     gtk_paned_set_end_child(GTK_PANED(paned), vbox);
     gtk_paned_set_resize_start_child(GTK_PANED(paned), FALSE);
     gtk_paned_set_resize_end_child(GTK_PANED(paned), TRUE);
+
     gtk_paned_set_position(GTK_PANED(paned), 120);
 
     return paned;
@@ -219,13 +220,14 @@ activate(GtkApplication* app, gpointer user_data)
     gtk_paned_set_end_child(GTK_PANED(paned2), property_panel);
     gtk_paned_set_resize_start_child(GTK_PANED(paned2), TRUE);
     gtk_paned_set_resize_end_child(GTK_PANED(paned2), FALSE);
+    gtk_paned_set_position(GTK_PANED(paned2), 800);
 
     paned1 = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_paned_set_start_child(GTK_PANED(paned1), game_browser_new(ctx->dbi, ctx->db));
     gtk_paned_set_end_child(GTK_PANED(paned1), paned2);
     gtk_paned_set_resize_start_child(GTK_PANED(paned1), FALSE);
     gtk_paned_set_resize_end_child(GTK_PANED(paned1), TRUE);
-    gtk_paned_set_position(GTK_PANED(paned1), 680);
+    gtk_paned_set_position(GTK_PANED(paned1), 600);
 
     gtk_window_set_child(GTK_WINDOW(window), paned1);
     gtk_window_maximize(GTK_WINDOW(window));
