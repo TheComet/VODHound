@@ -3,49 +3,47 @@
 #include "vh/plugin.h"
 #include "vh/plugin_loader.h"
 
-#include "iup.h"
+#include <gtk/gtk.h>
 
 #include <string.h>
 #include <stdio.h>
 
 struct plugin_ctx
 {
-    struct plugin video_plugin;
+    struct plugin_lib video_plugin;
     struct plugin_ctx* video_ctx;
-    Ihandle* video_ui;
-    Ihandle* ui;
+    GtkWidget* video_ui;
+    GtkWidget* ui;
 
-    Ihandle* controls;
+    GtkWidget* controls;
 };
 
 static void
-overlay_set_gfxcanvas(Ihandle* gfxcanvas, int idx, const void* data)
+overlay_set_gfxcanvas(GtkWidget* gfxcanvas, int idx, const void* data)
 {
-    char attr[9];
+    /*char attr[9];
     snprintf(attr, 9, "TEXRGBA%d", idx);
-    IupSetAttribute(gfxcanvas, attr, data);
+    IupSetAttribute(gfxcanvas, attr, data);*/
 }
 
 static void
-overlay_get_size_gfxcanvas(Ihandle* gfxcanvas, int* w, int* h)
+overlay_get_size_gfxcanvas(GtkWidget* gfxcanvas, int* w, int* h)
 {
-
-    struct str_view size = cstr_view(IupGetAttribute(gfxcanvas, "TEXSIZE"));
-    
+    /*struct str_view size = cstr_view(IupGetAttribute(gfxcanvas, "TEXSIZE"));*/
 }
 
 static struct plugin_ctx*
-create(void)
+create(struct db_interface* dbi, struct db* db)
 {
     struct plugin_ctx* ctx = mem_alloc(sizeof(struct plugin_ctx));
-
+/*
     if (plugin_load_category(
                 &ctx->video_plugin,
                 cstr_view("video driver"),
                 cstr_view("FFmpeg Video Player")) != 0)
         goto plugin_load_failed;
     if ((ctx->video_ctx = ctx->video_plugin.i->create()) == NULL)
-        goto create_plugin_ctx_failed;
+        goto create_plugin_ctx_failed;*/
 
     return ctx;
 
@@ -56,17 +54,19 @@ create(void)
 static void
 destroy(struct plugin_ctx* ctx)
 {
+    /*
     if (ctx->video_ctx)
     {
         ctx->video_plugin.i->destroy(ctx->video_ctx);
         plugin_unload(&ctx->video_plugin);
-    }
+    }*/
 
     mem_free(ctx);
 }
 
-Ihandle* ui_create(struct plugin_ctx* ctx)
+GtkWidget* ui_create(struct plugin_ctx* ctx)
 {
+#if 0
     if (ctx->video_ctx && ctx->video_plugin.i->ui)
         ctx->video_ui = ctx->video_plugin.i->ui->create(ctx->video_ctx);
     if (ctx->video_ui)
@@ -103,25 +103,29 @@ Ihandle* ui_create(struct plugin_ctx* ctx)
         NULL);
 
     return ctx->ui;
+#endif
+    return gtk_button_new();
 }
-void ui_destroy(struct plugin_ctx* ctx, Ihandle* ui)
+void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
 {
+    /*
     if (ctx->video_ui)
     {
         IupDetach(ctx->video_ui);
         ctx->video_plugin.i->ui->destroy(ctx->video_ctx, ctx->video_ui);
     }
 
-    IupDestroy(ui);
+    IupDestroy(ui);*/
 }
 
-struct ui_interface ui = {
+struct ui_center_interface ui = {
     ui_create,
     ui_destroy
 };
 
 int video_open_file(struct plugin_ctx* ctx, const char* file_name, int pause)
 {
+    /*
     Ihandle* slider = IupVal("HORIZONTAL");
     IupSetAttribute(slider, "EXPAND", "HORIZONTAL");
 
@@ -134,7 +138,7 @@ int video_open_file(struct plugin_ctx* ctx, const char* file_name, int pause)
     IupMap(slider);
 
     if (ctx->video_ctx)
-        return ctx->video_plugin.i->video->open_file(ctx->video_ctx, file_name, pause);
+        return ctx->video_plugin.i->video->open_file(ctx->video_ctx, file_name, pause);*/
     return -1;
 }
 void video_close(struct plugin_ctx* ctx)
@@ -142,11 +146,16 @@ void video_close(struct plugin_ctx* ctx)
     if (ctx->video_ctx)
         ctx->video_plugin.i->video->close(ctx->video_ctx);
 }
-int video_is_open(struct plugin_ctx* ctx)
+int video_is_open(const struct plugin_ctx* ctx)
 {
     if (ctx->video_ctx)
         return ctx->video_plugin.i->video->is_open(ctx->video_ctx);
     return 0;
+}
+void video_clear(struct plugin_ctx* ctx)
+{
+    if (ctx->video_ctx)
+        ctx->video_plugin.i->video->clear(ctx->video_ctx);
 }
 void video_play(struct plugin_ctx* ctx)
 {
@@ -169,19 +178,19 @@ int video_seek(struct plugin_ctx* ctx, uint64_t offset, int num, int den)
         return ctx->video_plugin.i->video->seek(ctx->video_ctx, offset, num, den);
     return 0;
 }
-uint64_t video_offset(struct plugin_ctx* ctx, int num, int den)
+uint64_t video_offset(const struct plugin_ctx* ctx, int num, int den)
 {
     if (ctx->video_ctx)
         return ctx->video_plugin.i->video->offset(ctx->video_ctx, num, den);
     return 0;
 }
-uint64_t video_duration(struct plugin_ctx* ctx, int num, int den)
+uint64_t video_duration(const struct plugin_ctx* ctx, int num, int den)
 {
     if (ctx->video_ctx)
         return ctx->video_plugin.i->video->duration(ctx->video_ctx, num, den);
     return 0;
 }
-int video_is_playing(struct plugin_ctx* ctx)
+int video_is_playing(const struct plugin_ctx* ctx)
 {
     if (ctx->video_ctx)
         return ctx->video_plugin.i->video->is_playing(ctx->video_ctx);
@@ -192,7 +201,7 @@ void video_set_volume(struct plugin_ctx* ctx, int percent)
     if (ctx->video_ctx)
         ctx->video_plugin.i->video->set_volume(ctx->video_ctx, percent);
 }
-int video_volume(struct plugin_ctx* ctx)
+int video_volume(const struct plugin_ctx* ctx)
 {
     if (ctx->video_ctx)
         return ctx->video_plugin.i->video->volume(ctx->video_ctx);
@@ -202,6 +211,7 @@ int video_volume(struct plugin_ctx* ctx)
 struct video_player_interface controls = {
     video_open_file,
     video_close,
+    video_clear,
     video_is_open,
     video_play,
     video_pause,
@@ -214,13 +224,21 @@ struct video_player_interface controls = {
     video_volume
 };
 
-PLUGIN_API struct plugin_interface vh_plugin = {
-    PLUGIN_VERSION,
-    0,
-    create, destroy, &ui, &controls,
+static struct plugin_info info = {
     "VOD Review",
     "video",
     "TheComet",
     "@TheComet93",
     "Tool for reviewing videos."
+};
+
+PLUGIN_API struct plugin_interface vh_plugin = {
+    PLUGIN_VERSION,
+    0,
+    &info,
+    create, destroy,
+    &ui,
+    NULL,
+    NULL,
+    &controls
 };

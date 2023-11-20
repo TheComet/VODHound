@@ -5,21 +5,20 @@
 #include "vh/mem.h"
 #include "vh/plugin.h"
 
-#include "iup.h"
-#include "iupgfx.h"
+#include <gtk/gtk.h>
 
 #include <string.h>
 #include <stdio.h>
 
 struct plugin_ctx
 {
-    Ihandle* canvas;
+    GtkWidget* canvas;
     struct decoder decoder;
     struct gfx* gfx;
 };
 
 static struct plugin_ctx*
-create(void)
+create(struct db_interface* dbi, struct db* db)
 {
     struct plugin_ctx* ctx = mem_alloc(sizeof(struct plugin_ctx));
     memset(ctx, 0, sizeof *ctx);
@@ -32,25 +31,12 @@ destroy(struct plugin_ctx* ctx)
     mem_free(ctx);
 }
 
-static Ihandle* ui_create(struct plugin_ctx* ctx)
+static GtkWidget* ui_create(struct plugin_ctx* ctx)
 {
-    ctx->canvas = IupGfxCanvas(NULL);
-    if (ctx->canvas == NULL)
-        return NULL;
-
-    ctx->gfx = gfx_create(ctx->canvas);
-    if (ctx->gfx == NULL)
-    {
-        IupDestroy(ctx->canvas);
-        return NULL;
-    }
-
-    return ctx->canvas;
+    return gtk_button_new();
 }
-static void ui_destroy(struct plugin_ctx* ctx, Ihandle* ui)
+static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
 {
-    gfx_destroy(ctx->gfx, ctx->canvas);
-    IupDestroy(ui);
 }
 
 static struct ui_center_interface ui = {
@@ -67,10 +53,11 @@ static int video_open_file(struct plugin_ctx* ctx, const char* file_name, int pa
         int w, h;
         decode_next_frame(&ctx->decoder);
         decoder_frame_size(&ctx->decoder, &w, &h);
+        /*
         snprintf(buf, 22, "%dx%d", w, h);
         IupSetAttribute(ctx->canvas, "TEXSIZE", buf);
         IupSetAttribute(ctx->canvas, "TEXRGBA", decoder_rgb24_data(&ctx->decoder));
-        IupRedraw(ctx->canvas, 0);
+        IupRedraw(ctx->canvas, 0);*/
     }
 
     return ret;
@@ -81,8 +68,9 @@ static void video_close(struct plugin_ctx* ctx)
 }
 static void video_clear(struct plugin_ctx* ctx)
 {
+    /*
     IupSetAttribute(ctx->canvas, "TEXRGBA", NULL);
-    IupRedraw(ctx->canvas, 0);
+    IupRedraw(ctx->canvas, 0);*/
 }
 static int video_is_open(const struct plugin_ctx* ctx) { return decoder_is_open(&ctx->decoder); }
 static void video_play(struct plugin_ctx* ctx) {}

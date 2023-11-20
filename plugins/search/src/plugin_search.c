@@ -222,7 +222,7 @@ on_search_text_changed(GtkWidget* search_box, int c, char* new_value)
 
 static GtkWidget* ui_create(struct plugin_ctx* ctx)
 {
-    return NULL;
+    return gtk_button_new();
 }
 static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
 {
@@ -271,8 +271,7 @@ PLUGIN_API struct plugin_interface vh_plugin = {
     PLUGIN_VERSION,
     0,
     &info,
-    create,
-    destroy,
+    create, destroy,
     NULL,
     &ui,
     &replays,

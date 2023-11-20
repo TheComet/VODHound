@@ -3,50 +3,52 @@
 #include "vh/plugin.h"
 #include "vh/plugin_loader.h"
 
-#include "iup.h"
+#include <gtk/gtk.h>
 
 #include <string.h>
 #include <stdio.h>
 
 static void
-overlay_dummy_set_layer(Ihandle* canvas, int idx, const void* data) { (void)canvas; (void)idx; (void)data; }
+overlay_dummy_set_layer(GtkWidget* canvas, int idx, const void* data) { (void)canvas; (void)idx; (void)data; }
 static void
-overlay_dummy_get_size(Ihandle* canvas, int* w, int* h) { (void)canvas; *w = 0; *h = 0; }
+overlay_dummy_get_size(GtkWidget* canvas, int* w, int* h) { (void)canvas; *w = 0; *h = 0; }
 
 static void
-overlay_gfxcanvas_set_layer(Ihandle* gfxcanvas, int idx, const void* data)
+overlay_gfxcanvas_set_layer(GtkWidget* gfxcanvas, int idx, const void* data)
 {
+    /*
     char attr[9];
     snprintf(attr, 9, "TEXRGBA%d", idx);
-    IupSetAttribute(gfxcanvas, attr, data);
+    IupSetAttribute(gfxcanvas, attr, data);*/
 }
 
 static void
-overlay_gfxcanvas_get_size(Ihandle* gfxcanvas, int* w, int* h)
+overlay_gfxcanvas_get_size(GtkWidget* gfxcanvas, int* w, int* h)
 {
+    /*
     struct str_view size = cstr_view(IupGetAttribute(gfxcanvas, "TEXSIZE"));
     if (str_dec_to_int(str_left_of(size, 'x'), w) != 0)
         *w = 0;
     if (str_dec_to_int(str_right_of(size, 'x'), h) != 0)
-        *h = 0;
+        *h = 0;*/
 }
 
 struct overlay_interface
 {
-    void (*set_layer)(Ihandle* gfxcanvas, int idx, const void* data);
-    void (*get_canvas_size)(Ihandle* gfxcanvas, int* w, int* h);
+    void (*set_layer)(GtkWidget* gfxcanvas, int idx, const void* data);
+    void (*get_canvas_size)(GtkWidget* gfxcanvas, int* w, int* h);
 };
 
 struct plugin_ctx
 {
     struct db_interface* dbi;
     struct db* db;
-    struct plugin video_plugin;
+    struct plugin_lib video_plugin;
     struct plugin_ctx* video_ctx;
-    Ihandle* video_ui;
-    Ihandle* ui;
+    GtkWidget* video_ui;
+    GtkWidget* ui;
 
-    Ihandle* controls;
+    GtkWidget* controls;
     struct overlay_interface overlay;
 };
 
@@ -63,6 +65,7 @@ static int try_load_video_driver_plugin(struct plugin_ctx* ctx)
     if (ctx->video_ui == NULL)
         goto create_video_ui_failed;
 
+    /*
     struct str_view class_name = cstr_view(IupGetClassName(ctx->video_ui));
     if (cstr_equal(class_name, "gfxcanvas"))
     {
@@ -74,7 +77,7 @@ static int try_load_video_driver_plugin(struct plugin_ctx* ctx)
         log_err("Video plugin '%s' uses unsupported IUP class '%s'. Overlays won't work.\n",
                 ctx->video_plugin.i->info->name, class_name.data);
         goto unsupported_video_ui;
-    }
+    }*/
 
     return 0;
 
@@ -84,13 +87,13 @@ static int try_load_video_driver_plugin(struct plugin_ctx* ctx)
     create_video_ctx_failed    : return -1;
 }
 
-static int on_scan_plugin_prefer_ffmpeg(struct plugin plugin, void* user)
+static int on_scan_plugin_prefer_ffmpeg(struct plugin_lib lib, void* user)
 {
     struct plugin_ctx* ctx = user;
 
-    if (cstr_equal(cstr_view("FFmpeg Video Player"), plugin.i->info->name))
+    if (cstr_equal(cstr_view("FFmpeg Video Player"), lib.i->info->name))
     {
-        ctx->video_plugin = plugin;
+        ctx->video_plugin = lib;
         if (try_load_video_driver_plugin(ctx) == 0)
             return 1;
         return -1;
@@ -99,13 +102,13 @@ static int on_scan_plugin_prefer_ffmpeg(struct plugin plugin, void* user)
     return 0;
 }
 
-static int on_scan_plugin_any_video_driver(struct plugin plugin, void* user)
+static int on_scan_plugin_any_video_driver(struct plugin_lib lib, void* user)
 {
     struct plugin_ctx* ctx = user;
 
-    if (cstr_equal(cstr_view("video driver"), plugin.i->info->category))
+    if (cstr_equal(cstr_view("video driver"), lib.i->info->category))
     {
-        ctx->video_plugin = plugin;
+        ctx->video_plugin = lib;
         if (try_load_video_driver_plugin(ctx) == 0)
             return 1;
     }
@@ -145,6 +148,7 @@ destroy(struct plugin_ctx* ctx)
 
 static void ui_add_timeline(struct plugin_ctx* ctx)
 {
+    /*
     Ihandle* slider = IupVal("HORIZONTAL");
     IupSetAttribute(slider, "EXPAND", "HORIZONTAL");
 
@@ -155,11 +159,12 @@ static void ui_add_timeline(struct plugin_ctx* ctx)
     IupAppend(ctx->controls, IupFill());
 
     IupMap(slider);
-    IupRefresh(ctx->controls);
+    IupRefresh(ctx->controls);*/
 }
 
-static Ihandle* ui_create(struct plugin_ctx* ctx)
+static GtkWidget* ui_create(struct plugin_ctx* ctx)
 {
+#if 0
     Ihandle* slider = IupVal("HORIZONTAL");
     IupSetAttribute(slider, "EXPAND", "HORIZONTAL");
 
@@ -185,15 +190,18 @@ static Ihandle* ui_create(struct plugin_ctx* ctx)
         ctx->video_ui ? ctx->video_ui : IupCanvas(NULL),
         ctx->controls,
         NULL);
+#endif
+    ctx->ui = gtk_button_new();
 
     return ctx->ui;
 }
-static void ui_destroy(struct plugin_ctx* ctx, Ihandle* ui)
+static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
 {
+    /*
     if (ctx->video_ui)
         IupDetach(ctx->video_ui);
 
-    IupDestroy(ui);
+    IupDestroy(ui);*/
 }
 
 static struct ui_center_interface ui = {

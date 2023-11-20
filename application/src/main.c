@@ -22,7 +22,7 @@ struct center_view_popup_ctx
 
 struct plugin_state
 {
-    struct plugin plugin;
+    struct plugin_lib plugin;
     struct plugin_ctx* ctx;
     Ihandle* ui_center;
     Ihandle* ui_pane;
@@ -366,7 +366,7 @@ on_center_view_popup_plugin_selected(Ihandle* ih)
 }
 
 static int
-on_center_view_popup_scan_plugins(struct plugin plugin, void* user)
+on_center_view_popup_scan_plugins(struct plugin_lib plugin, void* user)
 {
     struct center_view_popup_ctx* ctx = user;
     Ihandle* item = IupItem(plugin.i->info->name, NULL);

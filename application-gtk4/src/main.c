@@ -3,19 +3,126 @@
 #include "vh/db.h"
 #include "vh/import.h"
 #include "vh/init.h"
+#include "vh/plugin.h"
+#include "vh/plugin_loader.h"
 
 #include <gtk/gtk.h>
+
+struct plugin
+{
+    struct plugin_lib lib;
+    struct plugin_ctx* ctx;
+    GtkWidget* ui_center;
+    GtkWidget* ui_pane;
+};
+
+static int
+open_plugin(GtkNotebook* center, GtkNotebook* pane, struct vec* plugin_state_vec, struct db_interface* dbi, struct db* db, struct str_view plugin_name)
+{
+    int insert_pos;
+    struct plugin* plugin = vec_emplace(plugin_state_vec);
+
+    if (plugin_load(&plugin->lib, plugin_name) != 0)
+        goto load_plugin_failed;
+
+    plugin->ctx = plugin->lib.i->create(dbi, db);
+    if (plugin->ctx == NULL)
+        goto create_context_failed;
+
+    plugin->ui_center = NULL;
+    if (plugin->lib.i->ui_center)
+    {
+        plugin->ui_center = plugin->lib.i->ui_center->create(plugin->ctx);
+        if (plugin->ui_center == NULL)
+            goto create_ui_center_failed;
+    }
+
+    plugin->ui_pane = NULL;
+    if (plugin->lib.i->ui_pane)
+    {
+        plugin->ui_pane = plugin->lib.i->ui_pane->create(plugin->ctx);
+        if (plugin->ui_pane == NULL)
+            goto create_ui_pane_failed;
+    }
+
+    if (plugin->ui_center)
+    {
+        GtkWidget* label = gtk_label_new(plugin->lib.i->info->name);
+        gtk_notebook_append_page(center, plugin->ui_center, label);
+        /*
+        insert_pos = IupGetChildCount(center_view) - 1;
+        IupSetAttribute(plugin->ui_center, "TABTITLE", plugin->lib.i->info->name);
+        if (IupInsert(center_view, IupGetChild(center_view, insert_pos), plugin->ui_center) == NULL)
+            goto add_to_ui_center_failed;
+        IupSetInt(center_view, "VALUEPOS", insert_pos);
+        IupMap(plugin->ui_center);
+        IupRefresh(plugin->ui_center);*/
+    }
+
+    if (plugin->ui_pane)
+    {
+        GtkWidget* label = gtk_label_new(plugin->lib.i->info->name);
+        gtk_notebook_append_page(pane, plugin->ui_pane, label);
+        /*
+        insert_pos = IupGetChildCount(pane_view) - 1;
+        IupSetAttribute(plugin->ui_pane, "TABTITLE", plugin->lib.i->info->name);
+        if (IupInsert(pane_view, IupGetChild(pane_view, insert_pos), plugin->ui_pane) == NULL)
+            goto add_to_ui_pane_failed;
+        IupSetInt(pane_view, "VALUEPOS", insert_pos);
+        IupMap(plugin->ui_pane);
+        IupRefresh(plugin->ui_pane);*/
+    }
+
+    return 0;
+
+add_to_ui_pane_failed:
+    /*IupDetach(plugin->ui_center);*/
+add_to_ui_center_failed:
+    if (plugin->ui_pane)
+        plugin->lib.i->ui_pane->destroy(plugin->ctx, plugin->ui_pane);
+create_ui_pane_failed:
+    if (plugin->ui_center)
+        plugin->lib.i->ui_center->destroy(plugin->ctx, plugin->ui_center);
+create_ui_center_failed:
+    plugin->lib.i->destroy(plugin->ctx);
+create_context_failed:
+    plugin_unload(&plugin->lib);
+load_plugin_failed:
+    vec_pop(plugin_state_vec);
+
+    return -1;
+}
+
+static void
+close_plugin(struct plugin* plugin)
+{
+    if (plugin->lib.i->video && plugin->lib.i->video->is_open(plugin->ctx))
+        plugin->lib.i->video->close(plugin->ctx);
+/*
+    if (plugin->ui_pane)
+        IupDetach(plugin->ui_pane);
+    if (plugin->ui_center)
+        IupDetach(plugin->ui_center);*/
+
+    if (plugin->ui_pane)
+        plugin->lib.i->ui_pane->destroy(plugin->ctx, plugin->ui_pane);
+    if (plugin->ui_center)
+        plugin->lib.i->ui_center->destroy(plugin->ctx, plugin->ui_center);
+
+    plugin->lib.i->destroy(plugin->ctx);
+    plugin_unload(&plugin->lib);
+}
 
 static GtkWidget*
 property_panel_new(void)
 {
-    return gtk_button_new();
+    return gtk_notebook_new();
 }
 
 static GtkWidget*
 plugin_view_new(void)
 {
-    return gtk_button_new();
+    return gtk_notebook_new();
 }
 
 static GtkWidget*
@@ -57,6 +164,7 @@ struct app_activate_ctx
 {
     struct db_interface* dbi;
     struct db* db;
+    struct vec plugins;
 };
 
 static void
@@ -66,15 +174,20 @@ activate(GtkApplication* app, gpointer user_data)
     GtkWidget* replay_browser;
     GtkWidget* paned1;
     GtkWidget* paned2;
+    GtkWidget* plugin_view;
+    GtkWidget* property_panel;
     struct app_activate_ctx* ctx = user_data;
 
     window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window), "VODHound");
     gtk_window_set_default_size(GTK_WINDOW(window), 1280, 720);
 
+    plugin_view = plugin_view_new();
+    property_panel = property_panel_new();
+
     paned2 = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
-    gtk_paned_set_start_child(GTK_PANED(paned2), plugin_view_new());
-    gtk_paned_set_end_child(GTK_PANED(paned2), property_panel_new());
+    gtk_paned_set_start_child(GTK_PANED(paned2), plugin_view);
+    gtk_paned_set_end_child(GTK_PANED(paned2), property_panel);
     gtk_paned_set_resize_start_child(GTK_PANED(paned2), TRUE);
     gtk_paned_set_resize_end_child(GTK_PANED(paned2), FALSE);
 
@@ -88,6 +201,11 @@ activate(GtkApplication* app, gpointer user_data)
     gtk_window_set_child(GTK_WINDOW(window), paned1);
     gtk_window_maximize(GTK_WINDOW(window));
     gtk_widget_set_visible(window, 1);
+
+    open_plugin(GTK_NOTEBOOK(plugin_view), GTK_NOTEBOOK(property_panel),
+            &ctx->plugins, ctx->dbi, ctx->db, cstr_view("VOD Review"));
+    open_plugin(GTK_NOTEBOOK(plugin_view), GTK_NOTEBOOK(property_panel),
+            &ctx->plugins, ctx->dbi, ctx->db, cstr_view("Search"));
 }
 
 int main(int argc, char** argv)
@@ -120,9 +238,15 @@ int main(int argc, char** argv)
     app = gtk_application_new("ch.thecomet.vodhound", G_APPLICATION_DEFAULT_FLAGS);
     ctx.dbi = dbi;
     ctx.db = db;
+    vec_init(&ctx.plugins, sizeof(struct plugin));
     g_signal_connect(app, "activate", G_CALLBACK(activate), &ctx);
     status = g_application_run(G_APPLICATION(app), argc, argv);
     g_object_unref(app);
+
+    VEC_FOR_EACH(&ctx.plugins, struct plugin, plugin)
+        close_plugin(plugin);
+    VEC_END_EACH
+    vec_deinit(&ctx.plugins);
 
     dbi->close(db);
     vh_deinit();

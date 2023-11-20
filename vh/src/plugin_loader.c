@@ -18,13 +18,13 @@ struct fs_list_ctx
     struct path file_path;
     struct str_view subdir;
     void* lib;
-    int (*on_plugin)(struct plugin plugin, void* user);
+    int (*on_plugin)(struct plugin_lib plugin, void* user);
     void* on_plugin_user;
 };
 
 static int on_symbol(const char* sym, void* user)
 {
-    struct plugin plugin;
+    struct plugin_lib plugin;
     struct fs_list_ctx* ctx = user;
     if (!cstr_starts_with(cstr_view(sym), "vh_plugin"))
         return 0;
@@ -117,7 +117,7 @@ static int on_subdir(const char* subdir, void* user)
 }
 
 int
-plugins_scan(int (*on_plugin)(struct plugin plugin, void* user), void* user)
+plugins_scan(int (*on_plugin)(struct plugin_lib plugin, void* user), void* user)
 {
     int ret;
     struct fs_list_ctx ctx;
@@ -136,11 +136,11 @@ plugins_scan(int (*on_plugin)(struct plugin plugin, void* user), void* user)
 
 struct plugin_load_ctx
 {
-    struct plugin* plugin;
+    struct plugin_lib* plugin;
     struct str_view name;
 };
 
-static int plugin_load_on_plugin(struct plugin plugin, void* user)
+static int plugin_load_on_plugin(struct plugin_lib plugin, void* user)
 {
     struct plugin_load_ctx* ctx = user;
     if (cstr_equal(ctx->name, plugin.i->info->name))
@@ -152,7 +152,7 @@ static int plugin_load_on_plugin(struct plugin plugin, void* user)
 }
 
 int
-plugin_load(struct plugin* plugin, struct str_view name)
+plugin_load(struct plugin_lib* plugin, struct str_view name)
 {
     struct plugin_load_ctx ctx = { plugin, name };
     if (plugins_scan(plugin_load_on_plugin, &ctx) != 1)
@@ -161,7 +161,7 @@ plugin_load(struct plugin* plugin, struct str_view name)
 }
 
 void
-plugin_unload(struct plugin* plugin)
+plugin_unload(struct plugin_lib* plugin)
 {
     struct plugin_interface* pi = plugin->i;
     log_info("Unloading plugin %s by %s: %s\n", pi->info->name, pi->info->author, pi->info->description);

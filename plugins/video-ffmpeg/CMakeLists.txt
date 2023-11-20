@@ -7,6 +7,10 @@ project ("video-ffmpeg"
     LANGUAGES C)
 
 include (VODHoundPlugin)
+
+find_package (GTK4 REQUIRED COMPONENTS
+    gtk glib cairo pango harfbuzz gdk-pixbuf graphene)
+
 vodhound_add_plugin (${PROJECT_NAME}
     SOURCES
         "src/decoder.c"
@@ -18,8 +22,13 @@ vodhound_add_plugin (${PROJECT_NAME}
         "include"
     LIBS
         VODHound::vh
-        IUP::iup
-        IUP::gfx)
+        GTK4::glib
+        GTK4::cairo
+        GTK4::pango
+        GTK4::harfbuzz
+        GTK4::gdk-pixbuf
+        GTK4::graphene
+        GTK4::gtk)
 
 if (VODHOUND_VIDEO_FFMPEG)
     if (IUP3D_GFX MATCHES "DX11")
