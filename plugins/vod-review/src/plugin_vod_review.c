@@ -193,7 +193,7 @@ static GtkWidget* ui_create(struct plugin_ctx* ctx)
 #endif
     ctx->ui = gtk_button_new();
 
-    return ctx->ui;
+    return g_object_ref_sink(ctx->ui);
 }
 static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
 {

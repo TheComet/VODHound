@@ -1,7 +1,9 @@
-#include "vh/mem.h"
+#include "vh/backtrace.h"
 #include "vh/hm.h"
 #include "vh/hash.h"
-#include "vh/backtrace.h"
+#include "vh/log.h"
+#include "vh/mem.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,15 +12,17 @@
 
 #define BACKTRACE_OMIT_COUNT 2
 
-#if defined(VH_MEM_DEBUGGING)
-static VH_THREADLOCAL mem_size g_allocations = 0;
-static VH_THREADLOCAL mem_size d_deallocations = 0;
-static VH_THREADLOCAL mem_size g_ignore_hm_malloc = 0;
-VH_THREADLOCAL mem_size g_bytes_in_use = 0;
-VH_THREADLOCAL mem_size g_bytes_in_use_peak = 0;
-static VH_THREADLOCAL struct hm g_report;
+struct state
+{
+    struct hm report;
+    mem_size allocations;
+    mem_size deallocations;
+    mem_size bytes_in_use;
+    mem_size bytes_in_use_peak;
+    unsigned ignore_malloc : 1;
+};
 
-typedef struct report_info_t
+struct report_info
 {
     void* location;
     mem_size size;
@@ -26,95 +30,166 @@ typedef struct report_info_t
     int backtrace_size;
     char** backtrace;
 #   endif
-} report_info_t;
+};
+
+static VH_THREADLOCAL struct state state;
 
 /* ------------------------------------------------------------------------- */
 int
 mem_threadlocal_init(void)
 {
-    g_allocations = 0;
-    d_deallocations = 0;
-    g_bytes_in_use = 0;
-    g_bytes_in_use_peak = 0;
+    state.allocations = 0;
+    state.deallocations = 0;
+    state.bytes_in_use = 0;
+    state.bytes_in_use_peak = 0;
 
     /*
-     * Hashmap will call malloc during init, need to ignore this to avoid
+     * Hashmap will call mem_alloc during init, need to ignore this to avoid
      * crashing.
      */
-    g_ignore_hm_malloc = 1;
+    state.ignore_malloc = 1;
         if (hm_init_with_options(
-            &g_report,
+            &state.report,
             sizeof(void*),
-            sizeof(report_info_t),
+            sizeof(struct report_info),
             4096,
             hash32_ptr,
             (hm_compare_func)memcmp) != 0)
         {
             return -1;
         }
-    g_ignore_hm_malloc = 0;
+    state.ignore_malloc = 0;
 
     return 0;
+}
+
+/* ------------------------------------------------------------------------- */
+#if defined(VH_MEM_BACKTRACE)
+static void
+print_backtrace(void)
+{
+    char** bt;
+    int bt_size, i;
+
+    if (state.ignore_malloc)
+        return;
+
+    if (!(bt = backtrace_get(&bt_size)))
+    {
+        log_mem_warn("Failed to generate backtrace\n");
+        return;
+    }
+
+    for (i = BACKTRACE_OMIT_COUNT; i < bt_size; ++i)
+    {
+        if (strstr(bt[i], "invoke_main"))
+            break;
+        log_mem_warn("  %s\n", bt[i]);
+    }
+    backtrace_free(bt);
+}
+#else
+#   define print_backtrace()
+#endif
+
+/* ------------------------------------------------------------------------- */
+static void*
+track_allocation(void* addr, mem_size size)
+{
+    struct report_info* info;
+    ++state.allocations;
+
+    if (addr == NULL)
+    {
+        log_mem_warn("malloc(0)\n");
+#if defined(VH_MEM_BACKTRACE)
+        print_backtrace();
+#endif
+    }
+
+    if (state.ignore_malloc)
+        return addr;
+
+    /*
+     * Record allocation info. Call to hashmap and backtrace_get() may allocate
+     * memory, so set flag to ignore the call to malloc() when inserting.
+     */
+    state.bytes_in_use += size;
+    if (state.bytes_in_use_peak < state.bytes_in_use)
+        state.bytes_in_use_peak = state.bytes_in_use;
+
+    state.ignore_malloc = 1;
+        /* insert info into hashmap */
+        if (hm_insert(&state.report, &addr, (void**)&info) != 1)
+            log_mem_err("Hashmap insert failed! Expect to see incorrect memory leak reports!\n");
+
+        /* record the location and size of the allocation */
+        info->location = addr;
+        info->size = size;
+
+        /* Create backtrace to this allocation */
+#if defined(VH_MEM_BACKTRACE)
+        if (!(info->backtrace = backtrace_get(&info->backtrace_size)))
+            log_mem_warn("Failed to generate backtrace\n");
+#endif
+    state.ignore_malloc = 0;
+
+    return addr;
+}
+
+static void
+track_deallocation(void* addr, const char* free_type)
+{
+    struct report_info* info;
+    state.deallocations++;
+
+    if (addr == NULL)
+    {
+        log_mem_warn("free(NULL)\n");
+#if defined(VH_MEM_BACKTRACE)
+        print_backtrace();
+#endif
+    }
+
+    if (state.ignore_malloc)
+        return;
+
+    /* find matching allocation and remove from hashmap */
+    info = hm_erase(&state.report, &addr);
+    if (info)
+    {
+        state.bytes_in_use -= info->size;
+#if defined(VH_MEM_BACKTRACE)
+        if (info->backtrace)
+            backtrace_free(info->backtrace);
+        else
+            log_mem_warn("Allocation didn't have a backtrace (it was NULL)\n");
+#endif
+    }
+    else
+    {
+        log_mem_warn("%s'ing something that was never allocated\n", free_type);
+#if defined(VH_MEM_BACKTRACE)
+        print_backtrace();
+#endif
+    }
 }
 
 /* ------------------------------------------------------------------------- */
 void*
 mem_alloc(mem_size size)
 {
-    void* p = NULL;
-    report_info_t* info;
-
-    /* allocate */
-    p = malloc(size);
+    void* p = malloc(size);
     if (p == NULL)
-        return NULL;
-
-    ++g_allocations;
-
-    /*
-     * Record allocation info. Call to hashmap and backtrace_get() may allocate
-     * memory, so set flag to ignore the call to malloc() when inserting.
-     */
-    if (!g_ignore_hm_malloc)
     {
-        g_bytes_in_use += size;
-        if (g_bytes_in_use_peak < g_bytes_in_use)
-            g_bytes_in_use_peak = g_bytes_in_use;
-
-        g_ignore_hm_malloc = 1;
-            /* insert info into hashmap */
-            if (hm_insert(&g_report, &p, (void**)&info) != 1)
-                fprintf(stderr, "[memory] Hashmap insert failed\n");
-
-            /* record the location and size of the allocation */
-            info->location = p;
-            info->size = size;
-
-            /* if (enabled, generate a backtrace so we know where memory leaks
-             * occurred */
-#   if defined(VH_MEM_BACKTRACE)
-            if (!(info->backtrace = backtrace_get(&info->backtrace_size)))
-                fprintf(stderr, "[memory] WARNING: Failed to generate backtrace\n");
-            if (size == 0)
-            {
-                int i;
-                fprintf(stderr, "[memory] WARNING: malloc(0)");
-                fprintf(stderr, "  -----------------------------------------\n");
-                fprintf(stderr, "  backtrace to where malloc() was called:\n");
-                for (i = 0; i < info->backtrace_size; ++i)
-                    fprintf(stderr, "      %s\n", info->backtrace[i]);
-                fprintf(stderr, "  -----------------------------------------\n");
-            }
-#   else
-            if (size == 0)
-                fprintf(stderr, "[memory] WARNING: malloc(0)");
-#   endif
-
-        g_ignore_hm_malloc = 0;
+        log_mem_err("malloc() failed (out of memory)\n");
+#if defined(VH_MEM_BACKTRACE)
+        print_backtrace();  /* probably won't work but may as well*/
+#endif
+        return NULL;
     }
 
-    /* success */
-    return p;
+    return track_allocation(p, size);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -124,133 +199,27 @@ mem_realloc(void* p, mem_size new_size)
     void* old_p = p;
     p = realloc(p, new_size);
 
-    /* If old pointer is NULL, this behaves the same as a malloc */
-    if (old_p == NULL)
-    {
-        ++g_allocations;
-    }
-    else
-    {
-        /* Remove old entry in report */
-        report_info_t* info = (report_info_t*)hm_erase(&g_report, &old_p);
-        if (info)
-        {
-            g_bytes_in_use -= info->size;
+    if (old_p)
+        track_deallocation(old_p, "realloc()");
 
-#   if defined(VH_MEM_BACKTRACE)
-            if (info->backtrace)
-                backtrace_free(info->backtrace);
-            else
-                fprintf(stderr, "[memory] WARNING: free(): Allocation didn't "
-                    "have a backtrace (it was NULL)\n");
-#   endif
-        }
-        else
-        {
-#   if defined(VH_MEM_BACKTRACE)
-            char** bt;
-            int bt_size, i;
-            fprintf(stderr, "  -----------------------------------------\n");
-#   endif
-            fprintf(stderr, "[memory] WARNING: realloc(): Reallocating something that was never malloc'd");
-#   if defined(VH_MEM_BACKTRACE)
-            if ((bt = backtrace_get(&bt_size)))
-            {
-                fprintf(stderr, "  backtrace to where realloc() was called:\n");
-                for (i = 0; i < bt_size; ++i)
-                    fprintf(stderr, "      %s\n", bt[i]);
-                fprintf(stderr, "  -----------------------------------------\n");
-                backtrace_free(bt);
-            }
-            else
-                fprintf(stderr, "[memory] WARNING: Failed to generate backtrace\n");
-#   endif
-        }
+    if (p == NULL)
+    {
+        log_mem_err("realloc() failed (out of memory)\n");
+#if defined(VH_MEM_BACKTRACE)
+        print_backtrace();  /* probably won't work but may as well*/
+#endif
+        return NULL;
     }
 
-    /*
-     * Record allocation info. Call to hashmap and backtrace_get() may allocate
-     * memory, so set flag to ignore the call to malloc() when inserting.
-     */
-    if (!g_ignore_hm_malloc)
-    {
-        report_info_t* info;
-
-        g_bytes_in_use += new_size;
-        if (g_bytes_in_use_peak < g_bytes_in_use)
-            g_bytes_in_use_peak = g_bytes_in_use;
-
-        g_ignore_hm_malloc = 1;
-            /* insert info into hashmap */
-            if (hm_insert(&g_report, &p, (void**)&info) != 1)
-                fprintf(stderr, "[memory] Hashmap insert failed\n");
-
-            /* record the location and size of the allocation */
-            info->location = p;
-            info->size = new_size;
-
-            /* if (enabled, generate a backtrace so we know where memory leaks
-            * occurred */
-#   if defined(VH_MEM_BACKTRACE)
-            if (!(info->backtrace = backtrace_get(&info->backtrace_size)))
-                fprintf(stderr, "[memory] WARNING: Failed to generate backtrace\n");
-#   endif
-
-        g_ignore_hm_malloc = 0;
-    }
-
-    return p;
+    return track_allocation(p, new_size);
 }
 
 /* ------------------------------------------------------------------------- */
 void
 mem_free(void* p)
 {
-    /* find matching allocation and remove from hashmap */
-    if (!g_ignore_hm_malloc)
-    {
-        report_info_t* info = (report_info_t*)hm_erase(&g_report, &p);
-        if (info)
-        {
-            g_bytes_in_use -= info->size;
-#   if defined(VH_MEM_BACKTRACE)
-            if (info->backtrace)
-                backtrace_free(info->backtrace);
-            else
-                fprintf(stderr, "[memory] WARNING: free(): Allocation didn't "
-                    "have a backtrace (it was NULL)\n");
-#   endif
-        }
-        else
-        {
-#   if defined(VH_MEM_BACKTRACE)
-            char** bt;
-            int bt_size, i;
-            fprintf(stderr, "  -----------------------------------------\n");
-#   endif
-            fprintf(stderr, "  WARNING: Freeing something that was never allocated\n");
-#   if defined(VH_MEM_BACKTRACE)
-            if ((bt = backtrace_get(&bt_size)))
-            {
-                fprintf(stderr, "  backtrace to where free() was called:\n");
-                for (i = 0; i < bt_size; ++i)
-                    fprintf(stderr, "      %s\n", bt[i]);
-                fprintf(stderr, "  -----------------------------------------\n");
-                backtrace_free(bt);
-            }
-            else
-                fprintf(stderr, "[memory] WARNING: Failed to generate backtrace\n");
-#   endif
-        }
-    }
-
-    if (p)
-    {
-        ++d_deallocations;
-        free(p);
-    }
-    else
-        fprintf(stderr, "Warning: free(NULL)\n");
+    track_deallocation(p, "free()");
+    free(p);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -259,102 +228,56 @@ mem_threadlocal_deinit(void)
 {
     uintptr_t leaks;
 
-    --g_allocations; /* this is the single allocation still held by the report hashmap */
+    --state.allocations; /* this is the single allocation still held by the report hashmap */
 
-    fprintf(stderr, "=========================================\n");
-    fprintf(stderr, "Memory Report\n");
-    fprintf(stderr, "=========================================\n");
+    log_mem_note("Memory report:\n");
 
     /* report details on any g_allocations that were not de-allocated */
-    if (hm_count(&g_report) != 0)
+    if (hm_count(&state.report) != 0)
     {
-        HM_FOR_EACH(&g_report, void*, report_info_t, key, info)
+        HM_FOR_EACH(&state.report, void*, struct report_info, key, info)
+            log_mem_note("  un-freed memory at %p, size %p\n", info->location, (void*)(uintptr_t)info->size);
 
-            fprintf(stderr, "  un-freed memory at %p, size %p\n", info->location, (void*)(uintptr_t)info->size);
-            mem_mutated_string_and_hex_dump(info->location, info->size);
-
-#   if defined(VH_MEM_BACKTRACE)
-            fprintf(stderr, "  Backtrace to where malloc() was called:\n");
+#if defined(VH_MEM_BACKTRACE)
             {
-                intptr_t i;
+                int i;
                 for (i = BACKTRACE_OMIT_COUNT; i < info->backtrace_size; ++i)
-                    fprintf(stderr, "    %s\n", info->backtrace[i]);
+                {
+                    if (strstr(info->backtrace[i], "invoke_main"))
+                        break;
+                    log_mem_note("    %s\n", info->backtrace[i]);
+                }
             }
             backtrace_free(info->backtrace); /* this was allocated when malloc() was called */
-            fprintf(stderr, "  -----------------------------------------\n");
-#   endif
-
+#endif
         HM_END_EACH
-
-        fprintf(stderr, "=========================================\n");
     }
 
     /* overall report */
-    leaks = (g_allocations > d_deallocations ? g_allocations - d_deallocations : d_deallocations - g_allocations);
-    fprintf(stderr, "allocations   : %" PRIu32 "\n", g_allocations);
-    fprintf(stderr, "deallocations : %" PRIu32 "\n", d_deallocations);
-    fprintf(stderr, "memory leaks  : %" PRIu64 "\n", leaks);
-    fprintf(stderr, "peak memory usage: %" PRIu32 " bytes\n", g_bytes_in_use_peak);
-    fprintf(stderr, "=========================================\n");
+    leaks = (state.allocations > state.deallocations ?
+        state.allocations - state.deallocations :
+        state.deallocations - state.allocations);
+    log_mem_note("  allocations   : %" PRIu32 "\n", state.allocations);
+    log_mem_note("  deallocations : %" PRIu32 "\n", state.deallocations);
+    log_mem_note("  memory leaks  : %" PRIu64 "\n", leaks);
+    log_mem_note("  peak memory   : %" PRIu32 " bytes\n", state.bytes_in_use_peak);
 
-    ++g_allocations; /* this is the single allocation still held by the report hashmap */
-    g_ignore_hm_malloc = 1;
-        hm_deinit(&g_report);
-    g_ignore_hm_malloc = 0;
+    ++state.allocations; /* this is the single allocation still held by the report hashmap */
+    state.ignore_malloc = 1;
+        hm_deinit(&state.report);
+    state.ignore_malloc = 0;
 
     return (mem_size)leaks;
 }
 
-/* ------------------------------------------------------------------------- */
-mem_size
-mem_get_num_allocs(void)
-{
-    return hm_count(&g_report);
-}
-
-/* ------------------------------------------------------------------------- */
-mem_size
-mem_get_memory_usage(void)
-{
-    return g_bytes_in_use;
-}
-
-#else /* VH_MEM_DEBUGGING */
-
-int mem_threadlocal_init(void)         { return 0; }
-mem_size mem_threadlocal_deinit(void)  { return 0; }
-mem_size mem_get_num_allocs(void)      { return 0; }
-mem_size mem_get_memory_usage(void)    { return 0; }
-
-#endif /* VH_MEM_DEBUGGING */
-
-/* ------------------------------------------------------------------------- */
 void
-mem_mutated_string_and_hex_dump(const void* data, mem_size length_in_bytes)
+mem_track_allocation(void* p)
 {
-    char* dump;
-    mem_idx i;
+    track_allocation(p, 0);
+}
 
-    /* allocate and copy data into new buffer */
-    if (!(dump = malloc(length_in_bytes + 1)))
-    {
-        fprintf(stderr, "[memory] WARNING: Failed to malloc() space for dump\n");
-        return;
-    }
-    memcpy(dump, data, length_in_bytes);
-    dump[length_in_bytes] = '\0';
-
-    /* mutate null terminators into dots */
-    for (i = 0; i != (mem_idx)length_in_bytes; ++i)
-        if (dump[i] == '\0')  /* valgrind will complain about conditional jump depending on uninitialized value here -- that's ok */
-            dump[i] = '.';
-
-    /* dump */
-    fprintf(stderr, "  mutated string dump: %s\n", dump);
-    fprintf(stderr, "  hex dump: ");
-    for (i = 0; i != (mem_idx)length_in_bytes; ++i)
-        fprintf(stderr, " %02x", (unsigned char)dump[i]);
-    fprintf(stderr, "\n");
-
-    free(dump);
+void
+mem_track_deallocation(void* p)
+{ 
+    track_deallocation(p, "sentinel()");
 }

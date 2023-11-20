@@ -33,4 +33,12 @@ log_err(const char* fmt, ...);
 VH_PUBLIC_API VH_PRINTF_FORMAT(1, 2) void
 log_note(const char* fmt, ...);
 
+/* Specific logging functions ---------------------------------------------- */
+VH_PRIVATE_API VH_PRINTF_FORMAT(1, 2) void
+log_mem_warn(const char* fmt, ...);
+VH_PRIVATE_API VH_PRINTF_FORMAT(1, 2) void
+log_mem_err(const char* fmt, ...);
+VH_PRIVATE_API VH_PRINTF_FORMAT(1, 2) void
+log_mem_note(const char* fmt, ...);
+
 C_END

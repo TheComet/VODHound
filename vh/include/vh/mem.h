@@ -3,13 +3,6 @@
 #include "vh/config.h"
 #include <stdint.h>
 
-#if !defined(VH_MEM_DEBUGGING)
-#   include <stdlib.h>
-#   define mem_alloc     malloc
-#   define mem_free      free
-#   define mem_realloc   realloc
-#endif
-
 #if defined(_WIN32)
 #   include <malloc.h>
 static inline int mem_allocated_size(void* p) { return (int)_msize(p); }
@@ -25,6 +18,17 @@ C_BEGIN
 
 typedef uint32_t mem_size;
 typedef int32_t mem_idx;
+
+#if !defined(VH_MEM_DEBUGGING)
+#   include <stdlib.h>
+#   define mem_threadlocal_init() (0)
+#   define mem_threadlocal_deinit() (0)
+#   define mem_alloc     malloc
+#   define mem_free      free
+#   define mem_realloc   realloc
+#   define mem_alloc_sentinel()
+#   define mem_free_sentinel()
+#else
 
 /*!
  * @brief Initializes memory tracking for the current thread. Must be
@@ -47,8 +51,6 @@ mem_threadlocal_init(void);
 VH_PRIVATE_API mem_size
 mem_threadlocal_deinit(void);
 
-#if defined(VH_MEM_DEBUGGING)
-
 /*!
  * @brief Does the same thing as a normal call to malloc(), but does some
  * additional work to monitor and track down memory leaks.
@@ -70,15 +72,12 @@ mem_realloc(void* ptr, mem_size new_size);
 VH_PUBLIC_API void
 mem_free(void*);
 
+VH_PUBLIC_API void
+mem_track_allocation(void* p);
+
+VH_PUBLIC_API void
+mem_track_deallocation(void* p);
+
 #endif
-
-VH_PUBLIC_API mem_size
-mem_get_num_allocs(void);
-
-VH_PUBLIC_API mem_size
-mem_get_memory_usage(void);
-
-VH_PRIVATE_API void
-mem_mutated_string_and_hex_dump(const void* data, mem_size size_in_bytes);
 
 C_END

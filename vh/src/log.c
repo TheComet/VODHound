@@ -169,3 +169,59 @@ log_note(const char* fmt, ...)
         fflush(g_log);
     }
 }
+
+/* ------------------------------------------------------------------------- */
+void
+log_mem_warn(const char* fmt, ...)
+{
+    va_list va;
+    fprintf(stderr, "[" COL_B_YELLOW "Warn " COL_RESET "] " COL_B_BLUE "mem: " COL_RESET);
+    va_start(va, fmt);
+    vfprintf(stderr, fmt, va);
+    va_end(va);
+
+    if (g_log)
+    {
+        fprintf(g_log, "[Warn ] mem: ");
+        va_start(va, fmt);
+        vfprintf(g_log, fmt, va);
+        va_end(va);
+        fflush(g_log);
+    }
+}
+void
+log_mem_err(const char* fmt, ...)
+{
+    va_list va;
+    fprintf(stderr, "[" COL_B_RED "Error" COL_RESET "] " COL_B_BLUE "mem: " COL_RESET);
+    va_start(va, fmt);
+    vfprintf(stderr, fmt, va);
+    va_end(va);
+
+    if (g_log)
+    {
+        fprintf(g_log, "[Error] mem: ");
+        va_start(va, fmt);
+        vfprintf(g_log, fmt, va);
+        va_end(va);
+        fflush(g_log);
+    }
+}
+void
+log_mem_note(const char* fmt, ...)
+{
+    va_list va;
+    fprintf(stderr, "[" COL_B_MAGENTA "NOTE " COL_RESET "] " COL_B_BLUE "mem: " COL_RESET);
+    va_start(va, fmt);
+    vfprintf(stderr, fmt, va);
+    va_end(va);
+
+    if (g_log)
+    {
+        fprintf(g_log, "[NOTE ] mem: ");
+        va_start(va, fmt);
+        vfprintf(g_log, fmt, va);
+        va_end(va);
+        fflush(g_log);
+    }
+}

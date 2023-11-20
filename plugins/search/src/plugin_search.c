@@ -236,7 +236,7 @@ static GtkWidget* ui_create(struct plugin_ctx* ctx)
     gtk_box_append(GTK_BOX(vbox), label);
     gtk_box_append(GTK_BOX(vbox), search_box);
 
-    return vbox;
+    return g_object_ref_sink(vbox);
 }
 static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
 {

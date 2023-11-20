@@ -58,7 +58,8 @@ backtrace_get(int* size)
         if (SymGetLineFromAddr64(hProcess, address, &displacement, &line) == TRUE)
             current_str += snprintf(current_str, VH_BACKTRACE_FUNC_LEN, "%d: (0x%llx+0x%x) %s:%d", i, sym->Address, displacement, sym->Name, line.LineNumber) + 1;
         else
-            current_str += sprintf(current_str, "%d: (0x%llx) SymGetLineFromAddr64() failed: %d", i, address, GetLastError()) + 1;
+            //current_str += sprintf(current_str, "%d: (0x%llx) SymGetLineFromAddr64() failed: %d", i, address, GetLastError()) + 1;
+            current_str += sprintf(current_str, "%d: (0x%llx) ...", i, address) + 1;
 
     }
     

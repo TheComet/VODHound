@@ -16,11 +16,19 @@ struct plugin
     GtkWidget* ui_pane;
 };
 
+#if defined(VH_MEM_DEBUGGING)
+static void
+track_plugin_widget_deallocation(GtkWidget* self, gpointer user_pointer)
+{
+    mem_track_deallocation(self);
+}
+#endif
+
 static int
-open_plugin(GtkNotebook* center, GtkNotebook* pane, struct vec* plugin_state_vec, struct db_interface* dbi, struct db* db, struct str_view plugin_name)
+open_plugin(GtkNotebook* center, GtkNotebook* pane, struct vec* plugins, struct db_interface* dbi, struct db* db, struct str_view plugin_name)
 {
     int insert_pos;
-    struct plugin* plugin = vec_emplace(plugin_state_vec);
+    struct plugin* plugin = vec_emplace(plugins);
 
     if (plugin_load(&plugin->lib, plugin_name) != 0)
         goto load_plugin_failed;
@@ -35,6 +43,11 @@ open_plugin(GtkNotebook* center, GtkNotebook* pane, struct vec* plugin_state_vec
         plugin->ui_center = plugin->lib.i->ui_center->create(plugin->ctx);
         if (plugin->ui_center == NULL)
             goto create_ui_center_failed;
+
+#if defined(VH_MEM_DEBUGGING)
+        mem_track_allocation(plugin->ui_center);
+        g_signal_connect(plugin->ui_center, "destroy", G_CALLBACK(track_plugin_widget_deallocation), NULL);
+#endif
     }
 
     plugin->ui_pane = NULL;
@@ -43,6 +56,11 @@ open_plugin(GtkNotebook* center, GtkNotebook* pane, struct vec* plugin_state_vec
         plugin->ui_pane = plugin->lib.i->ui_pane->create(plugin->ctx);
         if (plugin->ui_pane == NULL)
             goto create_ui_pane_failed;
+
+#if defined(VH_MEM_DEBUGGING)
+        mem_track_allocation(plugin->ui_pane);
+        g_signal_connect(plugin->ui_pane, "destroy", G_CALLBACK(track_plugin_widget_deallocation), NULL);
+#endif
     }
 
     if (plugin->ui_center)
@@ -88,7 +106,7 @@ create_ui_center_failed:
 create_context_failed:
     plugin_unload(&plugin->lib);
 load_plugin_failed:
-    vec_pop(plugin_state_vec);
+    vec_pop(plugins);
 
     return -1;
 }
@@ -113,16 +131,27 @@ close_plugin(struct plugin* plugin)
     plugin_unload(&plugin->lib);
 }
 
-static GtkWidget*
-property_panel_new(void)
+static void
+page_removed(GtkNotebook* self, GtkWidget* child, guint page_num, gpointer user_data)
 {
-    return gtk_notebook_new();
+    struct vec* plugins = user_data;
+    log_dbg("page_removed()\n");
 }
 
 static GtkWidget*
-plugin_view_new(void)
+property_panel_new(struct vec* plugins)
 {
-    return gtk_notebook_new();
+    GtkWidget* notebook = gtk_notebook_new();
+    g_signal_connect(notebook, "page-removed", G_CALLBACK(page_removed), plugins);
+    return notebook;
+}
+
+static GtkWidget*
+plugin_view_new(struct vec* plugins)
+{
+    GtkWidget* notebook = gtk_notebook_new();
+    g_signal_connect(notebook, "page-removed", G_CALLBACK(page_removed), plugins);
+    return notebook;
 }
 
 static GtkWidget*
@@ -182,8 +211,8 @@ activate(GtkApplication* app, gpointer user_data)
     gtk_window_set_title(GTK_WINDOW(window), "VODHound");
     gtk_window_set_default_size(GTK_WINDOW(window), 1280, 720);
 
-    plugin_view = plugin_view_new();
-    property_panel = property_panel_new();
+    plugin_view = plugin_view_new(&ctx->plugins);
+    property_panel = property_panel_new(&ctx->plugins);
 
     paned2 = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_paned_set_start_child(GTK_PANED(paned2), plugin_view);
