@@ -36,11 +36,14 @@ create(struct db_interface* dbi, struct db* db)
 {
     struct plugin_ctx* ctx = mem_alloc(sizeof(struct plugin_ctx));
     memset(ctx, 0, sizeof *ctx);
+
     ctx->dbi = dbi;
     ctx->db = db;
+
     parser_init(&ctx->parser);
     ast_init(&ctx->ast);
     search_index_init(&ctx->index);
+
     return ctx;
 }
 
@@ -55,6 +58,7 @@ destroy(struct plugin_ctx* ctx)
     search_index_deinit(&ctx->index);
     ast_deinit(&ctx->ast);
     parser_deinit(&ctx->parser);
+
     mem_free(ctx);
 }
 
@@ -222,10 +226,21 @@ on_search_text_changed(GtkWidget* search_box, int c, char* new_value)
 
 static GtkWidget* ui_create(struct plugin_ctx* ctx)
 {
-    return gtk_button_new();
+    GtkWidget* search_box;
+    GtkWidget* label;
+    GtkWidget* vbox;
+    
+    search_box = gtk_entry_new();
+    label = gtk_label_new("Search:");
+    vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_box_append(GTK_BOX(vbox), label);
+    gtk_box_append(GTK_BOX(vbox), search_box);
+
+    return vbox;
 }
 static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
 {
+    g_object_unref(ui);
 }
 
 static struct ui_pane_interface ui = {

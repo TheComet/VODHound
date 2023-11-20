@@ -20,7 +20,7 @@ struct on_motion_ctx
 
 static int on_motion(uint64_t hash40, void* user_data)
 {
-    struct on_motion_ctx* ctx;
+    struct on_motion_ctx* ctx = user_data;
     struct strlist_str* hm_label;
     struct YYLTYPE* loc = (struct YYLTYPE*)&ctx->ast->nodes[ctx->node].info.loc;
     int n = ast_motion(ctx->ast, hash40, loc);

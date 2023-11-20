@@ -37,6 +37,7 @@ static GtkWidget* ui_create(struct plugin_ctx* ctx)
 }
 static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
 {
+    g_object_unref(ui);
 }
 
 static struct ui_center_interface ui = {

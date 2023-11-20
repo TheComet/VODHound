@@ -202,6 +202,7 @@ static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
         IupDetach(ctx->video_ui);
 
     IupDestroy(ui);*/
+    g_object_unref(ui);
 }
 
 static struct ui_center_interface ui = {
