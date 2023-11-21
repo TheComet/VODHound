@@ -28,26 +28,26 @@ C_BEGIN
  */
 
 #define RB_COUNT_N(rb, N)                                               \
-        (((rb)->write - (rb)->read) & ((N)-1u))
+        (((rb)->write - (rb)->read) & ((N)-1))
 
 #define RB_SPACE_N(rb, N)                                               \
-        (((rb)->read - (rb)->write - 1) & ((N)-1u))
+        (((rb)->read - (rb)->write - 1) & ((N)-1))
 
 #define RB_IS_FULL_N(rb, N)                                             \
-        ((rb_idx)(((rb)->write + 1u) & ((N)-1u)) == (rb)->read)
+        ((((rb)->write + 1) & ((N)-1)) == (rb)->read)
 
 #define RB_IS_EMPTY_N(rb, N)                                            \
         ((rb)->read == (rb)->write)
 
 #define RB_COUNT_TO_END_N(result, rb, N) {                              \
-            rb_idx end = (rb_idx)((N) - (rb)->read);              \
-            rb_idx n = (rb_idx)((rb)->write + end) & ((N)-1u);    \
-            result = (rb_idx)(n < end ? n : end);                    \
+            rb_idx end = ((N) - (rb)->read);                            \
+            rb_idx n = ((rb)->write + end) & ((N)-1u);                  \
+            result = (n < end ? n : end);                               \
         }
 
 #define RB_SPACE_TO_END_N(result, rb, N) {                              \
-            rb_idx end = (rb_idx)(((N)-1u) - (rb)->write);        \
-            rb_idx n = (rb_idx)(end + (rb)->read) & ((N)-1u);     \
+            rb_idx end = (rb_idx)(((N)-1u) - (rb)->write);              \
+            rb_idx n = (rb_idx)(end + (rb)->read) & ((N)-1u);           \
             result = n <= end ? n : end + 1u;                           \
         }
 
@@ -105,23 +105,23 @@ rb_erase(struct rb* rb, rb_idx idx);
     (void*)((rb)->buffer + (rb)->read * (rb)->value_size)
 
 #define rb_peek_write(rb) \
-    (void*)((rb)->buffer + (((rb)->write - 1) & ((rb)->capacity - 1)) * (rb)->value_size)
+    (void*)((rb)->buffer + (((rb)->write - 1) & ((rb_idx)(rb)->capacity - 1)) * (rb)->value_size)
 
 #define rb_peek(rb, idx) \
-    (void*)((rb)->buffer + (((rb)->read + (idx)) & ((rb)->capacity - 1)) * (rb)->value_size)
+    (void*)((rb)->buffer + (((rb)->read + (idx)) & ((rb_idx)(rb)->capacity - 1)) * (rb)->value_size)
 
 #define rb_count(rb) \
-    RB_COUNT_N(rb, (rb)->capacity)
+    RB_COUNT_N(rb, (rb_idx)(rb)->capacity)
 
 #define rb_is_full(rb) \
-    RB_IS_FULL_N(rb, (rb)->capacity)
+    RB_IS_FULL_N(rb, (rb_idx)(rb)->capacity)
 
 #define rb_is_empty(rb) \
-    RB_IS_EMPTY_N(rb, (rb)->capacity)
+    RB_IS_EMPTY_N(rb, (rb_idx)(rb)->capacity)
 
 #define RB_FOR_EACH(rb, var_type, var) {                                    \
     var_type* var;                                                          \
-    rb_idx var##_i;                                                      \
+    rb_idx var##_i;                                                         \
     for(var##_i = (rb)->read,                                               \
         var = (var_type*)((rb)->buffer + (rb)->read * (rb)->value_size);    \
         var##_i != (rb)->write;                                             \

@@ -125,6 +125,13 @@ struct video_player_interface
      * \brief Get the current volume in percent.
      */
     int (*volume)(const struct plugin_ctx* plugin);
+
+    /*!
+     * \brief
+     */
+    void (*set_frame_callback)(
+        void (*on_frame_rgb24)(int width, int height, const void* data),
+        void* user_data);
 };
 
 struct plugin_info

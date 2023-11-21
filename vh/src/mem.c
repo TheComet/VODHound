@@ -24,7 +24,7 @@ struct state
 
 struct report_info
 {
-    void* location;
+    uintptr_t location;
     mem_size size;
 #   if defined(VH_MEM_BACKTRACE)
     int backtrace_size;
@@ -35,6 +35,7 @@ struct report_info
 static VH_THREADLOCAL struct state state;
 
 /* ------------------------------------------------------------------------- */
+static int report_info_cmp(const void* a, const void* b, int size) { return memcmp(a, b, (size_t)size); }
 int
 mem_threadlocal_init(void)
 {
@@ -50,11 +51,11 @@ mem_threadlocal_init(void)
     state.ignore_malloc = 1;
         if (hm_init_with_options(
             &state.report,
-            sizeof(void*),
+            sizeof(uintptr_t),
             sizeof(struct report_info),
             4096,
             hash32_ptr,
-            (hm_compare_func)memcmp) != 0)
+            report_info_cmp) != 0)
         {
             return -1;
         }
@@ -93,13 +94,13 @@ print_backtrace(void)
 #endif
 
 /* ------------------------------------------------------------------------- */
-static void*
-track_allocation(void* addr, mem_size size)
+static void
+track_allocation(uintptr_t addr, mem_size size)
 {
     struct report_info* info;
     ++state.allocations;
 
-    if (addr == NULL)
+    if (size == 0)
     {
         log_mem_warn("malloc(0)\n");
 #if defined(VH_MEM_BACKTRACE)
@@ -108,7 +109,7 @@ track_allocation(void* addr, mem_size size)
     }
 
     if (state.ignore_malloc)
-        return addr;
+        return;
 
     /*
      * Record allocation info. Call to hashmap and backtrace_get() may allocate
@@ -134,16 +135,16 @@ track_allocation(void* addr, mem_size size)
 #endif
     state.ignore_malloc = 0;
 
-    return addr;
+    return;
 }
 
 static void
-track_deallocation(void* addr, const char* free_type)
+track_deallocation(uintptr_t addr, const char* free_type)
 {
     struct report_info* info;
     state.deallocations++;
 
-    if (addr == NULL)
+    if (addr == 0)
     {
         log_mem_warn("free(NULL)\n");
 #if defined(VH_MEM_BACKTRACE)
@@ -189,18 +190,19 @@ mem_alloc(mem_size size)
         return NULL;
     }
 
-    return track_allocation(p, size);
+    track_allocation((uintptr_t)p, size);
+    return p;
 }
 
 /* ------------------------------------------------------------------------- */
 void*
 mem_realloc(void* p, mem_size new_size)
 {
-    void* old_p = p;
+    uintptr_t old_addr = (uintptr_t)p;
     p = realloc(p, new_size);
 
-    if (old_p)
-        track_deallocation(old_p, "realloc()");
+    if (old_addr)
+        track_deallocation(old_addr, "realloc()");
 
     if (p == NULL)
     {
@@ -211,14 +213,15 @@ mem_realloc(void* p, mem_size new_size)
         return NULL;
     }
 
-    return track_allocation(p, new_size);
+    track_allocation((uintptr_t)p, new_size);
+    return p;
 }
 
 /* ------------------------------------------------------------------------- */
 void
 mem_free(void* p)
 {
-    track_deallocation(p, "free()");
+    track_deallocation((uintptr_t)p, "free()");
     free(p);
 }
 
@@ -236,7 +239,8 @@ mem_threadlocal_deinit(void)
     if (hm_count(&state.report) != 0)
     {
         HM_FOR_EACH(&state.report, void*, struct report_info, key, info)
-            log_mem_note("  un-freed memory at %p, size %p\n", info->location, (void*)(uintptr_t)info->size);
+            log_mem_note("  un-freed memory at %" PRIx64 ", size %" PRIx32 "\n",
+                    info->location, info->size);
 
 #if defined(VH_MEM_BACKTRACE)
             {
@@ -273,11 +277,11 @@ mem_threadlocal_deinit(void)
 void
 mem_track_allocation(void* p)
 {
-    track_allocation(p, 0);
+    track_allocation((uintptr_t)p, 1);
 }
 
 void
 mem_track_deallocation(void* p)
-{ 
-    track_deallocation(p, "sentinel()");
+{
+    track_deallocation((uintptr_t)p, "sentinel()");
 }

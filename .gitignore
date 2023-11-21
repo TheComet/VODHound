@@ -4,6 +4,7 @@
 # IDE files
 CMakeLists.txt.user
 *.swp
+*.autosave
 
 # Other files
 *.xcf

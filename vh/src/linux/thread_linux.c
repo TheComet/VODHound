@@ -1,12 +1,12 @@
-#include "vh/log.h"
-#include "vh/mem.h"
-#include "vh/thread.h"
-
 #define _GNU_SOURCE
 #include <pthread.h>
 #include <string.h>
 #include <time.h>
 #include <signal.h>
+
+#include "vh/log.h"
+#include "vh/mem.h"
+#include "vh/thread.h"
 
 int
 thread_start(struct thread* t, void* (*func)(void*), void* args)

@@ -14,7 +14,7 @@ static void
 overlay_dummy_get_size(GtkWidget* canvas, int* w, int* h) { (void)canvas; *w = 0; *h = 0; }
 
 static void
-overlay_gtk_canvas_set_layer(GtkWidget* gfxcanvas, int idx, const void* data)
+overlay_gtk_gl_area_set_layer(GtkWidget* gfxcanvas, int idx, const void* data)
 {
     /*
     char attr[9];
@@ -23,7 +23,7 @@ overlay_gtk_canvas_set_layer(GtkWidget* gfxcanvas, int idx, const void* data)
 }
 
 static void
-overlay_gtk_canvas_get_size(GtkWidget* gfxcanvas, int* w, int* h)
+overlay_gtk_gl_area_get_size(GtkWidget* gfxcanvas, int* w, int* h)
 {
     /*
     struct str_view size = cstr_view(IupGetAttribute(gfxcanvas, "TEXSIZE"));
@@ -70,10 +70,10 @@ static int try_load_video_driver_plugin(struct plugin_ctx* ctx)
     class_name = cstr_view(
         G_OBJECT_CLASS_NAME(
             G_OBJECT_GET_CLASS(ctx->video_ui)));
-    if (cstr_equal(class_name, "GtkCanvas"))
+    if (cstr_equal(class_name, "GtkGLArea"))
     {
-        ctx->overlay.get_canvas_size = overlay_gtk_canvas_get_size;
-        ctx->overlay.set_layer = overlay_gtk_canvas_set_layer;
+        ctx->overlay.get_canvas_size = overlay_gtk_gl_area_get_size;
+        ctx->overlay.set_layer = overlay_gtk_gl_area_set_layer;
         return 0;
     }
 
@@ -83,7 +83,7 @@ static int try_load_video_driver_plugin(struct plugin_ctx* ctx)
 unsupported_video_ui:
     ctx->video_plugin.i->ui_center->destroy(ctx->video_ctx, ctx->video_ui);
     ctx->video_ui = NULL;
-create_video_ui_failed: 
+create_video_ui_failed:
 plugin_has_no_ui_interface:
     ctx->video_plugin.i->destroy(ctx->video_ctx);
     ctx->video_ctx = NULL;
@@ -185,7 +185,7 @@ static GtkWidget* ui_create(struct plugin_ctx* ctx)
     GtkWidget* controls;
     GtkAdjustment* adj;
     GtkWidget* video_canvas;
-    
+
     adj = gtk_adjustment_new(0, 0, 100, 0.1, 1, 0);
 
     slider = gtk_scale_new(GTK_ORIENTATION_HORIZONTAL, adj);

@@ -344,7 +344,7 @@ decode_next_frame(struct decoder* decoder)
                 SWS_POINT, NULL, NULL, NULL);
 
             sws_scale(decoder->reformat_ctx,
-                decoder->current_frame->data, decoder->current_frame->linesize, 0, decoder->vcodec_ctx->height,
+                (const uint8_t*const*)decoder->current_frame->data, decoder->current_frame->linesize, 0, decoder->vcodec_ctx->height,
                 decoder->current_frame_rgba->data, decoder->current_frame_rgba->linesize);
 
             /*

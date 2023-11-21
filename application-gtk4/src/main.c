@@ -3,6 +3,8 @@
 #include "vh/db.h"
 #include "vh/import.h"
 #include "vh/init.h"
+#include "vh/log.h"
+#include "vh/mem.h"
 #include "vh/plugin.h"
 #include "vh/plugin_loader.h"
 
@@ -220,7 +222,7 @@ activate(GtkApplication* app, gpointer user_data)
     gtk_paned_set_end_child(GTK_PANED(paned2), property_panel);
     gtk_paned_set_resize_start_child(GTK_PANED(paned2), TRUE);
     gtk_paned_set_resize_end_child(GTK_PANED(paned2), FALSE);
-    gtk_paned_set_position(GTK_PANED(paned2), 800);
+    //gtk_paned_set_position(GTK_PANED(paned2), 800);
 
     paned1 = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_paned_set_start_child(GTK_PANED(paned1), game_browser_new(ctx->dbi, ctx->db));

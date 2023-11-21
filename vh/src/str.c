@@ -8,13 +8,13 @@
 int
 str_set(struct str* str, struct str_view view)
 {
-    void* new_data = mem_realloc(str->data, view.len + 1);
+    void* new_data = mem_realloc(str->data, (mem_size)view.len + 1);
     if (new_data == NULL)
         return -1;
 
     str->data = new_data;
     str->len = view.len;
-    memcpy(str->data, view.data, view.len);
+    memcpy(str->data, view.data, (size_t)view.len);
 
     return 0;
 }
@@ -29,11 +29,11 @@ str_deinit(struct str* str)
 int
 str_append(struct str* str, struct str_view other)
 {
-    void* new_data = mem_realloc(str->data, str->len + other.len + 1);
+    void* new_data = mem_realloc(str->data, (mem_size)(str->len + other.len + 1));
     if (new_data == NULL)
         return -1;
     str->data = new_data;
-    memcpy(str->data + str->len, other.data, other.len);
+    memcpy(str->data + str->len, other.data, (size_t)other.len);
     str->len += other.len;
     return 0;
 }
@@ -50,7 +50,7 @@ str_fmt(struct str* str, const char* fmt, ...)
 
     if (str->len < len + 1)
     {
-        void* new_data = mem_realloc(str->data, len + 1);
+        void* new_data = mem_realloc(str->data, (mem_size)(len + 1));
         if (new_data == NULL)
             return -1;
         str->data = new_data;

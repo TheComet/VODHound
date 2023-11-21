@@ -161,6 +161,8 @@ resize_rehash(struct hm* hm, hm_size new_table_count)
     return 0;
 }
 
+static int default_cmp(const void* a, const void* b, int size) { return memcmp(a, b, (size_t)size); }
+
 /* ------------------------------------------------------------------------- */
 struct hm*
 hm_alloc(hm_size key_size, hm_size value_size)
@@ -169,7 +171,7 @@ hm_alloc(hm_size key_size, hm_size value_size)
         key_size, value_size,
         VH_HM_MIN_CAPACITY,
         hash32_jenkins_oaat,
-        (hm_compare_func)memcmp);
+        default_cmp);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -197,7 +199,7 @@ hm_init(struct hm* hm, hm_size key_size, hm_size value_size)
         hm, key_size, value_size,
         VH_HM_MIN_CAPACITY,
         hash32_jenkins_oaat,
-        (hm_compare_func)memcmp);
+        default_cmp);
 }
 
 /* ------------------------------------------------------------------------- */

@@ -41,8 +41,8 @@ rb_realloc(struct rb* rb, rb_size new_size)
         memmove(
             rb->buffer + rb->capacity * rb->value_size,
             rb->buffer,
-            (size_t)(rb->write * rb->value_size));
-        rb->write += rb->capacity;
+            (size_t)rb->write * rb->value_size);
+        rb->write += (rb_idx)rb->capacity;
     }
 
     rb->capacity = new_size;
@@ -94,7 +94,7 @@ rb_emplace(struct rb* rb)
 
     rb_idx write = rb->write;
     value = rb->buffer + write * rb->value_size;
-    rb->write = (write + 1u) & (rb->capacity - 1u);
+    rb->write = (write + 1) & ((rb_idx)rb->capacity - 1);
 
     return value;
 }
@@ -120,7 +120,7 @@ rb_emplacer(struct rb* rb)
         if (rb_realloc(rb, rb->capacity * 2) < 0)
             return NULL;
 
-    rb_idx read = (rb->read - 1u) & (rb->capacity - 1u);
+    rb_idx read = (rb->read - 1) & ((rb_idx)rb->capacity - 1);
     rb->read = read;
     return rb->buffer + read * rb->value_size;
 }
@@ -136,7 +136,7 @@ rb_take(struct rb* rb)
 
     read = rb->read;
     data = rb->buffer + read * rb->value_size;
-    rb->read = (read + 1u) & (rb->capacity - 1u);
+    rb->read = (read + 1) & ((rb_idx)rb->capacity - 1);
     return data;
 }
 
@@ -149,7 +149,7 @@ rb_takew(struct rb* rb)
     if (rb_is_empty(rb))
         return NULL;
 
-    write = (rb->write - 1u) & (rb->capacity - 1u);
+    write = (rb->write - 1) & ((rb_idx)rb->capacity - 1);
     data = rb->buffer + write * rb->value_size;
     rb->write = write;
     return data;
@@ -167,9 +167,9 @@ rb_insert_emplace(struct rb* rb, rb_idx idx)
         if (rb_realloc(rb, rb->capacity * 2) < 0)
             return NULL;
 
-    insert = (rb->read + idx) & (rb->capacity - 1);
+    insert = (rb->read + idx) & ((rb_idx)rb->capacity - 1);
     dst = rb->write;
-    src = (rb->write - 1u) & (rb->capacity - 1u);
+    src = (rb->write - 1) & ((rb_idx)rb->capacity - 1);
     while (dst != insert)
     {
         memcpy(
@@ -177,10 +177,10 @@ rb_insert_emplace(struct rb* rb, rb_idx idx)
             rb->buffer + src * rb->value_size,
             rb->value_size);
         dst = src;
-        src = (src - 1u) & (rb->capacity - 1u);
+        src = (src - 1) & ((rb_idx)rb->capacity - 1);
     }
 
-    rb->write = (rb->write + 1u) & (rb->capacity - 1u);
+    rb->write = (rb->write + 1) & ((rb_idx)rb->capacity - 1);
 
     return rb->buffer + insert * rb->value_size;
 }
@@ -206,8 +206,8 @@ rb_erase(struct rb* rb, rb_idx idx)
 
     assert(idx >= 0 && idx < (int)rb_count(rb));
 
-    dst = (rb->read + idx) & (rb->capacity - 1u);
-    src = (dst + 1u) & (rb->capacity - 1u);
+    dst = (rb->read + idx) & ((rb_idx)rb->capacity - 1);
+    src = (dst + 1) & ((rb_idx)rb->capacity - 1);
     while (src != rb->write)
     {
         memcpy(
@@ -215,7 +215,7 @@ rb_erase(struct rb* rb, rb_idx idx)
             rb->buffer + src * rb->value_size,
             rb->value_size);
         dst = src;
-        src = (src + 1u) & (rb->capacity - 1u);
+        src = (src + 1) & ((rb_idx)rb->capacity - 1);
     }
 
     rb->write = dst;
