@@ -9,7 +9,7 @@ struct db;
 G_DECLARE_FINAL_TYPE(VhAppGameBrowser, vhapp_game_browser, VHAPP, GAME_BROWSER, GtkWidget);
 
 GtkWidget*
-vhapp_game_browser_new(void);
+vhapp_game_browser_new(struct db_interface* dbi, struct db* db);
 
 void
 vhapp_game_browser_refresh(VhAppGameBrowser* self, struct db_interface* dbi, struct db* db);

@@ -27,7 +27,7 @@ enum column
 };
 
 struct _VhAppGameTree;
-struct _VhAppGameTree* vhapp_game_tree_new(void);
+static struct _VhAppGameTree* vhapp_game_tree_new(void);
 
 struct _VhAppGameTreeEntry
 {
@@ -51,7 +51,7 @@ vhapp_game_tree_entry_finalize(GObject* object)
     G_OBJECT_CLASS(vhapp_game_tree_entry_parent_class)->finalize(object);
 }
 
-VhAppGameTreeEntry*
+static VhAppGameTreeEntry*
 vhapp_game_tree_entry_new_event(
     struct str_view date,
     struct str_view event_name)
@@ -73,7 +73,7 @@ vhapp_game_tree_entry_new_event(
     return obj;
 }
 
-VhAppGameTreeEntry*
+static VhAppGameTreeEntry*
 vhapp_game_tree_entry_new_game(
     int game_id,
     struct str_view time,
@@ -193,7 +193,7 @@ vhapp_game_tree_init(VhAppGameTree* self)
     vec_init(&self->items, sizeof(GObject*));
 }
 
-VhAppGameTree*
+static VhAppGameTree*
 vhapp_game_tree_new(void)
 {
     return g_object_new(VHAPP_TYPE_GAME_TREE, NULL);
@@ -206,11 +206,20 @@ vhapp_game_tree_append(VhAppGameTree* self, VhAppGameTreeEntry* item)
     g_list_model_items_changed(G_LIST_MODEL(self), vec_count(&self->items) - 1, 0, 1);
 }
 
+enum
+{
+    SIGNAL_GAMES_SELECTED,
+    SIGNAL_COUNT
+};
+
+static gint game_browser_signals[SIGNAL_COUNT];
+
 struct _VhAppGameBrowser
 {
     GtkWidget parent_instance;
     VhAppGameTree* tree;
     GtkWidget* top_widget;
+    struct vec selected_game_ids;
 };
 
 struct _VhAppGameBrowserClass
@@ -393,7 +402,7 @@ static int on_game(
     struct str_view score1 = {0}, score2 = {0};
     VhAppGameTreeEntry* game_obj;
 
-    char time_str[6];    /* HH:MM */
+    char time_str[6];     /* HH:MM */
     char scores_str[36];  /* -2147483648 - -2147483648 */
     char game_str[16];    /* -2147483648 */
 
@@ -467,6 +476,17 @@ static int on_game(
 }
 
 static void
+populate_tree_from_db(VhAppGameTree* tree, struct db_interface* dbi, struct db* db)
+{
+    struct on_game_ctx on_game_ctx = { 0 };
+    on_game_ctx.tree = tree;
+
+    log_dbg("Querying games...\n");
+    dbi->game.get_all(db, on_game, &on_game_ctx);
+    log_dbg("Loaded %d games\n", dbi->game.count(db));
+}
+
+static void
 column_view_activate_cb(GtkColumnView* self, guint position, gpointer user_pointer)
 {
     GtkSelectionModel* selection_model = gtk_column_view_get_model(self);
@@ -485,27 +505,30 @@ selection_changed_cb(GtkSelectionModel* self, guint position_hint, guint n_items
     GtkBitsetIter iter;
     guint position;
     GListModel* model = gtk_multi_selection_get_model(GTK_MULTI_SELECTION(self));
+    VhAppGameBrowser* game_browser = user_data;
 
+    vec_clear(&game_browser->selected_game_ids);
     gtk_bitset_iter_init_at(&iter, gtk_selection_model_get_selection(self), position_hint, &position);
     for (; gtk_bitset_iter_is_valid(&iter); gtk_bitset_iter_next(&iter, &position))
     {
         GtkTreeListRow* row = gtk_tree_list_model_get_row(GTK_TREE_LIST_MODEL(model), position);
-        VhAppGameTreeEntry* game_obj = gtk_tree_list_row_get_item(row);
-        if (game_obj->children == NULL)
-        {
-            log_dbg("Selected game_id: %d, %s vs %s\n",
-                game_obj->game_id,
-                strlist_view(&game_obj->columns, COL_TEAM1).data,
-                strlist_view(&game_obj->columns, COL_TEAM2).data);
-        }
+        VhAppGameTreeEntry* entry = gtk_tree_list_row_get_item(row);
 
-        g_object_unref(game_obj);
+        if (entry->children == NULL)
+            vec_push(&game_browser->selected_game_ids, &entry->game_id);
+
+        g_object_unref(entry);
         g_object_unref(row);
     }
+
+    if (vec_count(&game_browser->selected_game_ids) > 0)
+        g_signal_emit(game_browser, game_browser_signals[SIGNAL_GAMES_SELECTED], 0,
+            vec_data(&game_browser->selected_game_ids),
+            (int)vec_count(&game_browser->selected_game_ids));
 }
 
 static GtkWidget*
-create_game_list(VhAppGameTree* tree)
+create_game_list(VhAppGameTree* tree, VhAppGameBrowser* game_browser)
 {
     GtkTreeListModel* model;
     GtkMultiSelection* selection_model;
@@ -531,8 +554,8 @@ create_game_list(VhAppGameTree* tree)
     COLUMNS_LIST
 #undef X
 
-    g_signal_connect(column_view, "activate", G_CALLBACK(column_view_activate_cb), NULL);
-    g_signal_connect(selection_model, "selection-changed", G_CALLBACK(selection_changed_cb), NULL);
+    g_signal_connect(column_view, "activate", G_CALLBACK(column_view_activate_cb), game_browser);
+    g_signal_connect(selection_model, "selection-changed", G_CALLBACK(selection_changed_cb), game_browser);
 
     return column_view;
 }
@@ -575,6 +598,7 @@ create_top_widget(GtkWidget* game_list)
 static void
 vhapp_game_browser_init(VhAppGameBrowser* self)
 {
+    vec_init(&self->selected_game_ids, sizeof(int));
 }
 
 static void
@@ -582,6 +606,7 @@ vhapp_game_browser_dispose(GObject* object)
 {
     VhAppGameBrowser* self = VHAPP_GAME_BROWSER(object);
     gtk_widget_unparent(self->top_widget);
+    vec_deinit(&self->selected_game_ids);
     mem_track_deallocation(object);
     G_OBJECT_CLASS(vhapp_game_browser_parent_class)->dispose(object);
 }
@@ -592,15 +617,24 @@ vhapp_game_browser_class_init(VhAppGameBrowserClass* class)
     GObjectClass* object_class = G_OBJECT_CLASS(class);
     object_class->dispose = vhapp_game_browser_dispose;
     gtk_widget_class_set_layout_manager_type(GTK_WIDGET_CLASS(class), GTK_TYPE_BIN_LAYOUT);
+
+    game_browser_signals[SIGNAL_GAMES_SELECTED] = g_signal_new("games-selected",
+        G_OBJECT_CLASS_TYPE(object_class),
+        G_SIGNAL_RUN_FIRST | G_SIGNAL_ACTION,
+        0,
+        NULL, NULL,
+        NULL,
+        G_TYPE_NONE, 2, G_TYPE_POINTER, G_TYPE_INT);
 }
 
 GtkWidget*
-vhapp_game_browser_new(void)
+vhapp_game_browser_new(struct db_interface* dbi, struct db* db)
 {
     GtkWidget* game_list;
     VhAppGameBrowser* game_browser = g_object_new(VHAPP_TYPE_GAME_BROWSER, NULL);
     game_browser->tree = vhapp_game_tree_new();
-    game_list = create_game_list(game_browser->tree);
+    populate_tree_from_db(game_browser->tree, dbi, db);
+    game_list = create_game_list(game_browser->tree, game_browser);
     game_browser->top_widget = create_top_widget(game_list);
     gtk_widget_set_parent(game_browser->top_widget, GTK_WIDGET(game_browser));
 
@@ -612,9 +646,5 @@ vhapp_game_browser_new(void)
 void
 vhapp_game_browser_refresh(VhAppGameBrowser* self, struct db_interface* dbi, struct db* db)
 {
-    struct on_game_ctx on_game_ctx = { 0 };
-    log_dbg("Querying games...\n");
-    on_game_ctx.tree = self->tree;
-    dbi->game.get_all(db, on_game, &on_game_ctx);
-    log_dbg("Loaded %d games\n", dbi->game.count(db));
+    populate_tree_from_db(self->tree, dbi, db);
 }

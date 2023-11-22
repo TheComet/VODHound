@@ -153,6 +153,8 @@ struct video_player_interface
     int (*add_render_callback)(struct plugin_ctx* plugin,
         void (*on_render)(int width, int height, void* user_data),
         void* user_data);
+
+
 };
 
 struct plugin_info
