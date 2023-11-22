@@ -480,19 +480,28 @@ column_view_activate_cb(GtkColumnView* self, guint position, gpointer user_point
 }
 
 static void
-selection_changed_cb(GtkSelectionModel* self, guint position, guint n_items, gpointer user_data)
+selection_changed_cb(GtkSelectionModel* self, guint position_hint, guint n_items, gpointer user_data)
 {
+    GtkBitsetIter iter;
+    guint position;
     GListModel* model = gtk_multi_selection_get_model(GTK_MULTI_SELECTION(self));
-    GtkTreeListRow* row = gtk_tree_list_model_get_row(GTK_TREE_LIST_MODEL(model), position);
-    VhAppGameTreeEntry* game_obj = gtk_tree_list_row_get_item(row);
 
-    if (game_obj->children == NULL)
+    gtk_bitset_iter_init_at(&iter, gtk_selection_model_get_selection(self), position_hint, &position);
+    for (; gtk_bitset_iter_is_valid(&iter); gtk_bitset_iter_next(&iter, &position))
     {
-        log_dbg("Selected game: %d, %s\n", game_obj->game_id, strlist_view(&game_obj->columns, COL_TEAM1).data);
-    }
+        GtkTreeListRow* row = gtk_tree_list_model_get_row(GTK_TREE_LIST_MODEL(model), position);
+        VhAppGameTreeEntry* game_obj = gtk_tree_list_row_get_item(row);
+        if (game_obj->children == NULL)
+        {
+            log_dbg("Selected game_id: %d, %s vs %s\n",
+                game_obj->game_id,
+                strlist_view(&game_obj->columns, COL_TEAM1).data,
+                strlist_view(&game_obj->columns, COL_TEAM2).data);
+        }
 
-    g_object_unref(game_obj);
-    g_object_unref(row);
+        g_object_unref(game_obj);
+        g_object_unref(row);
+    }
 }
 
 static GtkWidget*

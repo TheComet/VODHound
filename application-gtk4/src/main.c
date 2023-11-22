@@ -1,6 +1,7 @@
 #include "application/game_browser.h"
 
 #include "vh/db.h"
+#include "vh/fs.h"
 #include "vh/import.h"
 #include "vh/init.h"
 #include "vh/log.h"
@@ -133,6 +134,122 @@ close_plugin(struct plugin* plugin)
     plugin_unload(&plugin->lib);
 }
 
+struct on_video_path_ctx
+{
+    struct db_interface* dbi;
+    struct db* db;
+    struct vec* plugins;
+    int64_t frame_offset;
+    struct str_view file_name;
+    struct path file_path;
+};
+
+static int
+on_video_path(const char* path, void* user)
+{
+    int combined_success = 0;
+    struct on_video_path_ctx* ctx = user;
+
+    if (path_set(&ctx->file_path, cstr_view(path)) < 0)
+        return -1;
+    if (path_join(&ctx->file_path, ctx->file_name) < 0)
+        return -1;
+    path_terminate(&ctx->file_path);
+
+    if (!fs_file_exists(ctx->file_path.str.data))
+        return 0;
+
+    VEC_FOR_EACH(ctx->plugins, struct plugin, state)
+        struct plugin_interface* i = state->lib.i;
+        if (i->video == NULL)
+            continue;
+        combined_success |= i->video->open_file(state->ctx, ctx->file_path.str.data, 1) == 0;
+    VEC_END_EACH
+
+    return combined_success;
+}
+
+static int
+on_game_video(const char* file_name, const char* path_hint, int64_t frame_offset, void* user)
+{
+    struct on_video_path_ctx* ctx = user;
+
+    /* Try the path hint first */
+    ctx->file_name = cstr_view(file_name);
+    if (*path_hint)
+        switch (on_replay_browser_video_path(path_hint, ctx))
+        {
+            case 1  : return 1;
+            case 0  : break;
+            default : return -1;
+        }
+
+    /* Will have to search video paths for the video file */
+    switch (ctx->dbi->video.get_paths(ctx->db, on_video_path, ctx))
+    {
+        case 1  :
+            path_dirname(&ctx->file_path);
+            ctx->dbi->video.set_path_hint(ctx->db, ctx->file_name, path_view(ctx->file_path));
+            return 1;
+        case 0  : break;
+        default : return -1;
+    }
+
+    return 0;
+}
+
+static int
+on_game_selected(int game_id)
+{
+    struct on_video_path_ctx ctx;
+    int game_id;
+
+    if (selected)
+    {
+        /* Notify plugins of new replay selection */
+        VEC_FOR_EACH(ctx.plugin_state_vec, struct plugin_state, state)
+            struct plugin_interface* i = state->plugin.i;
+            if (i->replays)
+                i->replays->select(state->ctx, &game_id, 1);
+        VEC_END_EACH
+
+            /* Iterate all videos associated with this game */
+            path_init(&ctx.file_path);
+        if (ctx.dbi->game.get_videos(ctx.db, game_id, on_replay_browser_game_video, &ctx) <= 0)
+        {
+            /* If video failed to open, clear */
+            VEC_FOR_EACH(ctx.plugin_state_vec, struct plugin_state, state)
+                struct plugin_interface* i = state->plugin.i;
+            if (i->video == NULL)
+                continue;
+            if (!i->video->is_open(state->ctx))
+                i->video->clear(state->ctx);
+            VEC_END_EACH
+        }
+        path_deinit(&ctx.file_path);
+    }
+    else
+    {
+        /* Clear replay selection in plugins */
+        VEC_FOR_EACH(ctx.plugin_state_vec, struct plugin_state, state)
+            struct plugin_interface* i = state->plugin.i;
+        if (i->replays)
+            i->replays->clear(state->ctx);
+        VEC_END_EACH
+
+            /* Close all open video files */
+            VEC_FOR_EACH(ctx.plugin_state_vec, struct plugin_state, state)
+            struct plugin_interface* i = state->plugin.i;
+        if (i->video == NULL)
+            continue;
+        if (i->video->is_open(state->ctx))
+            i->video->close(state->ctx);
+        VEC_END_EACH
+    }
+
+    return IUP_DEFAULT;
+}
+
 static void
 page_removed(GtkNotebook* self, GtkWidget* child, guint page_num, gpointer user_data)
 {
@@ -156,6 +273,37 @@ plugin_view_new(struct vec* plugins)
     return notebook;
 }
 
+static gboolean
+shortcut_activated(GtkWidget* widget,
+    GVariant* unused,
+    gpointer   row)
+{
+    log_dbg("activated shift+r\n");
+    return TRUE;
+}
+
+static void
+setup_global_shortcuts(GtkWidget* window)
+{
+    GtkEventController* controller;
+    GtkShortcutTrigger* trigger;
+    GtkShortcutAction* action;
+    GtkShortcut* shortcut;
+ 
+    controller = gtk_shortcut_controller_new();
+    gtk_shortcut_controller_set_scope(
+        GTK_SHORTCUT_CONTROLLER(controller),
+        GTK_SHORTCUT_SCOPE_GLOBAL);
+    gtk_widget_add_controller(window, controller);
+
+    trigger = gtk_keyval_trigger_new(GDK_KEY_r, GDK_SHIFT_MASK);
+    action = gtk_callback_action_new(shortcut_activated, NULL, NULL);
+    shortcut = gtk_shortcut_new(trigger, action);
+    gtk_shortcut_controller_add_shortcut(
+        GTK_SHORTCUT_CONTROLLER(controller),
+        shortcut);
+}
+
 struct app_activate_ctx
 {
     struct db_interface* dbi;
@@ -177,6 +325,7 @@ activate(GtkApplication* app, gpointer user_data)
     window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window), "VODHound");
     gtk_window_set_default_size(GTK_WINDOW(window), 1280, 720);
+    setup_global_shortcuts(window);
 
     plugin_view = plugin_view_new(&ctx->plugins);
     property_panel = property_panel_new(&ctx->plugins);

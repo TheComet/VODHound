@@ -54,6 +54,8 @@ static int video_open_file(struct plugin_ctx* ctx, const char* file_name, int pa
         int w, h;
         decode_next_frame(&ctx->decoder);
         decoder_frame_size(&ctx->decoder, &w, &h);
+
+        /* TODO Create GdkGLContext and start rendering thread */
         /*
         snprintf(buf, 22, "%dx%d", w, h);
         IupSetAttribute(ctx->canvas, "TEXSIZE", buf);
@@ -123,7 +125,7 @@ PLUGIN_API struct plugin_interface vh_plugin = {
     &info,
     create,
     destroy,
-    NULL,
+    &ui,
     NULL,
     NULL,
     &controls
