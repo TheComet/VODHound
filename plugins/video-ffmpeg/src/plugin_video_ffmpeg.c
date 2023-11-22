@@ -13,6 +13,7 @@
 struct plugin_ctx
 {
     struct decoder decoder;
+    GtkWidget* canvas;
 };
 
 static struct plugin_ctx*
@@ -31,7 +32,8 @@ destroy(struct plugin_ctx* ctx)
 
 static GtkWidget* ui_create(struct plugin_ctx* ctx)
 {
-    return g_object_ref_sink(gtk_gl_area_new());
+    ctx->canvas = gtk_gl_area_new();
+    return g_object_ref_sink(ctx->canvas);
 }
 static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
 {

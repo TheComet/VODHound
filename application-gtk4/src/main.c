@@ -1,4 +1,4 @@
-#include "application/game_list.h"
+#include "application/game_browser.h"
 
 #include "vh/db.h"
 #include "vh/import.h"
@@ -156,42 +156,6 @@ plugin_view_new(struct vec* plugins)
     return notebook;
 }
 
-static GtkWidget*
-game_browser_new(struct db_interface* dbi, struct db* db)
-{
-    GtkWidget* search;
-    GtkWidget* games;
-    GtkWidget* scroll;
-    GtkWidget* vbox;
-    GtkWidget* groups;
-    GtkWidget* paned;
-
-    search = gtk_entry_new();
-    gtk_entry_set_icon_from_icon_name(GTK_ENTRY(search), GTK_ENTRY_ICON_PRIMARY, "edit-find-symbolic");
-
-    games = game_list_new(dbi, db);
-    scroll = gtk_scrolled_window_new();
-    gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(scroll), TRUE);
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), games);
-
-    vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-    gtk_box_append(GTK_BOX(vbox), search);
-    gtk_box_append(GTK_BOX(vbox), scroll);
-
-    groups = gtk_button_new();
-
-    paned = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
-    gtk_paned_set_start_child(GTK_PANED(paned), groups);
-    gtk_paned_set_end_child(GTK_PANED(paned), vbox);
-    gtk_paned_set_resize_start_child(GTK_PANED(paned), FALSE);
-    gtk_paned_set_resize_end_child(GTK_PANED(paned), TRUE);
-
-    gtk_paned_set_position(GTK_PANED(paned), 120);
-
-    return paned;
-}
-
 struct app_activate_ctx
 {
     struct db_interface* dbi;
@@ -203,7 +167,7 @@ static void
 activate(GtkApplication* app, gpointer user_data)
 {
     GtkWidget* window;
-    GtkWidget* replay_browser;
+    GtkWidget* game_browser;
     GtkWidget* paned1;
     GtkWidget* paned2;
     GtkWidget* plugin_view;
@@ -216,6 +180,8 @@ activate(GtkApplication* app, gpointer user_data)
 
     plugin_view = plugin_view_new(&ctx->plugins);
     property_panel = property_panel_new(&ctx->plugins);
+    game_browser = vhapp_game_browser_new();
+    vhapp_game_browser_refresh(VHAPP_GAME_BROWSER(game_browser), ctx->dbi, ctx->db);
 
     paned2 = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_paned_set_start_child(GTK_PANED(paned2), plugin_view);
@@ -225,7 +191,7 @@ activate(GtkApplication* app, gpointer user_data)
     //gtk_paned_set_position(GTK_PANED(paned2), 800);
 
     paned1 = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
-    gtk_paned_set_start_child(GTK_PANED(paned1), game_browser_new(ctx->dbi, ctx->db));
+    gtk_paned_set_start_child(GTK_PANED(paned1), game_browser);
     gtk_paned_set_end_child(GTK_PANED(paned1), paned2);
     gtk_paned_set_resize_start_child(GTK_PANED(paned1), FALSE);
     gtk_paned_set_resize_end_child(GTK_PANED(paned1), TRUE);

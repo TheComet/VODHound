@@ -14,10 +14,10 @@ add_executable (application-gtk4
     "res/vodhound.gresource.xml"
 
     "include/application/fighter_icons.h"
-    "include/application/game_list.h"
+    "include/application/game_browser.h"
 
     "src/fighter_icons.c"
-    "src/game_list.c"
+    "src/game_browser.c"
 
     "${PROJECT_BINARY_DIR}/src/vodhound.gresource.c"
     "src/main.c")
