@@ -297,6 +297,20 @@ static int video_volume(const struct plugin_ctx* ctx)
         return ctx->video_plugin.i->video->volume(ctx->video_ctx);
     return 0;
 }
+static const char* video_graphics_backend(const struct plugin_ctx* ctx)
+{
+    if (ctx->video_ctx)
+        return ctx->video_plugin.i->video->graphics_backend(ctx->video_ctx);
+    return "null";
+}
+static int video_add_render_callback(struct plugin_ctx* ctx,
+    void (*on_render)(int width, int height, void* user_data),
+    void* user_data)
+{
+    if (ctx->video_ctx)
+        return ctx->video_plugin.i->video->add_render_callback(ctx->video_ctx, on_render, user_data);
+    return -1;
+}
 
 static struct video_player_interface controls = {
     video_open_file,
@@ -311,7 +325,9 @@ static struct video_player_interface controls = {
     video_duration,
     video_is_playing,
     video_set_volume,
-    video_volume
+    video_volume,
+    video_graphics_backend,
+    video_add_render_callback
 };
 
 static struct plugin_info info = {

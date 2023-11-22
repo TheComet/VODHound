@@ -33,14 +33,15 @@ struct video_player_interface
     /*!
      * \brief Open a video file and decode the first frame. If pause is
      * true, then the video player should be in a paused state. Otherwise,
-     * resume normal playback.
+     * start normal playback.
      * \note VODHound will guarantee that this function won't be called
      * twice in a row. close() will always be called first if necessary.
      */
     int (*open_file)(struct plugin_ctx* plugin, const char* file_name, int pause);
 
     /*!
-     * \brief Close the video. Player should reset everything.
+     * \brief Close the video. Player should reset everything, but keep the
+     * last decoded frame visible on the canvas.
      * \note VODHound will guarantee that this function won't be called
      * twice in a row.
      */
@@ -104,12 +105,12 @@ struct video_player_interface
     /*!
      * \brief Get the current video offset in units of num/den.
      */
-    uint64_t (*offset)(const struct plugin_ctx* plugin, int num, int den);
+    uint64_t(*offset)(const struct plugin_ctx* plugin, int num, int den);
 
     /*!
      * \brief Get the total video duration in units of num/den.
      */
-    uint64_t (*duration)(const struct plugin_ctx* plugin, int num, int den);
+    uint64_t(*duration)(const struct plugin_ctx* plugin, int num, int den);
 
     /*!
      * \brief Return true if the video is currently playing, otherwise false.
@@ -127,10 +128,30 @@ struct video_player_interface
     int (*volume)(const struct plugin_ctx* plugin);
 
     /*!
-     * \brief
+     * \brief Returns a string identifying which graphics backend is being used
+     * to draw to the canvas. As of this writing, the current plugins can return
+     * one of the following:
+     *   - "gl" -> OpenGL, usually 3.3 or later (XXX: If multiple GL's are used in the future,
+     *                                                may need to change this to e.g. "gl33")
+     *   - "gles2" -> OpenGL ES 2.0
+     *   - "dx11" -> DirectX 11
+     * 
+     * When embedding the video player into the UI, this string is used to
+     * set the render callback function (add_render_callback()) in order to
+     * perform the correct draw calls.
      */
-    void (*set_frame_callback)(
-        void (*on_frame_rgb24)(int width, int height, const void* data),
+    const char* (*graphics_backend)(const struct plugin_ctx* plugin);
+
+    /*!
+     * \brief Appends a function to call for when the canvas is redrawn. The
+     * functions are called in the order they were added. Before any callbacks
+     * are called, the video player will render the frame to the screen.
+     * 
+     * You can make OpenGL/DX calls directly in your callback. The context is
+     * made current before calling.
+     */
+    int (*add_render_callback)(struct plugin_ctx* plugin,
+        void (*on_render)(int width, int height, void* user_data),
         void* user_data);
 };
 

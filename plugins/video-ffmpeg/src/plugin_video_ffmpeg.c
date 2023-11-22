@@ -83,6 +83,13 @@ static uint64_t video_duration(const struct plugin_ctx* ctx, int num, int den) {
 static int video_is_playing(const struct plugin_ctx* ctx) { return 0; }
 static void video_set_volume(struct plugin_ctx* ctx, int percent) {}
 static int video_volume(const struct plugin_ctx* ctx) { return 0; }
+static const char* video_graphics_backend(const struct plugin_ctx* ctx) { return "gl"; }
+static int video_add_render_callback(struct plugin_ctx* ctx,
+    void (*on_render)(int width, int height, void* user_data),
+    void* user_data)
+{
+    return 0;
+}
 
 static struct video_player_interface controls = {
     video_open_file,
@@ -97,7 +104,9 @@ static struct video_player_interface controls = {
     video_duration,
     video_is_playing,
     video_set_volume,
-    video_volume
+    video_volume,
+    video_graphics_backend,
+    video_add_render_callback
 };
 
 static struct plugin_info info = {
