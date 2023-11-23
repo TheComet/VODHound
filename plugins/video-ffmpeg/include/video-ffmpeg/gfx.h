@@ -1,8 +1,12 @@
-typedef struct Ihandle_ Ihandle;
+#pragma once
+
+typedef struct _GtkWidget GtkWidget;
 struct gfx;
 
-struct gfx*
-gfx_create(Ihandle* canvas);
+struct gfx_interface
+{
+    struct gfx* (*create)(GtkWidget* parent);
+    void (*destroy)(struct gfx* gfx, GtkWidget* parent);
+};
 
-void
-gfx_destroy(struct gfx* gfx, Ihandle* canvas);
+extern struct gfx_interface gfx_gl;

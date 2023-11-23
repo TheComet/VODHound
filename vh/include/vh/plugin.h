@@ -135,7 +135,7 @@ struct video_player_interface
      *                                                may need to change this to e.g. "gl33")
      *   - "gles2" -> OpenGL ES 2.0
      *   - "dx11" -> DirectX 11
-     * 
+     *
      * When embedding the video player into the UI, this string is used to
      * set the render callback function (add_render_callback()) in order to
      * perform the correct draw calls.
@@ -146,15 +146,13 @@ struct video_player_interface
      * \brief Appends a function to call for when the canvas is redrawn. The
      * functions are called in the order they were added. Before any callbacks
      * are called, the video player will render the frame to the screen.
-     * 
+     *
      * You can make OpenGL/DX calls directly in your callback. The context is
      * made current before calling.
      */
     int (*add_render_callback)(struct plugin_ctx* plugin,
         void (*on_render)(int width, int height, void* user_data),
         void* user_data);
-
-
 };
 
 struct plugin_info

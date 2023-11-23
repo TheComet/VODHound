@@ -50,7 +50,6 @@ static int video_open_file(struct plugin_ctx* ctx, const char* file_name, int pa
     int ret = decoder_open_file(&ctx->decoder, file_name, pause);
     if (ret == 0 && ctx->canvas)
     {
-        char buf[22];  /* max len of int is 10 + null -- 10*2+1+null = 22 */
         int w, h;
         decode_next_frame(&ctx->decoder);
         decoder_frame_size(&ctx->decoder, &w, &h);

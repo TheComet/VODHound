@@ -27,8 +27,8 @@ render_thread(void* args)
     return NULL;
 }
 
-struct gfx*
-gfx_create(Ihandle* canvas)
+static struct gfx*
+gfx_create(GtkWidget* parent)
 {
     struct gfx* gfx = mem_alloc(sizeof *gfx);
     if (gfx == NULL)
@@ -47,8 +47,8 @@ gfx_create(Ihandle* canvas)
     alloc_gfx_failed    : return NULL;
 }
 
-void
-gfx_destroy(struct gfx* gfx, Ihandle* canvas)
+static void
+gfx_destroy(struct gfx* gfx, GtkWidget* parent)
 {
     mutex_lock(gfx->mutex);
         gfx->request_stop = 1;
@@ -59,3 +59,8 @@ gfx_destroy(struct gfx* gfx, Ihandle* canvas)
 
     mem_free(gfx);
 }
+
+struct gfx_interface gfx_gl = {
+    gfx_create,
+    gfx_destroy
+};
