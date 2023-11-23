@@ -11,10 +11,48 @@
 
 #include <gtk/gtk.h>
 
+#define VHAPP_TYPE_PLUGIN_MODULE (vhapp_plugin_module_get_type())
+G_DECLARE_FINAL_TYPE(VhAppPluginModule, vhapp_plugin_module, VHAPP, PLUGIN_MODULE, GTypeModule)
+
+struct _VhAppPluginModule
+{
+    GTypeModule parent_instance;
+};
+struct _VhAppPluginModuleClass
+{
+    GTypeModuleClass parent_class;
+};
+G_DEFINE_TYPE(VhAppPluginModule, vhapp_plugin_module, G_TYPE_TYPE_MODULE);
+
+static gboolean
+vhapp_plugin_module_load(GTypeModule* type_module)
+{
+    mem_track_allocation(type_module);
+}
+
+static void
+vhapp_plugin_module_unload(GTypeModule* type_module)
+{
+    mem_track_deallocation(type_module);
+}
+
+static void
+vhapp_plugin_module_init(VhAppPluginModule* self) {}
+
+static void
+vhapp_plugin_module_class_init(VhAppPluginModuleClass* class)
+{
+    GTypeModuleClass* module_class = G_TYPE_MODULE_CLASS(class);
+
+    module_class->load = vhapp_plugin_module_load;
+    module_class->unload = vhapp_plugin_module_unload;
+}
+
 struct plugin
 {
     struct plugin_lib lib;
     struct plugin_ctx* ctx;
+    GTypeModule* plugin_module;
     GtkWidget* ui_center;
     GtkWidget* ui_pane;
 };
@@ -36,7 +74,11 @@ open_plugin(GtkNotebook* center, GtkNotebook* pane, struct vec* plugins, struct 
     if (plugin_load(&plugin->lib, plugin_name) != 0)
         goto load_plugin_failed;
 
-    plugin->ctx = plugin->lib.i->create(dbi, db);
+    plugin->plugin_module = g_object_new(VHAPP_TYPE_PLUGIN_MODULE, NULL);
+    g_object_ref_sink(plugin->plugin_module);
+    g_type_module_set_name(plugin->plugin_module, "plugin");
+
+    plugin->ctx = plugin->lib.i->create(plugin->plugin_module, dbi, db);
     if (plugin->ctx == NULL)
         goto create_context_failed;
 
@@ -47,8 +89,8 @@ open_plugin(GtkNotebook* center, GtkNotebook* pane, struct vec* plugins, struct 
         if (plugin->ui_center == NULL)
             goto create_ui_center_failed;
 
-#if defined(VH_MEM_DEBUGGING)
         mem_track_allocation(plugin->ui_center);
+#if defined(VH_MEM_DEBUGGING)
         g_signal_connect(plugin->ui_center, "destroy", G_CALLBACK(track_plugin_widget_deallocation), NULL);
 #endif
     }
@@ -60,8 +102,8 @@ open_plugin(GtkNotebook* center, GtkNotebook* pane, struct vec* plugins, struct 
         if (plugin->ui_pane == NULL)
             goto create_ui_pane_failed;
 
-#if defined(VH_MEM_DEBUGGING)
         mem_track_allocation(plugin->ui_pane);
+#if defined(VH_MEM_DEBUGGING)
         g_signal_connect(plugin->ui_pane, "destroy", G_CALLBACK(track_plugin_widget_deallocation), NULL);
 #endif
     }
@@ -105,8 +147,9 @@ create_ui_pane_failed:
     if (plugin->ui_center)
         plugin->lib.i->ui_center->destroy(plugin->ctx, plugin->ui_center);
 create_ui_center_failed:
-    plugin->lib.i->destroy(plugin->ctx);
+    plugin->lib.i->destroy(plugin->plugin_module, plugin->ctx);
 create_context_failed:
+    g_object_unref(plugin->plugin_module);
     plugin_unload(&plugin->lib);
 load_plugin_failed:
     vec_pop(plugins);
@@ -130,7 +173,8 @@ close_plugin(struct plugin* plugin)
     if (plugin->ui_center)
         plugin->lib.i->ui_center->destroy(plugin->ctx, plugin->ui_center);
 
-    plugin->lib.i->destroy(plugin->ctx);
+    plugin->lib.i->destroy(plugin->plugin_module, plugin->ctx);
+    g_object_unref(plugin->plugin_module);
     plugin_unload(&plugin->lib);
 }
 

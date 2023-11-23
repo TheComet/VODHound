@@ -32,7 +32,7 @@ struct plugin_ctx
 };
 
 static struct plugin_ctx*
-create(struct db_interface* dbi, struct db* db)
+create(GTypeModule* type_module, struct db_interface* dbi, struct db* db)
 {
     struct plugin_ctx* ctx = mem_alloc(sizeof(struct plugin_ctx));
     memset(ctx, 0, sizeof *ctx);
@@ -48,7 +48,7 @@ create(struct db_interface* dbi, struct db* db)
 }
 
 static void
-destroy(struct plugin_ctx* ctx)
+destroy(GTypeModule* type_module, struct plugin_ctx* ctx)
 {
     if (ctx->asm_dfa.size)
         asm_deinit(&ctx->asm_dfa);

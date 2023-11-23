@@ -13,9 +13,11 @@ find_package (GTK4 REQUIRED COMPONENTS
 
 vodhound_add_plugin (${PROJECT_NAME}
     SOURCES
+        "src/canvas.c"
         "src/decoder.c"
         "src/plugin_video_ffmpeg.c"
     HEADERS
+        "include/${PROJECT_NAME}/canvas.h"
         "include/${PROJECT_NAME}/decoder.h"
         "include/${PROJECT_NAME}/gfx.h"
     INCLUDES
@@ -31,14 +33,7 @@ vodhound_add_plugin (${PROJECT_NAME}
         GTK4::gtk)
 
 if (VODHOUND_VIDEO_FFMPEG)
-    if (IUP3D_GFX MATCHES "DX11")
-        target_sources (${PROJECT_NAME} PRIVATE "src/gfx_dx11.c")
-        target_link_libraries (${PROJECT_NAME} PRIVATE d3d11)
-    elseif (IUP3D_GFX MATCHES "WGL")
-        target_sources (${PROJECT_NAME} PRIVATE "src/gfx_gl.c")
-    elseif (IUP3D_GFX MATCHES "GLX")
-        target_sources (${PROJECT_NAME} PRIVATE "src/gfx_gl.c")
-    endif ()
+    target_sources (${PROJECT_NAME} PRIVATE "src/gfx_gl.c")
 
     find_package (FFMPEG COMPONENTS avcodec avformat avutil avdevice swscale swresample REQUIRED)
     target_link_libraries (${PROJECT_NAME}

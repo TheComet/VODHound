@@ -1,3 +1,4 @@
+#include "video-ffmpeg/canvas.h"
 #include "video-ffmpeg/decoder.h"
 #include "video-ffmpeg/gfx.h"
 
@@ -17,26 +18,32 @@ struct plugin_ctx
 };
 
 static struct plugin_ctx*
-create(struct db_interface* dbi, struct db* db)
+create(GTypeModule* type_module, struct db_interface* dbi, struct db* db)
 {
     struct plugin_ctx* ctx = mem_alloc(sizeof(struct plugin_ctx));
     memset(ctx, 0, sizeof *ctx);
+
+    gl_canvas_register_type_internal(type_module);
+
     return ctx;
 }
 
 static void
-destroy(struct plugin_ctx* ctx)
+destroy(GTypeModule* type_module, struct plugin_ctx* ctx)
 {
     mem_free(ctx);
+    //g_type_module_unuse(type_module);
 }
 
 static GtkWidget* ui_create(struct plugin_ctx* ctx)
 {
-    ctx->canvas = gtk_gl_area_new();
+    ctx->canvas = gl_canvas_new();
+    mem_track_allocation(ctx->canvas);
     return g_object_ref_sink(ctx->canvas);
 }
 static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
 {
+    mem_track_deallocation(ui);
     g_object_unref(ui);
 }
 

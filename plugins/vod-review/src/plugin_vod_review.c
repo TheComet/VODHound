@@ -41,6 +41,7 @@ struct overlay_interface
 
 struct plugin_ctx
 {
+    GTypeModule* type_module;
     struct db_interface* dbi;
     struct db* db;
     struct plugin_lib video_plugin;
@@ -56,7 +57,7 @@ static int try_load_video_driver_plugin(struct plugin_ctx* ctx)
 {
     struct str_view class_name;
 
-    ctx->video_ctx = ctx->video_plugin.i->create(ctx->dbi, ctx->db);
+    ctx->video_ctx = ctx->video_plugin.i->create(ctx->type_module, ctx->dbi, ctx->db);
     if (ctx->video_ctx == NULL)
         goto create_video_ctx_failed;
 
@@ -85,7 +86,7 @@ unsupported_video_ui:
     ctx->video_ui = NULL;
 create_video_ui_failed:
 plugin_has_no_ui_interface:
-    ctx->video_plugin.i->destroy(ctx->video_ctx);
+    ctx->video_plugin.i->destroy(ctx->type_module, ctx->video_ctx);
     ctx->video_ctx = NULL;
 create_video_ctx_failed:
     return -1;
@@ -122,11 +123,14 @@ static int on_scan_plugin_any_video_driver(struct plugin_lib lib, void* user)
 }
 
 static struct plugin_ctx*
-create(struct db_interface* dbi, struct db* db)
+create(GTypeModule* type_module, struct db_interface* dbi, struct db* db)
 {
     struct strlist plugins;
     struct plugin_ctx* ctx = mem_alloc(sizeof(struct plugin_ctx));
 
+    ctx->type_module = type_module;
+    ctx->dbi = dbi;
+    ctx->db = db;
     ctx->video_ctx = NULL;
     ctx->video_ui = NULL;
     ctx->overlay.get_canvas_size = overlay_dummy_get_size;
@@ -147,12 +151,12 @@ create(struct db_interface* dbi, struct db* db)
 }
 
 static void
-destroy(struct plugin_ctx* ctx)
+destroy(GTypeModule* type_module, struct plugin_ctx* ctx)
 {
     if (ctx->video_ui)
     {
         ctx->video_plugin.i->ui_center->destroy(ctx->video_ctx, ctx->video_ui);
-        ctx->video_plugin.i->destroy(ctx->video_ctx);
+        ctx->video_plugin.i->destroy(type_module, ctx->video_ctx);
         plugin_unload(&ctx->video_plugin);
     }
 

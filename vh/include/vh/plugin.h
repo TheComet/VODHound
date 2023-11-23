@@ -9,6 +9,7 @@ struct db;
 struct db_interface;
 struct plugin_ctx;
 typedef struct _GtkWidget GtkWidget;
+typedef struct _GTypeModule GTypeModule;
 
 struct ui_center_interface
 {
@@ -169,8 +170,8 @@ struct plugin_interface
     uint32_t plugin_version;
     uint32_t vh_version;
     struct plugin_info* info;
-    struct plugin_ctx* (*create)(struct db_interface* dbi, struct db* db);
-    void (*destroy)(struct plugin_ctx* plugin);
+    struct plugin_ctx* (*create)(GTypeModule* type_module, struct db_interface* dbi, struct db* db);
+    void (*destroy)(GTypeModule* type_module, struct plugin_ctx* plugin);
     struct ui_center_interface* ui_center;
     struct ui_pane_interface* ui_pane;
     struct replay_interface* replays;

@@ -633,8 +633,8 @@ vhapp_game_browser_new(struct db_interface* dbi, struct db* db)
     GtkWidget* game_list;
     VhAppGameBrowser* game_browser = g_object_new(VHAPP_TYPE_GAME_BROWSER, NULL);
     game_browser->tree = vhapp_game_tree_new();
-    populate_tree_from_db(game_browser->tree, dbi, db);
     game_list = create_game_list(game_browser->tree, game_browser);
+    populate_tree_from_db(game_browser->tree, dbi, db);
     game_browser->top_widget = create_top_widget(game_list);
     gtk_widget_set_parent(game_browser->top_widget, GTK_WIDGET(game_browser));
 
