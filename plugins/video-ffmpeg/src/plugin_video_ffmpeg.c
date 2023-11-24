@@ -37,13 +37,18 @@ destroy(GTypeModule* type_module, struct plugin_ctx* ctx)
 
 static GtkWidget* ui_create(struct plugin_ctx* ctx)
 {
+    GtkWidget* c = gl_canvas_new();
+    g_object_unref(g_object_ref_sink(c));
+    c = gl_canvas_new();
+    g_object_unref(g_object_ref_sink(c));
+    c = gl_canvas_new();
+    g_object_unref(g_object_ref_sink(c));
+
     ctx->canvas = gl_canvas_new();
-    mem_track_allocation(ctx->canvas);
     return g_object_ref_sink(ctx->canvas);
 }
 static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
 {
-    mem_track_deallocation(ui);
     g_object_unref(ui);
 }
 

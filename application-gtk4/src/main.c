@@ -27,12 +27,14 @@ G_DEFINE_TYPE(VhAppPluginModule, vhapp_plugin_module, G_TYPE_TYPE_MODULE);
 static gboolean
 vhapp_plugin_module_load(GTypeModule* type_module)
 {
+    log_dbg("vhapp_plugin_module_load()\n");
     mem_track_allocation(type_module);
 }
 
 static void
 vhapp_plugin_module_unload(GTypeModule* type_module)
 {
+    log_dbg("vhapp_plugin_module_unload()\n");
     mem_track_deallocation(type_module);
 }
 
@@ -75,8 +77,16 @@ open_plugin(GtkNotebook* center, GtkNotebook* pane, struct vec* plugins, struct 
         goto load_plugin_failed;
 
     plugin->plugin_module = g_object_new(VHAPP_TYPE_PLUGIN_MODULE, NULL);
-    g_object_ref_sink(plugin->plugin_module);
-    g_type_module_set_name(plugin->plugin_module, "plugin");
+    g_type_module_use(plugin->plugin_module);
+    g_type_module_unuse(plugin->plugin_module);
+    g_object_unref(plugin->plugin_module);
+
+    plugin->plugin_module = g_object_new(VHAPP_TYPE_PLUGIN_MODULE, NULL);
+    //g_type_module_use(plugin->plugin_module);
+    plugin->ctx = plugin->lib.i->create(plugin->plugin_module, dbi, db);
+    plugin->lib.i->destroy(plugin->plugin_module, plugin->ctx);
+    g_type_module_unuse(plugin->plugin_module);
+    g_object_unref(plugin->plugin_module);
 
     plugin->ctx = plugin->lib.i->create(plugin->plugin_module, dbi, db);
     if (plugin->ctx == NULL)

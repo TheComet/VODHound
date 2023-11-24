@@ -1,6 +1,7 @@
 #include "video-ffmpeg/canvas.h"
 
 #include "vh/log.h"
+#include "vh/mem.h"
 
 struct _GLCanvas
 {
@@ -67,6 +68,16 @@ static void
 gl_canvas_init(GLCanvas* self)
 {
     log_dbg("gl_canvas_init()\n");
+    mem_track_allocation(self);
+}
+
+static void
+gl_canvas_finalize(GObject* obj)
+{
+    log_dbg("gl_canvas_finalize()\n");
+    mem_track_deallocation(obj);
+
+    G_OBJECT_CLASS(gl_canvas_parent_class)->finalize(obj);
 }
 
 static void
@@ -74,6 +85,8 @@ gl_canvas_class_init(GLCanvasClass* class)
 {
     GObjectClass* object_class = G_OBJECT_CLASS(class);
     GtkWidgetClass* widget_class = GTK_WIDGET_CLASS(class);
+
+    object_class->finalize = gl_canvas_finalize;
 
     widget_class->realize = gl_canvas_realize;
     widget_class->unrealize = gl_canvas_unrealize;

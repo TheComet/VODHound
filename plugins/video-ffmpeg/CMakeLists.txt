@@ -33,6 +33,7 @@ vodhound_add_plugin (${PROJECT_NAME}
         GTK4::gtk)
 
 if (VODHOUND_VIDEO_FFMPEG)
+    # NOTE: dx11 backend disabled for now, GTK only supports GL
     target_sources (${PROJECT_NAME} PRIVATE "src/gfx_gl.c")
 
     find_package (FFMPEG COMPONENTS avcodec avformat avutil avdevice swscale swresample REQUIRED)
