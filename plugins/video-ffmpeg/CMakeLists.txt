@@ -9,7 +9,7 @@ project ("video-ffmpeg"
 include (VODHoundPlugin)
 
 find_package (GTK4 REQUIRED COMPONENTS
-    gtk glib cairo pango harfbuzz gdk-pixbuf graphene)
+    gtk glib cairo pango harfbuzz gdk-pixbuf graphene epoxy)
 
 vodhound_add_plugin (${PROJECT_NAME}
     SOURCES
@@ -30,6 +30,7 @@ vodhound_add_plugin (${PROJECT_NAME}
         GTK4::harfbuzz
         GTK4::gdk-pixbuf
         GTK4::graphene
+        GTK4::epoxy
         GTK4::gtk)
 
 if (VODHOUND_VIDEO_FFMPEG)

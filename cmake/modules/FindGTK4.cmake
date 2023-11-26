@@ -53,6 +53,10 @@ find_path (GTK4_graphene-config_INCLUDE_DIR
 set (GTK4_graphene_INCLUDE_DIRS
     "${GTK4_graphene_INCLUDE_DIR}"
     "${GTK4_graphene-config_INCLUDE_DIR}")
+find_path (GTK4_epoxy_INCLUDE_DIRS
+    NAMES "epoxy/gl.h"
+    PATHS
+        "${GTK4_ROOT}/include")
 
 find_library (GTK4_gtk_LIBRARY
     NAMES "gtk-4"
@@ -91,6 +95,10 @@ find_library (GTK4_gdk-pixbuf_LIBRARY
         "${GTK4_ROOT}/lib")
 find_library (GTK4_graphene_LIBRARY
     NAMES "graphene-1.0"
+    PATHS
+        "${GTK4_ROOT}/lib")
+find_library (GTK4_epoxy_LIBRARY
+    NAMES "epoxy"
     PATHS
         "${GTK4_ROOT}/lib")
 

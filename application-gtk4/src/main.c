@@ -29,6 +29,7 @@ vhapp_plugin_module_load(GTypeModule* type_module)
 {
     log_dbg("vhapp_plugin_module_load()\n");
     mem_track_allocation(type_module);
+    return TRUE;
 }
 
 static void
@@ -77,16 +78,7 @@ open_plugin(GtkNotebook* center, GtkNotebook* pane, struct vec* plugins, struct 
         goto load_plugin_failed;
 
     plugin->plugin_module = g_object_new(VHAPP_TYPE_PLUGIN_MODULE, NULL);
-    g_type_module_use(plugin->plugin_module);
-    g_type_module_unuse(plugin->plugin_module);
-    g_object_unref(plugin->plugin_module);
-
-    plugin->plugin_module = g_object_new(VHAPP_TYPE_PLUGIN_MODULE, NULL);
-    //g_type_module_use(plugin->plugin_module);
-    plugin->ctx = plugin->lib.i->create(plugin->plugin_module, dbi, db);
-    plugin->lib.i->destroy(plugin->plugin_module, plugin->ctx);
-    g_type_module_unuse(plugin->plugin_module);
-    g_object_unref(plugin->plugin_module);
+    g_object_ref_sink(plugin->plugin_module);
 
     plugin->ctx = plugin->lib.i->create(plugin->plugin_module, dbi, db);
     if (plugin->ctx == NULL)
@@ -402,7 +394,6 @@ activate(GtkApplication* app, gpointer user_data)
     property_panel = property_panel_new(&ctx->plugins);
 
     game_browser = vhapp_game_browser_new(ctx->dbi, ctx->db);
-    //vhapp_game_browser_refresh(VHAPP_GAME_BROWSER(game_browser), ctx->dbi, ctx->db);
     g_signal_connect(game_browser, "games-selected", G_CALLBACK(on_games_selected), ctx);
 
     paned2 = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
@@ -457,6 +448,7 @@ int main(int argc, char** argv)
     }
 
     app = gtk_application_new("ch.thecomet.vodhound", G_APPLICATION_DEFAULT_FLAGS);
+
     ctx.dbi = dbi;
     ctx.db = db;
     vec_init(&ctx.plugins, sizeof(struct plugin));

@@ -13,9 +13,38 @@
 
 struct plugin_ctx
 {
-    struct decoder decoder;
     GtkWidget* canvas;
+    struct gfx* gfx;
+    struct decoder decoder;
 };
+
+static void
+on_realize(GtkGLArea* area, void* user_pointer)
+{
+    struct plugin_ctx* ctx = user_pointer;
+    gtk_gl_area_make_current(area);
+    ctx->gfx = gfx_gl.create();
+}
+
+static void
+on_unrealize(GtkGLArea* area, void* user_pointer)
+{
+    struct plugin_ctx* ctx = user_pointer;
+    gtk_gl_area_make_current(area);
+    gfx_gl.destroy(ctx->gfx);
+    ctx->gfx = NULL;
+}
+
+static gboolean
+on_render(GtkWidget* widget, GdkGLContext* context, void* user_pointer)
+{
+    struct plugin_ctx* ctx = user_pointer;
+    int scale = gtk_widget_get_scale_factor(widget);
+    int width = gtk_widget_get_width(widget);
+    int height = gtk_widget_get_height(widget);
+    gfx_gl.render(ctx->gfx, width * scale, height * scale);
+    return TRUE;  /* continue propegating signal to other listeners */
+}
 
 static struct plugin_ctx*
 create(GTypeModule* type_module, struct db_interface* dbi, struct db* db)
@@ -32,24 +61,24 @@ static void
 destroy(GTypeModule* type_module, struct plugin_ctx* ctx)
 {
     mem_free(ctx);
-    //g_type_module_unuse(type_module);
 }
 
 static GtkWidget* ui_create(struct plugin_ctx* ctx)
 {
-    GtkWidget* c = gl_canvas_new();
-    g_object_unref(g_object_ref_sink(c));
-    c = gl_canvas_new();
-    g_object_unref(g_object_ref_sink(c));
-    c = gl_canvas_new();
-    g_object_unref(g_object_ref_sink(c));
+    ctx->canvas = gtk_gl_area_new();
+    if (ctx->canvas == NULL)
+        return NULL;
 
-    ctx->canvas = gl_canvas_new();
+    g_signal_connect(ctx->canvas, "realize", G_CALLBACK(on_realize), ctx);
+    g_signal_connect(ctx->canvas, "unrealize", G_CALLBACK(on_unrealize), ctx);
+    g_signal_connect(ctx->canvas, "render", G_CALLBACK(on_render), ctx);
+
     return g_object_ref_sink(ctx->canvas);
 }
 static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
 {
     g_object_unref(ui);
+    ctx->canvas = NULL;
 }
 
 static struct ui_center_interface ui = {
@@ -60,11 +89,13 @@ static struct ui_center_interface ui = {
 static int video_open_file(struct plugin_ctx* ctx, const char* file_name, int pause)
 {
     int ret = decoder_open_file(&ctx->decoder, file_name, pause);
-    if (ret == 0 && ctx->canvas)
+    if (ret == 0 && ctx->gfx)
     {
         int w, h;
         decode_next_frame(&ctx->decoder);
         decoder_frame_size(&ctx->decoder, &w, &h);
+        gfx_gl.set_frame(ctx->gfx, w, h, decoder_rgb24_data(&ctx->decoder));
+        gtk_gl_area_queue_render(GTK_GL_AREA(ctx->canvas));
 
         /* TODO Create GdkGLContext and start rendering thread */
         /*
