@@ -42,8 +42,7 @@ render_thread(void* args)
 
     log_dbg("Render thread\n");
     gdk_gl_context_make_current(canvas->context);
-    gfxi = &gfx_gl;
-    gfx = gfxi->create();
+    gfx = gfx_create();
 
     mutex_lock(canvas->mutex);
     while (!canvas->request_stop)
@@ -52,13 +51,13 @@ render_thread(void* args)
         int height = canvas->height;
         mutex_unlock(canvas->mutex);
 
-        gfxi->render(gfx, width, height);
+        gfx_render(gfx, width, height);
 
         mutex_lock(canvas->mutex);
     }
     mutex_unlock(canvas->mutex);
 
-    gfxi->destroy(gfx);
+    gfx_destroy(gfx);
     vh_threadlocal_deinit();
 
     return NULL;

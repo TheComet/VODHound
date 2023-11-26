@@ -13,20 +13,20 @@ typedef struct _GTypeModule GTypeModule;
 
 struct ui_center_interface
 {
-    GtkWidget* (*create)(struct plugin_ctx* plugin);
-    void (*destroy)(struct plugin_ctx* plugin, GtkWidget* view);
+    GtkWidget* (*create)(struct plugin_ctx* ctx);
+    void (*destroy)(struct plugin_ctx* ctx, GtkWidget* view);
 };
 
 struct ui_pane_interface
 {
-    GtkWidget* (*create)(struct plugin_ctx* plugin);
-    void (*destroy)(struct plugin_ctx* plugin, GtkWidget* view);
+    GtkWidget* (*create)(struct plugin_ctx* ctx);
+    void (*destroy)(struct plugin_ctx* ctx, GtkWidget* view);
 };
 
 struct replay_interface
 {
-    void (*select)(struct plugin_ctx* plugin, const int* game_ids, int count);
-    void (*clear)(struct plugin_ctx* plugin);
+    void (*select)(struct plugin_ctx* ctx, const int* game_ids, int count);
+    void (*clear)(struct plugin_ctx* ctx);
 };
 
 struct video_player_interface
@@ -38,7 +38,7 @@ struct video_player_interface
      * \note VODHound will guarantee that this function won't be called
      * twice in a row. close() will always be called first if necessary.
      */
-    int (*open_file)(struct plugin_ctx* plugin, const char* file_name, int pause);
+    int (*open_file)(struct plugin_ctx* ctx, const char* file_name, int pause);
 
     /*!
      * \brief Close the video. Player should reset everything, but keep the
@@ -46,30 +46,30 @@ struct video_player_interface
      * \note VODHound will guarantee that this function won't be called
      * twice in a row.
      */
-    void (*close)(struct plugin_ctx* plugin);
+    void (*close)(struct plugin_ctx* ctx);
 
     /*!
      * \brief Clears the canvas to its default background color.
      * When a video is closed, the last frame displayed will persist on
      * the canvas. This is to avoid flickering when switching videos.
      */
-    void (*clear)(struct plugin_ctx* plugin);
+    void (*clear)(struct plugin_ctx* ctx);
 
     /*!
      * \brief Return true if a video is currently open. If the video is closed,
      * then this should return false.
      */
-    int (*is_open)(const struct plugin_ctx* plugin);
+    int (*is_open)(const struct plugin_ctx* ctx);
 
     /*!
      * \brief Begin normal playback of the video stream.
      */
-    void (*play)(struct plugin_ctx* plugin);
+    void (*play)(struct plugin_ctx* ctx);
 
     /*!
      * \brief Pause the video stream.
      */
-    void (*pause)(struct plugin_ctx* plugin);
+    void (*pause)(struct plugin_ctx* ctx);
 
     /*!
      * \brief Advance by N number of video-frames (not game-frames).
@@ -84,7 +84,7 @@ struct video_player_interface
      * \param frames The number of frames to seek. Can be negative. This
      * value is guaranteed to be "small", i.e. in the range of -30 to 30.
      */
-    void (*step)(struct plugin_ctx* plugin, int frames);
+    void (*step)(struct plugin_ctx* ctx, int frames);
 
     /*!
      * \brief Seek to a specific timestamp in the video.
@@ -101,59 +101,34 @@ struct video_player_interface
      * game is paused, the video will continue but there will be a large gap in
      * between the timestamps of the frames where the game was paused.
      */
-    int (*seek)(struct plugin_ctx* plugin, uint64_t offset, int num, int den);
-
-    /*!
-     * \brief Get the current video offset in units of num/den.
-     */
-    uint64_t(*offset)(const struct plugin_ctx* plugin, int num, int den);
-
-    /*!
-     * \brief Get the total video duration in units of num/den.
-     */
-    uint64_t(*duration)(const struct plugin_ctx* plugin, int num, int den);
+    int (*seek)(struct plugin_ctx* ctx, uint64_t offset, int num, int den);
 
     /*!
      * \brief Return true if the video is currently playing, otherwise false.
      */
-    int (*is_playing)(const struct plugin_ctx* plugin);
+    int (*is_playing)(const struct plugin_ctx* ctx);
+
+    /*!
+     * \brief Get the current video offset in units of num/den.
+     */
+    uint64_t (*offset)(const struct plugin_ctx* ctx, int num, int den);
+
+    /*!
+     * \brief Get the total video duration in units of num/den.
+     */
+    uint64_t (*duration)(const struct plugin_ctx* ctx, int num, int den);
+
+    void (*dimensions)(const struct plugin_ctx* ctx, int* width, int* height);
 
     /*!
      * \brief Set the volume in percent.
      */
-    void (*set_volume)(struct plugin_ctx* plugin, int percent);
+    void (*set_volume)(struct plugin_ctx* ctx, int percent);
 
     /*!
      * \brief Get the current volume in percent.
      */
-    int (*volume)(const struct plugin_ctx* plugin);
-
-    /*!
-     * \brief Returns a string identifying which graphics backend is being used
-     * to draw to the canvas. As of this writing, the current plugins can return
-     * one of the following:
-     *   - "gl" -> OpenGL, usually 3.3 or later (XXX: If multiple GL's are used in the future,
-     *                                                may need to change this to e.g. "gl33")
-     *   - "gles2" -> OpenGL ES 2.0
-     *   - "dx11" -> DirectX 11
-     *
-     * When embedding the video player into the UI, this string is used to
-     * set the render callback function (add_render_callback()) in order to
-     * perform the correct draw calls.
-     */
-    const char* (*graphics_backend)(const struct plugin_ctx* plugin);
-
-    /*!
-     * \brief Appends a function to call for when the canvas is redrawn. The
-     * functions are called in the order they were added. Before any callbacks
-     * are called, the video player will render the frame to the screen.
-     *
-     * You can make OpenGL/DX calls directly in your callback. The context is
-     * made current before calling.
-     */
-    int (*add_render_callback)(struct plugin_ctx* plugin,
-        void (*on_render)(int width, int height, void* user_data),
-        void* user_data);
+    int (*volume)(const struct plugin_ctx* ctx);
 };
 
 struct plugin_info
@@ -171,7 +146,7 @@ struct plugin_interface
     uint32_t vh_version;
     struct plugin_info* info;
     struct plugin_ctx* (*create)(GTypeModule* type_module, struct db_interface* dbi, struct db* db);
-    void (*destroy)(GTypeModule* type_module, struct plugin_ctx* plugin);
+    void (*destroy)(GTypeModule* type_module, struct plugin_ctx* ctx);
     struct ui_center_interface* ui_center;
     struct ui_pane_interface* ui_pane;
     struct replay_interface* replays;

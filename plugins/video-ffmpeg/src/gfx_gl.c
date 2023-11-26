@@ -143,7 +143,7 @@ GLuint gl_load_shader(const GLchar* vs, const GLchar* fs, const char* attribute_
     create_program_failed : return 0;
 }
 
-static struct gfx*
+struct gfx*
 gfx_create(void)
 {
     struct gfx* gfx = mem_alloc(sizeof *gfx);
@@ -175,7 +175,7 @@ gfx_create(void)
     return gfx;
 }
 
-static void
+void
 gfx_destroy(struct gfx* gfx)
 {
     if (gfx->texture)
@@ -188,7 +188,7 @@ gfx_destroy(struct gfx* gfx)
     mem_free(gfx);
 }
 
-static void
+void
 gfx_set_frame(struct gfx* gfx, int width, int height, const void* rgb24)
 {
     if (rgb24 == NULL)
@@ -228,7 +228,7 @@ gfx_set_frame(struct gfx* gfx, int width, int height, const void* rgb24)
     gfx->texture_height = height;
 }
 
-static void
+void
 gfx_render(struct gfx* gfx, int canvas_width, int canvas_height)
 {
     GLfloat offsetx = 0.0, offsety = 0.0, aspectx = 1.0, aspecty = 1.0;
@@ -270,15 +270,8 @@ gfx_render(struct gfx* gfx, int canvas_width, int canvas_height)
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
     /* Unbind */
-    //glBindTexture(GL_TEXTURE_2D, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glUseProgram(0);
     glBindVertexArray(0);
 }
-
-struct gfx_interface gfx_gl = {
-    gfx_create,
-    gfx_destroy,
-    gfx_set_frame,
-    gfx_render
-};

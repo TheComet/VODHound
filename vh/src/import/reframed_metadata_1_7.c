@@ -263,7 +263,10 @@ import_reframed_metadata_1_7(
      * we support importing games with identical timestamps.
      */
     if (dbi->game.exists(db, time_started, people_ids, player_count))
+    {
+        log_warn("Duplicate rfr, skipping...\n");
         return -1;
+    }
 
     int game_id = dbi->game.add(db,
         round_type_id,

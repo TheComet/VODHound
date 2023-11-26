@@ -318,6 +318,8 @@ on_games_selected(VhAppGameBrowser* game_browser, int* game_ids, int count, gpoi
     int do_clear_video_canvas;
     struct app_activate_ctx* ctx = user_pointer;
 
+    log_dbg("Selected game: %d\n", game_ids[0]);
+
     /* Clear replay selection in plugins */
     VEC_FOR_EACH(&ctx->plugins, struct plugin, plugin)
         struct plugin_interface* i = plugin->lib.i;
@@ -445,6 +447,8 @@ int main(int argc, char** argv)
         import_reframed_mapping_info(dbi, db, "migrations/mappingInfo.json");
         import_reframed_all(dbi, db);
         //import_reframed_path(dbi, db, "reframed");
+        //import_reframed_path(dbi, db, "/home/thecomet/videos/ssbu/2023-09-20 - SBZ Bi-Weekly/reframed");
+        //import_reframed_path(dbi, db, "/home/thecomet/videos/ssbu/2023-11-11 - Smash Hammered #10/reframed");
     }
 
     app = gtk_application_new("ch.thecomet.vodhound", G_APPLICATION_DEFAULT_FLAGS);
@@ -467,8 +471,8 @@ int main(int argc, char** argv)
 
     return status;
 
-migrate_db_failed  : dbi->close(db);
-open_db_failed     : vh_deinit();
-vh_init_failed     : vh_threadlocal_deinit();
-vh_init_tl_failed  : return -1;
+migrate_db_failed : dbi->close(db);
+open_db_failed    : vh_deinit();
+vh_init_failed    : vh_threadlocal_deinit();
+vh_init_tl_failed : return -1;
 }
