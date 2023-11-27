@@ -371,7 +371,6 @@ DROP INDEX IF EXISTS idx_motions_hash40;
     type insert
     stmt { ROLLBACK TO SAVEPOINT ?; }
 }
-
 %query motion,add(uint64_t hash40, struct str_view string) {
     type insert
     table motions

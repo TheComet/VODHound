@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <ctype.h>
+#include <limits.h>
 
 #define DEFAULT_PREFIX "sqlgen"
 #define DEFAULT_MALLOC "malloc"
@@ -291,7 +292,6 @@ int str_dec_to_int(struct str_view str, const char* data)
     return value;
 }
 
-
 struct mstream
 {
     void* address;
@@ -551,6 +551,7 @@ enum token
     TOK_ERROR = -1,
     TOK_END = 0,
     TOK_OPTION = 256,
+    TOK_DOXYGEN,
     TOK_STRING,
     TOK_LABEL,
     TOK_INTEGER,
@@ -621,6 +622,18 @@ scan_next_token(struct parser* p)
     p->tail = p->head;
     while (p->head != p->len)
     {
+        if (p->data[p->head] == '/' && p->data[p->head+1] == '*' && p->data[p->head+2] == '!')
+        {
+            /* We want to preserve indentation, so scan backwards again as long
+             * as there is whitespace */
+            while (p->head > 0 && isblank(p->data[p->head-1]))
+                p->head--;
+            p->value.str.off = p->head;
+            if (scan_comment_block(p) < 0)
+                return TOK_ERROR;
+            p->value.str.len = p->head - p->value.str.off;
+            return TOK_DOXYGEN;
+        }
         if (p->data[p->head] == '/' && p->data[p->head+1] == '*')
         {
             p->head += 2;
@@ -634,7 +647,7 @@ scan_next_token(struct parser* p)
             scan_comment_line(p);
             continue;
         }
-        if (isspace(p->data[p->head]) || p->data[p->head] == '\r' || p->data[p->head] == '\n')
+        if (isspace(p->data[p->head]))
         {
             p->head++;
             continue;
@@ -834,6 +847,7 @@ struct query
     struct str_view stmt;
     struct str_view table_name;
     struct str_view return_name;
+    struct str_view doxygen;
     struct arg* in_args;
     struct arg* cb_args;
     struct arg* bind_args;
@@ -900,7 +914,7 @@ scan_block(struct parser* p, int expect_opening_brace)
 
     /* Trim any preceeding whitespace/newlines */
     for (; p->head != p->len; p->head++)
-        if (!isspace(p->data[p->head]) && p->data[p->head] != '\r' && p->data[p->head] != '\n')
+        if (!isspace(p->data[p->head]))
             break;
     if (p->head == p->len)
         return print_error(p, "Error: Missing closing \"}\"\n");
@@ -919,7 +933,7 @@ scan_block(struct parser* p, int expect_opening_brace)
                 while (p->value.str.len > 0)
                 {
                     char c = p->data[p->value.str.off + p->value.str.len - 1];
-                    if (!isspace(c) && c != '\r' && c != '\n')
+                    if (!isspace(c))
                         break;
                     p->value.str.len--;
                 }
@@ -939,6 +953,7 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
     enum token tok;
     do {
         switch ((tok = scan_next_token(p))) {
+            case TOK_DOXYGEN: break;  /* ignore comment blocks outside of queries */
             case TOK_OPTION: {
                 struct str_view option;
                 if (scan_next_token(p) != TOK_LABEL)
@@ -1132,6 +1147,10 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
             expect_next_stmt: tok = scan_next_token(p);
             switch_next_stmt:
                 switch (tok) {
+                    case TOK_DOXYGEN: {
+                        query->doxygen = p->value.str;
+                    } goto expect_next_stmt;
+
                     case TOK_TYPE: {
                         struct str_view t;
                         if (scan_next_token(p) != TOK_LABEL)
@@ -1621,7 +1640,7 @@ write_sqlite_prepare_stmt(struct mstream* ms, const struct root* root, const str
     {
         int p = 0;
         for (; p != q->stmt.len; ++p)
-            if (!isspace(data[q->stmt.off + p]) && data[q->stmt.off + p] != '\r' && data[q->stmt.off + p] != '\n')
+            if (!isspace(data[q->stmt.off + p]))
                 break;
 
         mstream_cstr(ms, "            \"");
@@ -2509,6 +2528,75 @@ write_debug_wrapper(struct mstream* ms, const struct root* root, const struct qu
 }
 
 static int
+determine_indent(struct mstream* ms, struct str_view str, const char* data)
+{
+    int p;
+    int indent = 0;
+    int min_indent = INT_MAX;
+
+    p = 0;
+    while (p != str.len)
+    {
+        while (p != str.len)
+        {
+            if (!isspace(data[str.off + p++]))
+                break;
+            indent++;
+        }
+
+        if (min_indent > indent)
+            min_indent = indent;
+
+        while (p != str.len)
+            if (data[str.off + p++] == '\n')
+            {
+                indent = 0;
+                break;
+            }
+    }
+
+    return min_indent;
+}
+
+static void
+write_block_reindented(struct mstream* ms, int indent, struct str_view str, const char* data)
+{
+    int p, i;
+    int unindent = determine_indent(ms, str, data);
+
+    p = 0;
+    while (p != str.len)
+    {
+        i = unindent;
+        while (p != str.len && i--)
+            p++;
+
+        for (i = 0; i != indent; ++i)
+            mstream_putc(ms, ' ');
+
+        while (p != str.len)
+        {
+            char c = data[str.off + p++];
+            mstream_putc(ms, c);
+            if (c == '\n')
+                break;
+        }
+    }
+
+    mstream_cstr(ms, NL);
+}
+
+static void
+write_block_reindented_cstr(struct mstream* ms, int indent, const char* data)
+{
+    struct str_view str = {
+        0,
+        strlen(data)
+    };
+    write_block_reindented(ms, indent, str, data);
+}
+
+static int
 gen_header(const struct root* root, const char* data, const char* file_name,
     char custom_init, char custom_deinit, char custom_api)
 {
@@ -2526,16 +2614,45 @@ gen_header(const struct root* root, const char* data, const char* file_name,
     mstream_fmt(&ms, "struct %S_interface" NL "{" NL, PREFIX(root->prefix, data));
 
     /* Hard-coded functions */
+    write_block_reindented_cstr(&ms, 4, "/*!" NL
+        " * \\brief Open a database connection. Must be closed again after use." NL
+        " * \\param[in] uri A file path to a database file." NL
+        " * \\return If successful, the database connection is returned, which can be used" NL
+        " * for all future queries." NL
+        " */");
     mstream_fmt(&ms, "    struct %S* (*open)(const char* uri);" NL,
         PREFIX(root->prefix, data));
+    write_block_reindented_cstr(&ms, 4, "/*!" NL
+        " * \\brief Closes the database connection." NL
+        " * \\param[in] ctx Connection returned from the call to open()." NL
+        " */");
     mstream_fmt(&ms, "    void (*close)(struct %S* ctx);" NL,
         PREFIX(root->prefix, data));
+    write_block_reindented_cstr(&ms, 4, "/*!" NL
+        " * \\brief Gets the current version of the database." NL
+        " * A new, empty database will always have a version of 0. Calling upgrade()" NL
+        " * may change the version if a migration occurs." NL
+        " */");
     mstream_fmt(&ms, "    int (*version)(struct %S* ctx);" NL,
         PREFIX(root->prefix, data));
+    write_block_reindented_cstr(&ms, 4, "/*!" NL
+        " * \\brief Migrates the database to the newest version." NL
+        " * \\return 0 on success, negative on error. If an error occurs, the database " NL
+        " * is rolled back to the state prior to calling this function." NL
+        " */");
     mstream_fmt(&ms, "    int (*upgrade)(struct %S* ctx);" NL,
         PREFIX(root->prefix, data));
+    write_block_reindented_cstr(&ms, 4, "/*!" NL
+        " * \\brief Fully downgrades the database, and then upgrades it again." NL
+        " * This function is often useful during development." NL
+        " * \\warning This will wipe all data in the database!" NL
+        " */");
     mstream_fmt(&ms, "    int (*reinit)(struct %S* ctx);" NL,
         PREFIX(root->prefix, data));
+    write_block_reindented_cstr(&ms, 4, "/*!" NL
+        " * \\brief Migrates the database to a specific version." NL
+        " * The version can older or newer than the current state of the database." NL
+        " */");
     mstream_fmt(&ms, "    int (*migrate_to)(struct %S* ctx, int target_version);" NL,
         PREFIX(root->prefix, data));
 
@@ -2579,6 +2696,8 @@ gen_header(const struct root* root, const char* data, const char* file_name,
         q = g->queries;
         while (q)
         {
+            if (q->doxygen.len)
+                write_block_reindented(&ms, 8, q->doxygen, data);
             mstream_cstr(&ms, "        ");
             write_func_ptr_decl(&ms, root, NULL, q, data);
             mstream_cstr(&ms, ";" NL);
@@ -2623,11 +2742,8 @@ gen_header(const struct root* root, const char* data, const char* file_name,
     /* Don't write header if it is identical to the existing one -- causes less
      * rebuilds */
     if (mfile_map_read(&mf, file_name) == 0)
-    {
         if (mf.size == ms.idx && memcmp(mf.address, ms.address, mf.size) == 0)
             return 0;
-        mfile_unmap(&mf);
-    }
 
     if (mfile_map_write(&mf, file_name, ms.idx) != 0)
         return -1;
@@ -3013,16 +3129,13 @@ gen_source(const struct root* root, const char* data, const char* file_name,
     }
 
     if (root->source_postamble.len)
-        mstream_fmt(&ms, NL "%S", NL, root->source_postamble, data);
+        mstream_fmt(&ms, NL "%S" NL, root->source_postamble, data);
 
     /* Don't write source if it is identical to the existing one -- causes less
      * rebuilds */
     if (mfile_map_read(&mf, file_name) == 0)
-    {
         if (mf.size == ms.idx && memcmp(mf.address, ms.address, mf.size) == 0)
             return 0;
-        mfile_unmap(&mf);
-    }
 
     if (mfile_map_write(&mf, file_name, ms.idx) != 0)
         return -1;

@@ -433,7 +433,7 @@ int main(int argc, char** argv)
     if (vh_init() != 0)
         goto vh_init_failed;
 
-    int reinit_db = 1;
+    int reinit_db = 0;
     struct db_interface* dbi = db("sqlite3");
     struct db* db = dbi->open("vodhound.db");
     if (db == NULL)

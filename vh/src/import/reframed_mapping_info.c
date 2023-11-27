@@ -79,5 +79,5 @@ import_reframed_mapping_info(struct db_interface* dbi, struct db* db, const char
 
     fail                     : dbi->transaction.rollback(db);
     transaction_begin_failed : json_object_put(root);
-    unsupported_version      : return -1;
+    return -1;
 }

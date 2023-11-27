@@ -5,7 +5,7 @@ project ("sqlgen"
     VERSION 0.0.1)
 
 add_executable (sqlgen
-    "src/main.c")
+    "src/sqlgen.c")
 
 macro (sqlgen_target name)
     set (sqlgen_target_PARAM_OPTIONS)
