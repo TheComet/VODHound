@@ -36,6 +36,10 @@
 #define LOG_SQL_ERR(sv, data) \
         (sv).len ? (sv) : str_view(DEFAULT_LOG_SQL_ERR), (sv).len ? (data) : DEFAULT_LOG_SQL_ERR
 
+/* ----------------------------------------------------------------------------
+ * Platform abstractions & Utilities
+ * ------------------------------------------------------------------------- */
+
 struct mfile
 {
     void* address;
@@ -255,21 +259,38 @@ struct str_view
     int off, len;
 };
 
-static struct str_view
-str_view(const char* cstr)
+static struct str_view str_view(const char* cstr)
 {
     struct str_view str;
     str.off = 0;
     str.len = strlen(cstr);
     return str;
 }
-
-static int
-str_view_eq(const char* s1, struct str_view s2, const char* data)
+static int str_eq_cstr(const char* s1, struct str_view s2, const char* data)
 {
     int len = (int)strlen(s1);
     return len == s2.len && memcmp(data + s2.off, s1, len) == 0;
 }
+static int str_eq_str(struct str_view s1, struct str_view s2, const char* data)
+{
+    return s1.len == s2.len && memcmp(data + s1.off, data + s2.off, s1.len) == 0;
+}
+int str_dec_to_int(struct str_view str, const char* data)
+{
+    int i;
+    int value = 0;
+    for (i = 0; i != str.len; ++i)
+    {
+        char b = data[str.off + i];
+        if (b >= '0' && b <= '9')
+            value = value * 10 + (b - '0');
+        else
+            return 0;
+    }
+
+    return value;
+}
+
 
 struct mstream
 {
@@ -370,6 +391,10 @@ static inline void mstream_fmt(struct mstream* ms, const char* fmt, ...)
     va_end(va);
 }
 
+/* ----------------------------------------------------------------------------
+ * Settings & Command Line
+ * ------------------------------------------------------------------------- */
+
 enum backend
 {
     BACKEND_SQLITE3 = 0x01
@@ -381,13 +406,13 @@ struct cfg
     const char* output_header;
     const char* output_source;
     enum backend backends;
-    char debug_layer;
-    char custom_init;
-    char custom_init_decl;
-    char custom_deinit;
-    char custom_deinit_decl;
-    char custom_api;
-    char custom_api_decl;
+    unsigned debug_layer        : 1;
+    unsigned custom_init        : 1;
+    unsigned custom_init_decl   : 1;
+    unsigned custom_deinit      : 1;
+    unsigned custom_deinit_decl : 1;
+    unsigned custom_api         : 1;
+    unsigned custom_api_decl    : 1;
 };
 
 static int
@@ -462,9 +487,7 @@ parse_cmdline(int argc, char** argv, struct cfg* cfg)
             }
         }
         else if (strcmp(argv[i], "--debug-layer") == 0)
-        {
             cfg->debug_layer = 1;
-        }
         else
         {
             fprintf(stderr, "Error: Unknown option \"%s\"\n", argv[i]);
@@ -498,6 +521,10 @@ parse_cmdline(int argc, char** argv, struct cfg* cfg)
     return 0;
 }
 
+/* ----------------------------------------------------------------------------
+ * Parser
+ * ------------------------------------------------------------------------- */
+
 struct parser
 {
     const char* data;
@@ -506,6 +533,7 @@ struct parser
     int len;
     union {
         struct str_view str;
+        int integer;
     } value;
 };
 
@@ -525,11 +553,14 @@ enum token
     TOK_OPTION = 256,
     TOK_STRING,
     TOK_LABEL,
+    TOK_INTEGER,
     TOK_HEADER_PREAMBLE,
     TOK_HEADER_POSTAMBLE,
     TOK_SOURCE_INCLUDES,
     TOK_SOURCE_PREAMBLE,
     TOK_SOURCE_POSTAMBLE,
+    TOK_UPGRADE,
+    TOK_DOWNGRADE,
     TOK_QUERY,
     TOK_PRIVATE_QUERY,
     TOK_FUNCTION,
@@ -650,6 +681,16 @@ scan_next_token(struct parser* p)
             p->head += sizeof("%source-postamble") - 1;
             return TOK_SOURCE_POSTAMBLE;
         }
+        if (memcmp(p->data + p->head, "%upgrade", sizeof("%upgrade") - 1) == 0)
+        {
+            p->head += sizeof("%upgrade") - 1;
+            return TOK_UPGRADE;
+        }
+        if (memcmp(p->data + p->head, "%downgrade", sizeof("%downgrade") - 1) == 0)
+        {
+            p->head += sizeof("%downgrade") - 1;
+            return TOK_DOWNGRADE;
+        }
         if (memcmp(p->data + p->head, "%query", sizeof("%query") - 1) == 0)
         {
             p->head += sizeof("%query") - 1;
@@ -706,6 +747,17 @@ scan_next_token(struct parser* p)
             p->value.str.len = p->head - p->value.str.off;
             return TOK_LABEL;
         }
+        if (isdigit(p->data[p->head]))
+        {
+            struct str_view num = { p->head++, 1 };
+            while (isdigit(p->data[p->head]))
+            {
+                p->head++;
+                num.len++;
+            }
+            p->value.integer = str_dec_to_int(num, p->data);
+            return TOK_INTEGER;
+        }
 
         return p->data[p->head++];
     }
@@ -744,6 +796,23 @@ function_alloc(void)
     struct function* f = malloc(sizeof *f);
     memset(f, 0, sizeof *f);
     return f;
+}
+
+struct migration
+{
+    struct migration* next;
+    struct str_view sql;
+    int version;
+};
+
+static struct migration*
+migration_alloc(int version)
+{
+    struct migration* m = malloc(sizeof * m);
+    m->next = NULL;
+    m->version = version;
+    m->sql.len = 0;
+    return m;
 }
 
 enum query_type
@@ -811,6 +880,8 @@ struct root
     struct query_group* query_groups;
     struct query* queries;
     struct function* functions;
+    struct migration* upgrade;
+    struct migration* downgrade;
 };
 
 static void
@@ -854,8 +925,9 @@ scan_block(struct parser* p, int expect_opening_brace)
 static int
 parse(struct parser* p, struct root* root, struct cfg* cfg)
 {
+    enum token tok;
     do {
-        switch (scan_next_token(p)) {
+        switch ((tok = scan_next_token(p))) {
             case TOK_OPTION: {
                 struct str_view option;
                 if (scan_next_token(p) != TOK_LABEL)
@@ -863,19 +935,19 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                 option = p->value.str;
 
                 /* Options with no arguments */
-                if (str_view_eq("debug-layer", option, p->data))
+                if (str_eq_cstr("debug-layer", option, p->data))
                     { cfg->debug_layer = 1; break; }
-                else if (str_view_eq("custom-init", option, p->data))
+                else if (str_eq_cstr("custom-init", option, p->data))
                     { cfg->custom_init = 1; cfg->custom_init_decl = 1; break; }
-                else if (str_view_eq("custom-init-decl", option, p->data))
+                else if (str_eq_cstr("custom-init-decl", option, p->data))
                     { cfg->custom_init_decl = 1; break; }
-                else if (str_view_eq("custom-deinit", option, p->data))
+                else if (str_eq_cstr("custom-deinit", option, p->data))
                     { cfg->custom_deinit = 1; cfg->custom_deinit_decl = 1; break; }
-                else if (str_view_eq("custom-deinit-decl", option, p->data))
+                else if (str_eq_cstr("custom-deinit-decl", option, p->data))
                     { cfg->custom_deinit_decl = 1; break; }
-                else if (str_view_eq("custom-api", option, p->data))
+                else if (str_eq_cstr("custom-api", option, p->data))
                     { cfg->custom_api = 1; cfg->custom_api_decl = 1; break; }
-                else if (str_view_eq("custom-api-decl", option, p->data))
+                else if (str_eq_cstr("custom-api-decl", option, p->data))
                     { cfg->custom_api_decl = 1; break; }
 
                 if (scan_next_token(p) != '=')
@@ -883,17 +955,17 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                 if (scan_next_token(p) != TOK_STRING)
                     return print_error(p, "Error: Expected string for %%option\n");
 
-                if (str_view_eq("prefix", option, p->data))
+                if (str_eq_cstr("prefix", option, p->data))
                     root->prefix = p->value.str;
-                else if (str_view_eq("malloc", option, p->data))
+                else if (str_eq_cstr("malloc", option, p->data))
                     root->malloc = p->value.str;
-                else if (str_view_eq("free", option, p->data))
+                else if (str_eq_cstr("free", option, p->data))
                     root->free = p->value.str;
-                else if (str_view_eq("log-dbg", option, p->data))
+                else if (str_eq_cstr("log-dbg", option, p->data))
                     root->log_dbg = p->value.str;
-                else if (str_view_eq("log-error", option, p->data))
+                else if (str_eq_cstr("log-error", option, p->data))
                     root->log_err = p->value.str;
-                else if (str_view_eq("log-sql-error", option, p->data))
+                else if (str_eq_cstr("log-sql-error", option, p->data))
                     root->log_sql_err = p->value.str;
                 else
                     return print_error(p, "Unknown option \"%.*s\"\n", option.len, p->data + option.off);
@@ -929,9 +1001,37 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                 root->source_postamble = p->value.str;
             } break;
 
+            case TOK_UPGRADE:
+            case TOK_DOWNGRADE: {
+                struct migration* m;
+                struct migration** l;
+                if (scan_next_token(p) != TOK_INTEGER)
+                    return print_error(p, "Error: Expected migration version number after \"%s\"\n",
+                        tok == TOK_UPGRADE ? "%upgrade" : "%downgrade");
+
+                /* Insert node sorted based on version */
+                m = migration_alloc(p->value.integer);
+                l = tok == TOK_UPGRADE ? &root->upgrade : &root->downgrade;
+                if (*l != NULL)
+                {
+                    if (tok == TOK_UPGRADE)
+                        while ((*l) && (*l)->version < m->version)
+                            l = &(*l)->next;
+                    else
+                        while ((*l) && (*l)->version > m->version)
+                            l = &(*l)->next;
+                    m->next = (*l);
+                }
+                *l = m;
+
+                if (scan_block(p, 1) != TOK_STRING)
+                    return print_error(p, "Error: Missing body for %s\n",
+                        tok == TOK_UPGRADE ? "%upgrade" : "%downgrade");
+                m->sql = p->value.str;
+            } break;
+
             case TOK_PRIVATE_QUERY:
             case TOK_QUERY: {
-                enum token tok;
                 struct str_view group_name = {0};
                 struct query* query = query_alloc();
 
@@ -981,14 +1081,14 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                         }
 
                         /* Special case, struct -> expect another label */
-                        if (str_view_eq("struct", arg->type, p->data))
+                        if (str_eq_cstr("struct", arg->type, p->data))
                         {
                             if (scan_next_token(p) != TOK_LABEL)
                                 return print_error(p, "Error: Missing struct name after \"struct\"\n");
                             arg->type.len = p->value.str.off + p->value.str.len - arg->type.off;
                         }
                         /* Special case, const -> expect another label */
-                        if (str_view_eq("const", arg->type, p->data))
+                        if (str_eq_cstr("const", arg->type, p->data))
                         {
                             if (scan_next_token(p) != TOK_LABEL)
                                 return print_error(p, "Error: const qualifier without type\n");
@@ -1002,7 +1102,7 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                         /* Param can have a "null" qualifier on the end */
                         if ((tok = scan_next_token(p)) == TOK_LABEL)
                         {
-                            if (str_view_eq("null", p->value.str, p->data))
+                            if (str_eq_cstr("null", p->value.str, p->data))
                                 arg->nullable = 1;
                             else
                                 return print_error(p, "Error: Unknown parameter qualifier \"%.*s\"\n",
@@ -1026,19 +1126,19 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                         if (scan_next_token(p) != TOK_LABEL)
                             return print_error(p, "Error: Expected query type after \"type\"\n");
                         t = p->value.str;
-                        if (str_view_eq("insert", t, p->data))
+                        if (str_eq_cstr("insert", t, p->data))
                             query->type = QUERY_INSERT;
-                        else if (str_view_eq("update", t, p->data))
+                        else if (str_eq_cstr("update", t, p->data))
                             query->type = QUERY_UPDATE;
-                        else if (str_view_eq("upsert", t, p->data))
+                        else if (str_eq_cstr("upsert", t, p->data))
                             query->type = QUERY_UPSERT;
-                        else if (str_view_eq("delete", t, p->data))
+                        else if (str_eq_cstr("delete", t, p->data))
                             query->type = QUERY_DELETE;
-                        else if (str_view_eq("exists", t, p->data))
+                        else if (str_eq_cstr("exists", t, p->data))
                             query->type = QUERY_EXISTS;
-                        else if (str_view_eq("select-first", t, p->data))
+                        else if (str_eq_cstr("select-first", t, p->data))
                             query->type = QUERY_SELECT_FIRST;
-                        else if (str_view_eq("select-all", t, p->data))
+                        else if (str_eq_cstr("select-all", t, p->data))
                             query->type = QUERY_SELECT_ALL;
                         else
                             return print_error(p, "Error: Unknown query type \"%.*s\"\n", t.len, p->data + t.off);
@@ -1057,8 +1157,7 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
 
                                 a = query->in_args;
                                 while (a) {
-                                    if (a->name.len == find.len &&
-                                            memcmp(p->data + a->name.off, p->data + find.off, find.len) == 0)
+                                    if (str_eq_str(a->name, find, p->data))
                                     {
                                         a->update = 1;
                                         break;
@@ -1123,8 +1222,7 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                                 /* Get the type information and other data from the function's parameter list */
                                 a = query->in_args;
                                 while (a) {
-                                    if (a->name.len == p->value.str.len &&
-                                        memcmp(p->data + a->name.off, p->data + p->value.str.off, a->name.len) == 0)
+                                    if (str_eq_str(a->name, p->value.str, p->data))
                                     {
                                         arg->name = a->name;
                                         arg->type = a->type;
@@ -1174,14 +1272,14 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                                 }
 
                                 /* Special case, struct -> expect another label */
-                                if (str_view_eq("struct", arg->type, p->data))
+                                if (str_eq_cstr("struct", arg->type, p->data))
                                 {
                                     if (scan_next_token(p) != TOK_LABEL)
                                         return print_error(p, "Error: Missing struct name after \"struct\"\n");
                                     arg->type.len = p->value.str.off + p->value.str.len - arg->type.off;
                                 }
                                 /* Special case, const -> expect another label */
-                                if (str_view_eq("const", arg->type, p->data))
+                                if (str_eq_cstr("const", arg->type, p->data))
                                 {
                                     if (scan_next_token(p) != TOK_LABEL)
                                         return print_error(p, "Error: const qualifier without type\n");
@@ -1195,7 +1293,7 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                                 /* Param can have a "null" qualifier on the end */
                                 if ((tok = scan_next_token(p)) == TOK_LABEL)
                                 {
-                                    if (str_view_eq("null", p->value.str, p->data))
+                                    if (str_eq_cstr("null", p->value.str, p->data))
                                         arg->nullable = 1;
                                     else
                                         return print_error(p, "Error: Unknown parameter qualifier \"%.*s\"\n",
@@ -1218,11 +1316,8 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                     struct query_group* g = root->query_groups;
                     while (g)
                     {
-                        if (g->name.len == group_name.len &&
-                            memcmp(p->data + g->name.off, p->data + group_name.off, g->name.len) == 0)
-                        {
+                        if (str_eq_str(g->name, group_name, p->data))
                             break;
-                        }
                         g = g->next;
                     }
                     if (g == NULL)
@@ -1313,14 +1408,14 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                         }
 
                         /* Special case, struct -> expect another label */
-                        if (str_view_eq("struct", arg->type, p->data))
+                        if (str_eq_cstr("struct", arg->type, p->data))
                         {
                             if (scan_next_token(p) != TOK_LABEL)
                                 return print_error(p, "Error: Missing struct name after \"struct\"\n");
                             arg->type.len = p->value.str.off + p->value.str.len - arg->type.off;
                         }
                         /* Special case, const -> expect another label */
-                        if (str_view_eq("const", arg->type, p->data))
+                        if (str_eq_cstr("const", arg->type, p->data))
                         {
                             if (scan_next_token(p) != TOK_LABEL)
                                 return print_error(p, "Error: const qualifier without type\n");
@@ -1347,11 +1442,8 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
                     struct query_group* g = root->query_groups;
                     while (g)
                     {
-                        if (g->name.len == group_name.len &&
-                            memcmp(p->data + g->name.off, p->data + group_name.off, g->name.len) == 0)
-                        {
+                        if (str_eq_str(g->name, group_name, p->data))
                             break;
-                        }
                         g = g->next;
                     }
                     if (g == NULL)
@@ -1399,6 +1491,10 @@ parse(struct parser* p, struct root* root, struct cfg* cfg)
     } while(1);
 }
 
+/* ----------------------------------------------------------------------------
+ * Validation & Post-Processing
+ * ------------------------------------------------------------------------- */
+
 static int
 post_parse(struct root* root, const char* data)
 {
@@ -1427,6 +1523,10 @@ post_parse(struct root* root, const char* data)
 
     return 0;
 }
+
+/* ----------------------------------------------------------------------------
+ * Generate
+ * ------------------------------------------------------------------------- */
 
 static void
 write_func_name(struct mstream* ms, const struct query_group* g, const struct query* q, const char* data)
@@ -1750,17 +1850,17 @@ again:
         else mstream_cstr(ms, " ||" NL "        (ret = ");
         first = 0;
 
-        if (str_view_eq("uint64_t", a->type, data))
+        if (str_eq_cstr("uint64_t", a->type, data))
             { sqlite_type = "int64"; cast = "(int64_t)"; }
-        else if (str_view_eq("int64_t", a->type, data))
+        else if (str_eq_cstr("int64_t", a->type, data))
             { sqlite_type = "int64"; }
-        else if (str_view_eq("int", a->type, data))
+        else if (str_eq_cstr("int", a->type, data))
             { sqlite_type = "int"; }
-        else if (str_view_eq("uint16_t", a->type, data))
+        else if (str_eq_cstr("uint16_t", a->type, data))
             { sqlite_type = "int"; cast = "(int)"; }
-        else if (str_view_eq("struct str_view", a->type, data))
+        else if (str_eq_cstr("struct str_view", a->type, data))
             { sqlite_type = "text"; }
-        else if (str_view_eq("const char*", a->type, data))
+        else if (str_eq_cstr("const char*", a->type, data))
             { sqlite_type = "text"; }
 
         if (a->nullable)
@@ -1773,9 +1873,9 @@ again:
         write_func_name(ms, g, q, data);
         mstream_fmt(ms, ", %d, %s%S", i, cast, a->name, data);
 
-        if (str_view_eq("struct str_view", a->type, data))
+        if (str_eq_cstr("struct str_view", a->type, data))
             mstream_fmt(ms, ".data, %S.len, SQLITE_STATIC", a->name, data);
-        else if (str_view_eq("const char*", a->type, data))
+        else if (str_eq_cstr("const char*", a->type, data))
             mstream_cstr(ms, ", -1, SQLITE_STATIC");
         mstream_cstr(ms, ")) != SQLITE_OK");
 
@@ -1803,17 +1903,17 @@ write_sqlite_exec_callback(struct mstream* ms, const struct query_group* g, cons
         const char* sqlite_type = "";
         const char* cast = "";
 
-        if (str_view_eq("uint64_t", a->type, data))
+        if (str_eq_cstr("uint64_t", a->type, data))
             { sqlite_type = "int64"; cast = "(uint64_t)"; }
-        else if (str_view_eq("int64_t", a->type, data))
+        else if (str_eq_cstr("int64_t", a->type, data))
             sqlite_type = "int64";
-        else if (str_view_eq("int", a->type, data))
+        else if (str_eq_cstr("int", a->type, data))
             sqlite_type = "int";
-        else if (str_view_eq("int", a->type, data))
+        else if (str_eq_cstr("int", a->type, data))
             { sqlite_type = "int"; cast = "(uint16_t)"; }
-        else if (str_view_eq("struct str_view", a->type, data))
+        else if (str_eq_cstr("struct str_view", a->type, data))
             { sqlite_type = "text"; cast = "(const char*)"; }
-        else if (str_view_eq("const char*", a->type, data))
+        else if (str_eq_cstr("const char*", a->type, data))
             { sqlite_type = "text"; cast = "(const char*)"; }
 
         mstream_fmt(ms, "                %ssqlite3_column_%s(ctx->", cast, sqlite_type);
@@ -2008,6 +2108,225 @@ write_sqlite_exec(struct mstream* ms, const struct root* root, const struct quer
 }
 
 static void
+write_migration_sql_stmts(struct mstream* ms, const struct root* root, const struct migration* m, const char* data, const char* type)
+{
+    while (m)
+    {
+        int p;
+        mstream_fmt(ms, "static const char %S_%s%d[] =" NL, PREFIX(root->prefix, data), type, m->version);
+        mstream_cstr(ms, "    \"");
+        for (p = 0; p != m->sql.len; ++p)
+        {
+            if (data[m->sql.off + p] == '\n')
+            {
+                if (p + 1 < m->sql.len)
+                    mstream_cstr(ms, " \"" NL "    \"");
+            }
+            else if (data[m->sql.off + p] != '\r')
+            {
+                char c = data[m->sql.off + p];
+                if (c == '"')
+                    mstream_putc(ms, '\\');
+                mstream_putc(ms, c);
+            }
+        }
+        mstream_cstr(ms, "\";" NL NL);
+
+        m = m->next;
+    }
+}
+
+static void
+write_run_sql_stmts_func(struct mstream* ms, const struct root* root, const char* data)
+{
+    mstream_cstr(ms, "static int run_sqlite3_sql(sqlite3* db, const char* sql)" NL "{" NL);
+    mstream_cstr(ms, "    int ret;" NL);
+    mstream_cstr(ms, "    int sql_len;" NL);
+    mstream_cstr(ms, "    const char* sql_next;" NL);
+    mstream_cstr(ms, "    sqlite3_stmt* stmt;" NL NL);
+
+    mstream_cstr(ms, "    sql_len = (int)strlen(sql);" NL NL);
+
+    mstream_cstr(ms, "next_step:" NL);
+    mstream_cstr(ms, "    ret = sqlite3_prepare_v2(db, sql, sql_len, &stmt, &sql_next);" NL);
+    mstream_cstr(ms, "    if (ret != SQLITE_OK)" NL "    {" NL);
+    mstream_fmt (ms, "        %S(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
+    mstream_cstr(ms, "        goto prepare_failed;" NL);
+    mstream_cstr(ms, "    }" NL NL);
+
+    mstream_cstr(ms, "retry_step:" NL);
+    mstream_cstr(ms, "    switch (ret = sqlite3_step(stmt))" NL "    {" NL);
+    mstream_cstr(ms, "        case SQLITE_BUSY: goto retry_step;" NL);
+    mstream_cstr(ms, "        case SQLITE_ROW:" NL);
+    mstream_cstr(ms, "        case SQLITE_DONE:" NL);
+    mstream_cstr(ms, "            sql_len -= (int)(sql_next - sql);" NL);
+    mstream_cstr(ms, "            sql = sql_next;" NL);
+    mstream_cstr(ms, "            sqlite3_finalize(stmt);" NL);
+    mstream_cstr(ms, "            goto next_step;" NL);
+    mstream_cstr(ms, "        default:" NL);
+    mstream_fmt (ms, "            %S(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
+    mstream_cstr(ms, "            goto exec_failed;" NL);
+    mstream_cstr(ms, "    }" NL NL);
+
+    mstream_cstr(ms, "    sqlite3_finalize(stmt);" NL);
+    mstream_cstr(ms, "    return 0;" NL NL);
+
+    mstream_cstr(ms, "exec_failed    : sqlite3_finalize(stmt);" NL);
+    mstream_cstr(ms, "prepare_failed : return -1;" NL);
+    mstream_cstr(ms, "}" NL NL);
+}
+
+static void
+write_version_func(struct mstream* ms, const struct root* root, const char* data)
+{
+    mstream_fmt (ms, "static int %S_version(struct db* ctx)" NL "{" NL, PREFIX(root->prefix, data));
+    mstream_cstr(ms, "    int ret, version = 0;" NL);
+    mstream_cstr(ms, "    sqlite3_stmt* stmt;" NL NL);
+
+    mstream_cstr(ms, "    ret = sqlite3_prepare_v2(ctx->db, \"PRAGMA user_version;\", -1, &stmt, NULL);" NL);
+    mstream_cstr(ms, "    if (ret != SQLITE_OK)" NL "    {" NL);
+    mstream_fmt (ms, "        %S(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
+    mstream_cstr(ms, "        return -1;" NL);
+    mstream_cstr(ms, "    }" NL NL);
+
+    mstream_cstr(ms, "    ret = sqlite3_step(stmt);" NL);
+    mstream_cstr(ms, "    if (ret != SQLITE_ROW)" NL "    {" NL);
+    mstream_fmt (ms, "        %S(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
+    mstream_cstr(ms, "        sqlite3_finalize(stmt);" NL);
+    mstream_cstr(ms, "        return -1;" NL);
+    mstream_cstr(ms, "    }" NL NL);
+
+    mstream_cstr(ms, "    version = sqlite3_column_int(stmt, 0);" NL);
+    mstream_cstr(ms, "    sqlite3_finalize(stmt);" NL);
+    mstream_cstr(ms, "    return version;" NL);
+    mstream_cstr(ms, "}" NL NL);
+}
+
+static void
+write_migration_to_func(struct mstream* ms, const struct root* root, const char* data)
+{
+    int max_version = 0;
+    struct migration* m;
+    
+    m = root->upgrade;
+    while (m)
+    {
+        max_version = m->version;
+        m = m->next;
+    }
+
+    mstream_fmt (ms, "static int %S_migrate_to(struct db* ctx, int target_version)" NL "{" NL, PREFIX(root->prefix, data));
+    mstream_cstr(ms, "    int ret;" NL);
+    mstream_cstr(ms, "    int version;" NL);
+    mstream_cstr(ms, "    char* error;" NL);
+    mstream_cstr(ms, "    char buf[sizeof(\"PRAGMA user_version=+2147483648;\")];" NL NL);
+
+    mstream_fmt (ms, "    version = %S_version(ctx);" NL, PREFIX(root->prefix, data));
+    mstream_cstr(ms, "    if (version < 0)" NL);
+    mstream_cstr(ms, "        return -1;" NL NL);
+
+    mstream_cstr(ms, "    ret = sqlite3_exec(ctx->db, \"BEGIN TRANSACTION;\", NULL, NULL, &error);" NL);
+    mstream_cstr(ms, "    if (ret != SQLITE_OK)" NL "    {" NL);
+    mstream_fmt (ms, "        %S(ret, error, sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
+    mstream_cstr(ms, "        sqlite3_free(error);" NL);
+    mstream_cstr(ms, "        return -1;" NL);
+    mstream_cstr(ms, "    }" NL NL);
+
+    mstream_cstr(ms, "    switch (version)" NL "    {" NL);
+    m = root->downgrade;
+    while (m)
+    {
+        mstream_fmt (ms, "        case %d:" NL, m->version + 1);
+        mstream_fmt (ms, "            if (run_sqlite3_sql(ctx->db, %S_downgrade%d) != 0)" NL, PREFIX(root->prefix, data), m->version);
+        mstream_cstr(ms, "                goto migration_failed;" NL);
+        mstream_fmt (ms, "            version = %d;" NL, m->version);
+        mstream_cstr(ms, "            if (version == target_version)" NL);
+        mstream_cstr(ms, "                break;" NL);
+        m = m->next;
+    }
+    mstream_cstr(ms, "        case 0: break;" NL);
+    mstream_cstr(ms, "        default:" NL);
+    mstream_fmt (ms, "            %S(\"Failed to downgrade db: Unknown version %%d\", version);" NL, LOG_ERR(root->log_err, data));
+    mstream_cstr(ms, "            goto migration_failed;" NL);
+    mstream_cstr(ms, "    }" NL NL);
+
+    mstream_cstr(ms, "    switch (version)" NL "    {" NL);
+    m = root->upgrade;
+    while (m)
+    {
+        mstream_fmt(ms, "        case %d:" NL, m->version - 1);
+        mstream_cstr(ms, "            if (version == target_version)" NL);
+        mstream_cstr(ms, "                break;" NL);
+        mstream_fmt(ms, "            if (run_sqlite3_sql(ctx->db, %S_upgrade%d) != 0)" NL, PREFIX(root->prefix, data), m->version);
+        mstream_cstr(ms, "                goto migration_failed;" NL);
+        mstream_fmt (ms, "            version = %d;" NL, m->version);
+        m = m->next;
+    }
+    mstream_fmt (ms, "        case %d: break;" NL, max_version);
+    mstream_cstr(ms, "        default:" NL);
+    mstream_fmt(ms, "            %S(\"Failed to upgrade db: Unknown version %%d\", version);" NL, LOG_ERR(root->log_err, data));
+    mstream_cstr(ms, "            goto migration_failed;" NL);
+    mstream_cstr(ms, "    }" NL NL);
+
+    mstream_cstr(ms, "    sprintf(buf, \"PRAGMA user_version=%d;\", target_version);" NL);
+    mstream_cstr(ms, "    ret = sqlite3_exec(ctx->db, buf, NULL, NULL, &error);" NL);
+    mstream_cstr(ms, "    if (ret != SQLITE_OK)" NL "    {" NL);
+    mstream_fmt (ms, "        %S(ret, error, sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
+    mstream_cstr(ms, "        sqlite3_free(error);" NL);
+    mstream_cstr(ms, "        goto migration_failed;" NL);
+    mstream_cstr(ms, "    }" NL NL);
+
+    mstream_cstr(ms, "    ret = sqlite3_exec(ctx->db, \"COMMIT TRANSACTION;\", NULL, NULL, &error);" NL);
+    mstream_cstr(ms, "    if (ret != SQLITE_OK)" NL "    {" NL);
+    mstream_fmt (ms, "        %S(ret, error, sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
+    mstream_cstr(ms, "        sqlite3_free(error);" NL);
+    mstream_cstr(ms, "        goto migration_failed;" NL);
+    mstream_cstr(ms, "    }" NL NL);
+
+    mstream_cstr(ms, "    return 0;" NL NL);
+
+    mstream_cstr(ms, "migration_failed:" NL);
+    mstream_cstr(ms, "    ret = sqlite3_exec(ctx->db, \"ROLLBACK TRANSACTION;\", NULL, NULL, &error);" NL);
+    mstream_cstr(ms, "    if (ret != SQLITE_OK)" NL "    {" NL);
+    mstream_fmt (ms, "        %S(ret, error, sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
+    mstream_cstr(ms, "        sqlite3_free(error);" NL);
+    mstream_cstr(ms, "    }" NL);
+    mstream_cstr(ms, "    return -1;" NL);
+
+    mstream_cstr(ms, "}" NL NL);
+}
+
+static void
+write_upgrade_func(struct mstream* ms, const struct root* root, const char* data)
+{
+    int version = 0;
+    struct migration* m = root->upgrade;
+    while (m)
+    {
+        version = m->version + 1;
+        m = m->next;
+    }
+    mstream_fmt(ms, "static int %S_upgrade(struct db* ctx)" NL "{" NL, PREFIX(root->prefix, data));
+    mstream_fmt(ms, "    return %S_migrate_to(ctx, %d);" NL, version);
+    mstream_cstr(ms, "}" NL);
+}
+
+static void
+write_reinit_func(struct mstream* ms, const struct root* root, const char* data)
+{
+    int version = 0;
+    struct migration* m = root->upgrade;
+    while (m)
+    {
+        version = m->version + 1;
+        m = m->next;
+    }
+    mstream_fmt(ms, "static int %S_upgrade(struct db* ctx)" NL "{" NL, PREFIX(root->prefix, data));
+    mstream_fmt(ms, "    return %S_migrate_to(ctx, %d);" NL, version);
+    mstream_cstr(ms, "}" NL);
+}
+
+static void
 write_debug_wrapper(struct mstream* ms, const struct root* root, const struct query_group* g, const struct query* q, const char* data)
 {
     struct arg* a;
@@ -2033,7 +2352,7 @@ write_debug_wrapper(struct mstream* ms, const struct root* root, const struct qu
         while (a)
         {
             if (a != q->cb_args) mstream_cstr(ms, " | ");
-            if (str_view_eq("const char*", a->type, data))
+            if (str_eq_cstr("const char*", a->type, data))
                 mstream_cstr(ms, "\\\"%s\\\"");
             else
                 mstream_cstr(ms, "%d");
@@ -2044,7 +2363,7 @@ write_debug_wrapper(struct mstream* ms, const struct root* root, const struct qu
         while (a)
         {
             if (a != q->cb_args) mstream_cstr(ms, ", ");
-            if (str_view_eq("const char*", a->type, data)) {}
+            if (str_eq_cstr("const char*", a->type, data)) {}
             else
                 mstream_cstr(ms, "(int)");
             mstream_str(ms, a->name, data);
@@ -2091,13 +2410,13 @@ write_debug_wrapper(struct mstream* ms, const struct root* root, const struct qu
         if (a != q->in_args)
             mstream_cstr(ms, ", ");
 
-        if (str_view_eq("const char*", a->type, data))
+        if (str_eq_cstr("const char*", a->type, data))
             mstream_cstr(ms, "\\\"%s\\\"");
-        else if (str_view_eq("struct str_view", a->type, data))
+        else if (str_eq_cstr("struct str_view", a->type, data))
             mstream_cstr(ms, "\\\"%.*s\\\"");
-        else if (str_view_eq("int64_t", a->type, data))
+        else if (str_eq_cstr("int64_t", a->type, data))
             mstream_cstr(ms, "%\" PRIi64\"");
-        else if (str_view_eq("uint64_t", a->type, data))
+        else if (str_eq_cstr("uint64_t", a->type, data))
             mstream_cstr(ms, "%\" PRIu64\"");
         else
             mstream_cstr(ms, "%d");
@@ -2110,13 +2429,13 @@ write_debug_wrapper(struct mstream* ms, const struct root* root, const struct qu
     while (a)
     {
         if (a != q->in_args) mstream_cstr(ms, ", ");
-        if (str_view_eq("const char*", a->type, data))
+        if (str_eq_cstr("const char*", a->type, data))
             mstream_str(ms, a->name, data);
-        else if (str_view_eq("struct str_view", a->type, data))
+        else if (str_eq_cstr("struct str_view", a->type, data))
             mstream_fmt(ms, "%S.len, %S.data", a->name, data, a->name, data);
-        else if (str_view_eq("int64_t", a->type, data))
+        else if (str_eq_cstr("int64_t", a->type, data))
             mstream_str(ms, a->name, data);
-        else if (str_view_eq("uint64_t", a->type, data))
+        else if (str_eq_cstr("uint64_t", a->type, data))
             mstream_str(ms, a->name, data);
         else
             mstream_fmt(ms, "(int)%S", a->name, data);
@@ -2182,11 +2501,19 @@ gen_header(const struct root* root, const char* data, const char* file_name,
     mstream_fmt(&ms, "struct %S;" NL, PREFIX(root->prefix, data));
     mstream_fmt(&ms, "struct %S_interface" NL "{" NL, PREFIX(root->prefix, data));
 
-    /* Open and close functions are hard-coded */
+    /* Hard-coded functions */
     mstream_fmt(&ms, "    struct %S* (*open)(const char* uri);" NL,
             PREFIX(root->prefix, data));
-    mstream_fmt(&ms, "    void (*close)(struct %S* ctx);" NL NL,
+    mstream_fmt(&ms, "    void (*close)(struct %S* ctx);" NL,
             PREFIX(root->prefix, data));
+    mstream_fmt(&ms, "    int (*version)(struct %S* ctx);" NL,
+        PREFIX(root->prefix, data));
+    mstream_fmt(&ms, "    int (*upgrade)(struct %S* ctx);" NL,
+        PREFIX(root->prefix, data));
+    mstream_fmt(&ms, "    int (*reinit)(struct %S* ctx);" NL,
+        PREFIX(root->prefix, data));
+    mstream_fmt(&ms, "    int (*migrate_to)(struct %S* ctx, int target_version);" NL,
+        PREFIX(root->prefix, data));
 
     /* Global queries */
     q = root->queries;
@@ -2492,6 +2819,16 @@ gen_source(const struct root* root, const char* data, const char* file_name,
     mstream_cstr(&ms, "}" NL NL);
 
     /* ------------------------------------------------------------------------
+     * Migration
+     * --------------------------------------------------------------------- */
+
+    write_migration_sql_stmts(&ms, root, root->upgrade, data, "upgrade");
+    write_migration_sql_stmts(&ms, root, root->downgrade, data, "downgrade");
+    write_run_sql_stmts_func(&ms, root, data);
+    write_version_func(&ms, root, data);
+    write_migration_to_func(&ms, root, data);
+
+    /* ------------------------------------------------------------------------
      * Interface
      * --------------------------------------------------------------------- */
 
@@ -2499,6 +2836,10 @@ gen_source(const struct root* root, const char* data, const char* file_name,
     mstream_fmt(&ms, "    %S_open," NL "    %S_close," NL,
             PREFIX(root->prefix, data),
             PREFIX(root->prefix, data));
+    mstream_fmt(&ms, "    %S_version," NL, PREFIX(root->prefix, data));
+    mstream_fmt(&ms, "    %S_upgrade," NL, PREFIX(root->prefix, data));
+    mstream_fmt(&ms, "    %S_reinit," NL, PREFIX(root->prefix, data));
+    mstream_fmt(&ms, "    %S_migrate_to," NL, PREFIX(root->prefix, data));
 
     /* Global queries */
     q = root->queries;

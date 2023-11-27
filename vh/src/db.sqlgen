@@ -40,8 +40,311 @@ db(const char* backend);
 C_END
 }
 
-%function migrate(int reinit_db) {
-    return check_version_and_migrate(ctx->db, reinit_db);
+%upgrade 1 {
+-- Maps SSBU stage IDs (they start at index 0) to readable stage names.
+-- The stage names are user-defined, and are used in queries and are
+-- displayed in the UI. The table is initialized from a list of predefined
+-- handwritten names.
+CREATE TABLE IF NOT EXISTS stages (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL
+);
+-- Maps SSBU fighter IDs (starting at index 0) to readable fighter names.
+-- The fighter names are user-defined, and are used in queries and are
+-- displayed in the UI. The table is initialized from a list of predefined
+-- handwritten names.
+CREATE TABLE IF NOT EXISTS fighters (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL
+);
+-- Maps "hit status" values to their symbol name (extracted from the game).
+-- Example:
+CREATE TABLE IF NOT EXISTS hit_status_enums (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS status_enums (
+    id INTEGER PRIMARY KEY NOT NULL,
+    fighter_id INTEGER,
+    value INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    FOREIGN KEY (fighter_id) REFERENCES fighters(id)
+);
+CREATE TABLE IF NOT EXISTS motions (
+    hash40 INTEGER PRIMARY KEY NOT NULL,
+    string TEXT NOT NULL,
+    UNIQUE(string)
+);
+CREATE TABLE IF NOT EXISTS motion_groups (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    UNIQUE(name)
+);
+CREATE TABLE IF NOT EXISTS motion_layers (
+    id INTEGER PRIMARY KEY NOT NULL,
+    group_id INTEGER NOT NULL,
+    priority INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    UNIQUE(group_id, name),
+    FOREIGN KEY (group_id) REFERENCES motion_groups(id)
+);
+CREATE TABLE IF NOT EXISTS motion_categories (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    UNIQUE(name)
+);
+CREATE TABLE IF NOT EXISTS motion_usages (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    UNIQUE(name)
+);
+INSERT OR REPLACE INTO motion_usages (id, name) VALUES
+    (0, 'Readable'),
+    (1, 'Notation'),
+    (2, 'Categorization');
+CREATE TABLE IF NOT EXISTS motion_labels (
+    id INTEGER PRIMARY KEY NOT NULL,
+    hash40 INTEGER NOT NULL,
+    fighter_id INTEGER NOT NULL,
+    layer_id INTEGER NOT NULL,
+    category_id INTEGER NOT NULL,
+    usage_id INTEGER NOT NULL,
+    label TEXT NOT NULL,
+    FOREIGN KEY (hash40) REFERENCES motions(hash40),
+    FOREIGN KEY (fighter_id) REFERENCES fighters(id),
+    FOREIGN KEY (layer_id) REFERENCES motion_layers(id),
+    FOREIGN KEY (category_id) REFERENCES motion_categories(id),
+    FOREIGN KEY (usage_id) REFERENCES motion_usages(id)
+);
+CREATE TABLE IF NOT EXISTS videos (
+    id INTEGER PRIMARY KEY NOT NULL,
+    file_name TEXT NOT NULL,
+    path_hint TEXT NOT NULL,
+    UNIQUE (file_name)
+);
+CREATE TABLE IF NOT EXISTS video_paths (
+    path TEXT NOT NULL,
+    UNIQUE (path)
+);
+CREATE TABLE IF NOT EXISTS sponsors (
+    id INTEGER PRIMARY KEY NOT NULL,
+    short_name TEXT NOT NULL,
+    full_name TEXT NOT NULL,
+    website TEXT NOT NULL,
+    CHECK (short_name <> '' OR full_name <> ''),
+    UNIQUE (short_name, full_name, website)
+);
+CREATE TABLE IF NOT EXISTS people (
+    id INTEGER PRIMARY KEY NOT NULL,
+    sponsor_id INTEGER,
+    name TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    social TEXT NOT NULL,
+    pronouns TEXT NOT NULL,
+    FOREIGN KEY (sponsor_id) REFERENCES sponsors(id),
+    UNIQUE (name, tag),
+    CHECK (name <> '')
+);
+CREATE TABLE IF NOT EXISTS tournaments (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    website TEXT NOT NULL,
+    UNIQUE (name, website),
+    CHECK (name <> '')
+);
+CREATE TABLE IF NOT EXISTS tournament_organizers (
+    tournament_id INTEGER NOT NULL CHECK (tournament_id > 0),
+    person_id INTEGER NOT NULL CHECK (person_id > 0),
+    UNIQUE (tournament_id, person_id)
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+    FOREIGN KEY (person_id) REFERENCES people(id)
+);
+CREATE TABLE IF NOT EXISTS tournament_sponsors (
+    tournament_id INTEGER NOT NULL CHECK (tournament_id > 0),
+    sponsor_id INTEGER NOT NULL CHECK (sponsor_id > 0),
+    UNIQUE (tournament_id, sponsor_id),
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+    FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
+);
+CREATE TABLE IF NOT EXISTS tournament_commentators (
+    tournament_id INTEGER NOT NULL CHECK (tournament_id > 0),
+    person_id INTEGER NOT NULL CHECK (person_id > 0),
+    UNIQUE (tournament_id, person_id),
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+    FOREIGN KEY (person_id) REFERENCES people(id)
+);
+CREATE TABLE IF NOT EXISTS set_formats (
+    id INTEGER PRIMARY KEY NOT NULL,
+    short_name TEXT NOT NULL,
+    long_name TEXT NOT NULL,
+    UNIQUE (short_name),
+    UNIQUE (long_name)
+);
+CREATE TABLE IF NOT EXISTS event_types (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    UNIQUE (name)
+);
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY NOT NULL,
+    event_type_id INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    UNIQUE (event_type_id, url),
+    FOREIGN KEY (event_type_id) REFERENCES event_types(id)
+);
+CREATE TABLE IF NOT EXISTS round_types (
+    id INTEGER PRIMARY KEY NOT NULL,
+    short_name TEXT NOT NULL,
+    long_name TEXT NOT NULL,
+    UNIQUE (short_name),
+    UNIQUE (long_name)
+);
+CREATE TABLE IF NOT EXISTS teams (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    UNIQUE (name, url)
+);
+CREATE TABLE IF NOT EXISTS team_members (
+    team_id INTEGER NOT NULL,
+    person_id INTEGER NOT NULL,
+    UNIQUE (team_id, person_id),
+    FOREIGN KEY (team_id) REFERENCES teams(id),
+    FOREIGN KEY (person_id) REFERENCES people(id)
+);
+CREATE TABLE IF NOT EXISTS games (
+    id INTEGER PRIMARY KEY NOT NULL,
+    -- Round type only exists for brackets.
+    -- For Money match, Practice, Amateurs etc. this will be NULL.
+    round_type_id INTEGER,
+    -- Round number is NULL when the round type is semi-finals, finals, or any
+    -- other type that doesn't need a number.
+    round_number INTEGER,
+    set_format_id INTEGER NOT NULL,
+    winner_team_id INTEGER NOT NULL,
+    stage_id INTEGER NOT NULL,
+    time_started TIMESTAMP NOT NULL,
+    duration INTEGER NOT NULL,
+    FOREIGN KEY (round_type_id) REFERENCES round_types(id),
+    FOREIGN KEY (set_format_id) REFERENCES set_formats(id),
+    FOREIGN KEY (winner_team_id) REFERENCES teams(id),
+    FOREIGN KEY (stage_id) REFERENCES stages(id),
+    CHECK (round_type_id > 0),
+    CHECK (round_number > 0),
+    CHECK (set_format_id > 0),
+    CHECK (winner_team_id > 0),
+    CHECK (stage_id > -1)  -- Stage 0 is valid
+);
+CREATE TABLE IF NOT EXISTS tournament_games (
+    game_id INTEGER NOT NULL,
+    tournament_id INTEGER NOT NULL,
+    FOREIGN KEY (game_id) REFERENCES games(id),
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+    UNIQUE (game_id)
+);
+CREATE TABLE IF NOT EXISTS event_games (
+    game_id INTEGER NOT NULL,
+    event_id INTEGER NOT NULL,
+    FOREIGN KEY (game_id) REFERENCES games(id),
+    FOREIGN KEY (event_id) REFERENCES events(id),
+    UNIQUE (game_id)
+);
+CREATE TABLE IF NOT EXISTS game_players (
+    person_id INTEGER NOT NULL,
+    game_id INTEGER NOT NULL,
+    slot INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    fighter_id INTEGER NOT NULL,
+    costume INTEGER NOT NULL,
+    is_loser_side BOOLEAN NOT NULL CHECK (is_loser_side IN (0, 1)),
+    UNIQUE (person_id, game_id),
+    FOREIGN KEY (person_id) REFERENCES people(id),
+    FOREIGN KEY (game_id) REFERENCES games(id),
+    FOREIGN KEY (team_id) REFERENCES teams(id),
+    FOREIGN KEY (fighter_id) REFERENCES fighters(id)
+);
+CREATE TABLE IF NOT EXISTS game_videos (
+    game_id INTEGER NOT NULL,
+    video_id INTEGER NOT NULL,
+    frame_offset INTEGER NOT NULL,
+    FOREIGN KEY (game_id) REFERENCES games(id),
+    FOREIGN KEY (video_id) REFERENCES videos(id),
+    UNIQUE (game_id, video_id)
+);
+CREATE TABLE IF NOT EXISTS groups (
+    id INTEGER NOT NULL,
+    name TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS game_groups (
+    game_id INTEGER NOT NULL,
+    group_id INTEGER NOT NULL,
+    FOREIGN KEY (game_id) REFERENCES games(id),
+    FOREIGN KEY (group_id) REFERENCES groups(id),
+    UNIQUE (game_id, group_id)
+);
+CREATE TABLE IF NOT EXISTS scores (
+    game_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    score INTEGER NOT NULL CHECK (score >= 0),
+    UNIQUE (game_id, team_id, score),
+    FOREIGN KEY (game_id) REFERENCES games(id),
+    FOREIGN KEY (team_id) REFERENCES teams(id)
+);
+CREATE TABLE IF NOT EXISTS switch_info (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    ip TEXT NOT NULL,
+    port INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS stream_recording_sources (
+    id INTEGER PRIMARY KEY NOT NULL,
+    path TEXT NOT NULL,
+    frame_offset INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_motions_hash40 ON motions(hash40);
+CREATE INDEX IF NOT EXISTS idx_games_timestamps ON games(time_started);
+CREATE INDEX IF NOT EXISTS idx_motion_labels ON motion_labels(hash40, fighter_id);
+}
+
+%downgrade 0 {
+DROP TABLE IF EXISTS stream_recording_sources;
+DROP TABLE IF EXISTS switch_info;
+DROP TABLE IF EXISTS scores;
+DROP TABLE IF EXISTS game_groups;
+DROP TABLE IF EXISTS groups;
+DROP TABLE IF EXISTS game_videos;
+DROP TABLE IF EXISTS game_players;
+DROP TABLE IF EXISTS event_games;
+DROP TABLE IF EXISTS tournament_games;
+DROP TABLE IF EXISTS games;
+DROP TABLE IF EXISTS team_members;
+DROP TABLE IF EXISTS teams;
+DROP TABLE IF EXISTS round_types;
+DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS event_types;
+DROP TABLE IF EXISTS set_formats;
+DROP TABLE IF EXISTS tournament_commentators;
+DROP TABLE IF EXISTS tournament_sponsors;
+DROP TABLE IF EXISTS tournament_organizers;
+DROP TABLE IF EXISTS tournaments;
+DROP TABLE IF EXISTS people;
+DROP TABLE IF EXISTS sponsors;
+DROP TABLE IF EXISTS video_paths;
+DROP TABLE IF EXISTS videos;
+DROP TABLE IF EXISTS motion_labels;
+DROP TABLE IF EXISTS motion_usages;
+DROP TABLE IF EXISTS motion_categories;
+DROP TABLE IF EXISTS motion_layers;
+DROP TABLE IF EXISTS motion_groups;
+DROP TABLE IF EXISTS motions;
+DROP TABLE IF EXISTS status_enums;
+DROP TABLE IF EXISTS hit_status_enums;
+DROP TABLE IF EXISTS fighters;
+DROP TABLE IF EXISTS stages;
+
+DROP INDEX IF EXISTS idx_motion_labels;
+DROP INDEX IF EXISTS idx_games_timestamps;
+DROP INDEX IF EXISTS idx_motions_hash40;
 }
 
 %query transaction,begin() {
@@ -571,139 +874,6 @@ void
 log_sql_err(int error_code, const char* error_code_str, const char* error_msg)
 {
     log_err("%s (%d): %s\n", error_code_str, error_code, error_msg);
-}
-
-static int
-exec_sql_wrapper(sqlite3* db, const char* sql)
-{
-    char* error_message;
-    int ret = sqlite3_exec(db, sql, NULL, NULL, &error_message);
-    if (ret != SQLITE_OK)
-    {
-        log_sql_err(ret, error_message, sqlite3_errmsg(db));
-        sqlite3_free(error_message);
-        return -1;
-    }
-    return 0;
-}
-
-static int
-run_migration_script(sqlite3* db, const char* file_name)
-{
-    int ret;
-    struct mfile mf;
-    sqlite3_stmt* stmt;
-    const char* sql;
-    const char* sql_next;
-    int sql_len;
-
-    if (mfile_map(&mf, file_name) != 0)
-        goto open_script_failed;
-
-    sql = mf.address;
-    sql_len = mf.size;
-
-    log_info("Running migration script '%s'\n", file_name);
-
-next_step:
-    ret = sqlite3_prepare_v2(db, sql, sql_len, &stmt, &sql_next);
-    if (ret != SQLITE_OK)
-    {
-        log_sql_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
-        goto prepare_failed;
-    }
-retry_step:
-    switch (ret = sqlite3_step(stmt))
-    {
-        case SQLITE_BUSY:
-            goto retry_step;
-        case SQLITE_ROW:
-        case SQLITE_DONE:
-            sql_len -= (int)(sql_next - sql);
-            sql = sql_next;
-            for (; sql_len && isspace(*sql); ++sql, --sql_len) {}
-            if (sql_len <= 0)
-                break;
-            sqlite3_finalize(stmt);
-            goto next_step;
-        default:
-            log_sql_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
-            goto exec_failed;
-    }
-
-    sqlite3_finalize(stmt);
-    mfile_unmap(&mf);
-    return 0;
-
-    exec_failed        : sqlite3_finalize(stmt);
-    prepare_failed     : mfile_unmap(&mf);
-    open_script_failed : return -1;
-}
-
-static int
-check_version_and_migrate(sqlite3* db, int reinit_db)
-{
-    int ret;
-    int version;
-    sqlite3_stmt* stmt;
-
-    ret = sqlite3_prepare_v2(db, "PRAGMA user_version", -1, &stmt, NULL);
-    if (ret != SQLITE_OK)
-    {
-        log_sql_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
-        return -1;
-    }
-
-    ret = sqlite3_step(stmt);
-    if (ret != SQLITE_ROW)
-    {
-        log_sql_err(ret, sqlite3_errstr(ret), sqlite3_errmsg(db));
-        sqlite3_finalize(stmt);
-        return -1;
-    }
-
-    version = sqlite3_column_int(stmt, 0);
-    sqlite3_finalize(stmt);
-    log_dbg("db version: %d\n", version);
-
-    if (exec_sql_wrapper(db, "BEGIN TRANSACTION") != 0)
-        return -1;
-
-    if (reinit_db)
-    {
-        log_note("Downgrading db to version 0\n");
-        switch (version)
-        {
-            case 1: if (run_migration_script(db, "migrations/1-schema.down.sql") != 0) goto migrate_failed;
-            case 0: break;
-        }
-        version = 0;
-    }
-
-    switch (version)
-    {
-        case 0: if (run_migration_script(db, "migrations/1-schema.up.sql") != 0) goto migrate_failed;
-        /*case 1: if (upgrade_to_v2(db) != 0) goto migrate_failed;
-        case 2: if (upgrade_to_v3(db) != 0) goto migrate_failed;*/
-        case 1: break;
-
-        default:
-            log_err("Unknown database version %d. Aborting all operations\n", version);
-            goto migrate_failed;
-    }
-
-    if (exec_sql_wrapper(db, "PRAGMA user_version=1") != 0)
-        goto migrate_failed;
-
-    if (exec_sql_wrapper(db, "COMMIT TRANSACTION") != 0)
-        goto migrate_failed;
-
-    log_note("Successfully migrated from version %d to version 1\n", version);
-
-    return 0;
-
-    migrate_failed : exec_sql_wrapper(db, "ROLLBACK TRANSACTION");
-    return -1;
 }
 }
 
