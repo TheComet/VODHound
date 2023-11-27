@@ -417,9 +417,11 @@ activate(GtkApplication* app, gpointer user_data)
     gtk_widget_set_visible(window, 1);
 
     open_plugin(GTK_NOTEBOOK(plugin_view), GTK_NOTEBOOK(property_panel),
+            &ctx->plugins, ctx->dbi, ctx->db, cstr_view("AI Tool"));
+    /*open_plugin(GTK_NOTEBOOK(plugin_view), GTK_NOTEBOOK(property_panel),
             &ctx->plugins, ctx->dbi, ctx->db, cstr_view("VOD Review"));
     open_plugin(GTK_NOTEBOOK(plugin_view), GTK_NOTEBOOK(property_panel),
-            &ctx->plugins, ctx->dbi, ctx->db, cstr_view("Search"));
+            &ctx->plugins, ctx->dbi, ctx->db, cstr_view("Search"));*/
 }
 
 int main(int argc, char** argv)
