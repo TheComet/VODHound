@@ -898,9 +898,10 @@ scan_block(struct parser* p, int expect_opening_brace)
         if (scan_next_token(p) != '{')
             return print_error(p, "Error: Expecting '{'\n");
 
-    /*for (; p->off != p->len; p->off++)
-        if (!isspace(p->data[p->off]) && p->data[p->off] != '\r' && p->data[p->off] != '\n')
-            break;*/
+    /* Trim any preceeding whitespace/newlines */
+    for (; p->head != p->len; p->head++)
+        if (!isspace(p->data[p->head]) && p->data[p->head] != '\r' && p->data[p->head] != '\n')
+            break;
     if (p->head == p->len)
         return print_error(p, "Error: Missing closing \"}\"\n");
 
@@ -913,6 +914,16 @@ scan_block(struct parser* p, int expect_opening_brace)
             if (--depth == 0)
             {
                 p->value.str.len = p->head++ - p->value.str.off;
+
+                /* Trim off any trailing whitespace/newlines */
+                while (p->value.str.len > 0)
+                {
+                    char c = p->data[p->value.str.off + p->value.str.len - 1];
+                    if (!isspace(c) && c != '\r' && c != '\n')
+                        break;
+                    p->value.str.len--;
+                }
+
                 return TOK_STRING;
             }
 
@@ -2161,6 +2172,9 @@ write_run_sql_stmts_func(struct mstream* ms, const struct root* root, const char
     mstream_cstr(ms, "        case SQLITE_DONE:" NL);
     mstream_cstr(ms, "            sql_len -= (int)(sql_next - sql);" NL);
     mstream_cstr(ms, "            sql = sql_next;" NL);
+    mstream_cstr(ms, "            for (; sql_len && isspace(*sql); ++sql, --sql_len) {}" NL);
+    mstream_cstr(ms, "            if (sql_len <= 0)" NL);
+    mstream_cstr(ms, "                break;" NL);
     mstream_cstr(ms, "            sqlite3_finalize(stmt);" NL);
     mstream_cstr(ms, "            goto next_step;" NL);
     mstream_cstr(ms, "        default:" NL);
@@ -2203,11 +2217,11 @@ write_version_func(struct mstream* ms, const struct root* root, const char* data
 }
 
 static void
-write_migration_to_func(struct mstream* ms, const struct root* root, const char* data)
+write_migration_body(struct mstream* ms, const struct root* root, const char* data, char reinit_db)
 {
     int max_version = 0;
     struct migration* m;
-    
+
     m = root->upgrade;
     while (m)
     {
@@ -2215,11 +2229,11 @@ write_migration_to_func(struct mstream* ms, const struct root* root, const char*
         m = m->next;
     }
 
-    mstream_fmt (ms, "static int %S_migrate_to(struct db* ctx, int target_version)" NL "{" NL, PREFIX(root->prefix, data));
     mstream_cstr(ms, "    int ret;" NL);
     mstream_cstr(ms, "    int version;" NL);
     mstream_cstr(ms, "    char* error;" NL);
-    mstream_cstr(ms, "    char buf[sizeof(\"PRAGMA user_version=+2147483648;\")];" NL NL);
+    if (!reinit_db)
+        mstream_cstr(ms, "    char buf[sizeof(\"PRAGMA user_version=+2147483648;\")];" NL NL);
 
     mstream_fmt (ms, "    version = %S_version(ctx);" NL, PREFIX(root->prefix, data));
     mstream_cstr(ms, "    if (version < 0)" NL);
@@ -2237,11 +2251,14 @@ write_migration_to_func(struct mstream* ms, const struct root* root, const char*
     while (m)
     {
         mstream_fmt (ms, "        case %d:" NL, m->version + 1);
+        if (!reinit_db)
+        {
+            mstream_cstr(ms, "            if (version == target_version)" NL);
+            mstream_cstr(ms, "                break;" NL);
+        }
         mstream_fmt (ms, "            if (run_sqlite3_sql(ctx->db, %S_downgrade%d) != 0)" NL, PREFIX(root->prefix, data), m->version);
         mstream_cstr(ms, "                goto migration_failed;" NL);
         mstream_fmt (ms, "            version = %d;" NL, m->version);
-        mstream_cstr(ms, "            if (version == target_version)" NL);
-        mstream_cstr(ms, "                break;" NL);
         m = m->next;
     }
     mstream_cstr(ms, "        case 0: break;" NL);
@@ -2255,8 +2272,11 @@ write_migration_to_func(struct mstream* ms, const struct root* root, const char*
     while (m)
     {
         mstream_fmt(ms, "        case %d:" NL, m->version - 1);
-        mstream_cstr(ms, "            if (version == target_version)" NL);
-        mstream_cstr(ms, "                break;" NL);
+        if (!reinit_db)
+        {
+            mstream_cstr(ms, "            if (version == target_version)" NL);
+            mstream_cstr(ms, "                break;" NL);
+        }
         mstream_fmt(ms, "            if (run_sqlite3_sql(ctx->db, %S_upgrade%d) != 0)" NL, PREFIX(root->prefix, data), m->version);
         mstream_cstr(ms, "                goto migration_failed;" NL);
         mstream_fmt (ms, "            version = %d;" NL, m->version);
@@ -2268,8 +2288,13 @@ write_migration_to_func(struct mstream* ms, const struct root* root, const char*
     mstream_cstr(ms, "            goto migration_failed;" NL);
     mstream_cstr(ms, "    }" NL NL);
 
-    mstream_cstr(ms, "    sprintf(buf, \"PRAGMA user_version=%d;\", target_version);" NL);
-    mstream_cstr(ms, "    ret = sqlite3_exec(ctx->db, buf, NULL, NULL, &error);" NL);
+    if (reinit_db)
+        mstream_fmt(ms, "    ret = sqlite3_exec(ctx->db, \"PRAGMA user_version=%d;\", NULL, NULL, &error);" NL, max_version);
+    else
+    {
+        mstream_cstr(ms, "    sprintf(buf, \"PRAGMA user_version=%d;\", target_version);" NL);
+        mstream_cstr(ms, "    ret = sqlite3_exec(ctx->db, buf, NULL, NULL, &error);" NL);
+    }
     mstream_cstr(ms, "    if (ret != SQLITE_OK)" NL "    {" NL);
     mstream_fmt (ms, "        %S(ret, error, sqlite3_errmsg(ctx->db));" NL, LOG_SQL_ERR(root->log_sql_err, data));
     mstream_cstr(ms, "        sqlite3_free(error);" NL);
@@ -2292,38 +2317,37 @@ write_migration_to_func(struct mstream* ms, const struct root* root, const char*
     mstream_cstr(ms, "        sqlite3_free(error);" NL);
     mstream_cstr(ms, "    }" NL);
     mstream_cstr(ms, "    return -1;" NL);
+}
 
+static void
+write_migration_to_func(struct mstream* ms, const struct root* root, const char* data)
+{
+    mstream_fmt(ms, "static int %S_migrate_to(struct db* ctx, int target_version)" NL "{" NL, PREFIX(root->prefix, data));
+    write_migration_body(ms, root, data, 0);
     mstream_cstr(ms, "}" NL NL);
 }
 
 static void
 write_upgrade_func(struct mstream* ms, const struct root* root, const char* data)
 {
-    int version = 0;
+    int max_version = 0;
     struct migration* m = root->upgrade;
     while (m)
     {
-        version = m->version + 1;
+        max_version = m->version;
         m = m->next;
     }
     mstream_fmt(ms, "static int %S_upgrade(struct db* ctx)" NL "{" NL, PREFIX(root->prefix, data));
-    mstream_fmt(ms, "    return %S_migrate_to(ctx, %d);" NL, version);
-    mstream_cstr(ms, "}" NL);
+    mstream_fmt(ms, "    return %S_migrate_to(ctx, %d);" NL, PREFIX(root->prefix, data), max_version);
+    mstream_cstr(ms, "}" NL NL);
 }
 
 static void
 write_reinit_func(struct mstream* ms, const struct root* root, const char* data)
 {
-    int version = 0;
-    struct migration* m = root->upgrade;
-    while (m)
-    {
-        version = m->version + 1;
-        m = m->next;
-    }
-    mstream_fmt(ms, "static int %S_upgrade(struct db* ctx)" NL "{" NL, PREFIX(root->prefix, data));
-    mstream_fmt(ms, "    return %S_migrate_to(ctx, %d);" NL, version);
-    mstream_cstr(ms, "}" NL);
+    mstream_fmt(ms, "static int %S_reinit(struct db* ctx)" NL "{" NL, PREFIX(root->prefix, data));
+    write_migration_body(ms, root, data, 1);
+    mstream_cstr(ms, "}" NL NL);
 }
 
 static void
@@ -2496,16 +2520,16 @@ gen_header(const struct root* root, const char* data, const char* file_name,
     struct mstream ms = mstream_init_writeable();
 
     if (root->header_preamble.len)
-        mstream_str(&ms, root->header_preamble, data);
+        mstream_fmt(&ms, NL "%S" NL, root->header_preamble, data);
 
     mstream_fmt(&ms, "struct %S;" NL, PREFIX(root->prefix, data));
     mstream_fmt(&ms, "struct %S_interface" NL "{" NL, PREFIX(root->prefix, data));
 
     /* Hard-coded functions */
     mstream_fmt(&ms, "    struct %S* (*open)(const char* uri);" NL,
-            PREFIX(root->prefix, data));
+        PREFIX(root->prefix, data));
     mstream_fmt(&ms, "    void (*close)(struct %S* ctx);" NL,
-            PREFIX(root->prefix, data));
+        PREFIX(root->prefix, data));
     mstream_fmt(&ms, "    int (*version)(struct %S* ctx);" NL,
         PREFIX(root->prefix, data));
     mstream_fmt(&ms, "    int (*upgrade)(struct %S* ctx);" NL,
@@ -2594,7 +2618,7 @@ gen_header(const struct root* root, const char* data, const char* file_name,
                 PREFIX(root->prefix, data), PREFIX(root->prefix, data));
 
     if (root->header_postamble.len)
-        mstream_fmt(&ms, "%S" NL, root->header_postamble, data);
+        mstream_fmt(&ms, NL "%S" NL, root->header_postamble, data);
 
     /* Don't write header if it is identical to the existing one -- causes less
      * rebuilds */
@@ -2625,7 +2649,7 @@ gen_source(const struct root* root, const char* data, const char* file_name,
     struct mstream ms = mstream_init_writeable();
 
     if (root->source_includes.len)
-        mstream_str(&ms, root->source_includes, data);
+        mstream_fmt(&ms, NL "%S" NL NL, root->source_includes, data);
 
     mstream_cstr(&ms, "#include <stdlib.h>" NL);
     mstream_cstr(&ms, "#include <string.h>" NL);
@@ -2668,7 +2692,7 @@ gen_source(const struct root* root, const char* data, const char* file_name,
     }
 
     if (root->source_preamble.len)
-        mstream_str(&ms, root->source_preamble, data);
+        mstream_fmt(&ms, NL "%S" NL NL, root->source_preamble, data);
 
     /* ------------------------------------------------------------------------
      * Query implementations
@@ -2736,13 +2760,12 @@ gen_source(const struct root* root, const char* data, const char* file_name,
             mstream_fmt(&ms, ", %S %S", a->type, data, a->name, data);
             a = a->next;
         }
-        mstream_cstr(&ms, ")" NL "{");
-        mstream_str(&ms, f->body, data);
-        mstream_cstr(&ms, "}" NL NL);
+        mstream_cstr(&ms, ")" NL "{" NL);
+        mstream_fmt(&ms, NL "%S" NL, f->body, data);
+        mstream_cstr(&ms, NL "}" NL NL);
 
         f = f->next;
     }
-
 
     g = root->query_groups;
     while (g)
@@ -2760,9 +2783,9 @@ gen_source(const struct root* root, const char* data, const char* file_name,
                 mstream_fmt(&ms, ", %S %S", a->type, data, a->name, data);
                 a = a->next;
             }
-            mstream_cstr(&ms, ")" NL "{");
-            mstream_str(&ms, f->body, data);
-            mstream_cstr(&ms, "}" NL NL);
+            mstream_cstr(&ms, ")" NL "{" NL);
+            mstream_fmt(&ms, NL "%S" NL, f->body, data);
+            mstream_cstr(&ms, NL "}" NL NL);
 
             f = f->next;
         }
@@ -2827,6 +2850,8 @@ gen_source(const struct root* root, const char* data, const char* file_name,
     write_run_sql_stmts_func(&ms, root, data);
     write_version_func(&ms, root, data);
     write_migration_to_func(&ms, root, data);
+    write_upgrade_func(&ms, root, data);
+    write_reinit_func(&ms, root, data);
 
     /* ------------------------------------------------------------------------
      * Interface
@@ -2988,7 +3013,7 @@ gen_source(const struct root* root, const char* data, const char* file_name,
     }
 
     if (root->source_postamble.len)
-        mstream_str(&ms, root->source_postamble, data);
+        mstream_fmt(&ms, NL "%S", NL, root->source_postamble, data);
 
     /* Don't write source if it is identical to the existing one -- causes less
      * rebuilds */

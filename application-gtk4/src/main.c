@@ -433,16 +433,17 @@ int main(int argc, char** argv)
     if (vh_init() != 0)
         goto vh_init_failed;
 
-    int reinit_db = 0;
+    int reinit_db = 1;
     struct db_interface* dbi = db("sqlite3");
     struct db* db = dbi->open("vodhound.db");
     if (db == NULL)
         goto open_db_failed;
-    if (dbi->migrate(db, reinit_db) != 0)
+    if (dbi->upgrade(db) != 0)
         goto migrate_db_failed;
 
     if (reinit_db)
     {
+        dbi->reinit(db);
         import_param_labels_csv(dbi, db, "ParamLabels.csv");
         import_reframed_mapping_info(dbi, db, "migrations/mappingInfo.json");
         import_reframed_all(dbi, db);
