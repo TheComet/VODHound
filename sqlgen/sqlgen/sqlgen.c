@@ -2176,14 +2176,14 @@ write_migration_sql_stmts(struct mstream* ms, const struct root* root, const str
     while (m)
     {
         int p;
-        mstream_fmt(ms, "static const char %S_%s%d[] =" NL, PREFIX(root->prefix, data), type, m->version);
+        mstream_fmt(ms, "static const char* %S_%s%d =" NL, PREFIX(root->prefix, data), type, m->version);
         mstream_cstr(ms, "    \"");
         for (p = 0; p != m->sql.len; ++p)
         {
             if (data[m->sql.off + p] == '\n')
             {
                 if (p + 1 < m->sql.len)
-                    mstream_cstr(ms, " \"" NL "    \"");
+                    mstream_cstr(ms, "\\n\"" NL "    \"");
             }
             else if (data[m->sql.off + p] != '\r')
             {
