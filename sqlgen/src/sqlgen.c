@@ -48,7 +48,21 @@ struct mfile
 };
 
 #if defined(WIN32)
-wchar_t*
+static void
+print_last_win32_error(void)
+{
+    LPSTR msg;
+    size_t size = FormatMessageA(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        NULL,
+        GetLastError(),
+        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        (LPSTR)&msg,
+        0, NULL);
+    fprintf(stderr, "Error: %.*s", (int)size, msg);
+    LocalFree(msg);
+}
+static wchar_t*
 utf8_to_utf16(const char* utf8, int utf8_bytes)
 {
     int utf16_bytes = MultiByteToWideChar(CP_UTF8, 0, utf8, utf8_bytes, NULL, 0);
@@ -69,7 +83,7 @@ utf8_to_utf16(const char* utf8, int utf8_bytes)
 
     return utf16;
 }
-void
+static void
 utf_free(void* utf)
 {
     free(utf);
@@ -188,7 +202,10 @@ mfile_map_write(struct mfile* mf, const char* file_name, int size)
         FILE_ATTRIBUTE_NORMAL,  /* Default attributes */
         NULL);                  /* No attribute template */
     if (hFile == INVALID_HANDLE_VALUE)
+    {
+        print_last_win32_error();
         goto open_failed;
+    }
 
     mapping = CreateFileMappingW(
         hFile,                 /* File handle */
@@ -2742,8 +2759,11 @@ gen_header(const struct root* root, const char* data, const char* file_name,
     /* Don't write header if it is identical to the existing one -- causes less
      * rebuilds */
     if (mfile_map_read(&mf, file_name) == 0)
+    {
         if (mf.size == ms.idx && memcmp(mf.address, ms.address, mf.size) == 0)
             return 0;
+        mfile_unmap(&mf);
+    }
 
     if (mfile_map_write(&mf, file_name, ms.idx) != 0)
         return -1;
@@ -3134,8 +3154,11 @@ gen_source(const struct root* root, const char* data, const char* file_name,
     /* Don't write source if it is identical to the existing one -- causes less
      * rebuilds */
     if (mfile_map_read(&mf, file_name) == 0)
+    {
         if (mf.size == ms.idx && memcmp(mf.address, ms.address, mf.size) == 0)
             return 0;
+        mfile_unmap(&mf);
+    }
 
     if (mfile_map_write(&mf, file_name, ms.idx) != 0)
         return -1;

@@ -7,7 +7,7 @@ Generates sqlite3 C bindings from SQL statements.
 sqlgen consists of a single C89 compliant source file. All you have to do is
 compile it:
 ```sh
-gcc -o sqlgen sqlgen.c
+gcc -o sqlgen src/sqlgen.c
 ```
 
 You can now generate header/source file pairs for a particular backend with:
@@ -34,8 +34,9 @@ add_executable (my_project
 
 ## Minimalist example
 
-The header and source files are generated from a definition file, here, called ```mydb.sqlgen```. The most bare-bones
-definition file possible looks like the following:
+The header and source files are generated from a definition file, here, called
+```mydb.sqlgen```. The most bare-bones definition file possible looks like the
+following:
 ```c
 %option prefix="mydb"
 
@@ -48,7 +49,8 @@ definition file possible looks like the following:
 You can run this through ```sqlgen``` and inspect the header/source files to
 see the basic structure.
 
-There are 3 public functions generated, along with a scructure containing the query interface: 
+There are 3 public functions generated, along with a scructure containing the
+query interface: 
 ```c
 struct mydb;
 struct mydb_interface
