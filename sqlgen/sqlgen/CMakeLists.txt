@@ -1,11 +1,11 @@
-cmake_minimum_required (VERSION 3.3)
+cmake_minimum_required (VERSION 3.21)
 
 project ("sqlgen"
     LANGUAGES C
     VERSION 0.0.1)
 
 add_executable (sqlgen
-    "src/sqlgen.c")
+    "sqlgen.c")
 
 macro (sqlgen_target name)
     set (sqlgen_target_PARAM_OPTIONS)

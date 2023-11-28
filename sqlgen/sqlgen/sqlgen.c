@@ -1889,6 +1889,7 @@ again:
     {
         const char* sqlite_type = "";
         const char* cast = "";
+        const char* null_cmp = "";
 
         if (update_pass != a->update)
             continue;
@@ -1898,21 +1899,23 @@ again:
         first = 0;
 
         if (str_eq_cstr("uint64_t", a->type, data))
-            { sqlite_type = "int64"; cast = "(int64_t)"; }
+            { sqlite_type = "int64"; cast = "(int64_t)"; null_cmp = "(uint64_t)-1"; }
         else if (str_eq_cstr("int64_t", a->type, data))
-            { sqlite_type = "int64"; }
+            { sqlite_type = "int64"; null_cmp = "< 0"; }
         else if (str_eq_cstr("int", a->type, data))
-            { sqlite_type = "int"; }
+            { sqlite_type = "int"; null_cmp = "< 0"; }
+        else if (str_eq_cstr("uint32_t", a->type, data))
+            { sqlite_type = "int"; cast = "(int)"; null_cmp = "== (uint32_t)-1"; }
         else if (str_eq_cstr("uint16_t", a->type, data))
-            { sqlite_type = "int"; cast = "(int)"; }
+            { sqlite_type = "int"; cast = "(int)"; null_cmp = "== (uint16_t)-1"; }
         else if (str_eq_cstr("struct str_view", a->type, data))
-            { sqlite_type = "text"; }
+            { sqlite_type = "text"; null_cmp = "== NULL"; }
         else if (str_eq_cstr("const char*", a->type, data))
-            { sqlite_type = "text"; }
+            { sqlite_type = "text"; null_cmp = "== NULL"; }
 
         if (a->nullable)
         {
-            mstream_fmt(ms, "%S < 0 ? sqlite3_bind_null(ctx->", a->name, data);
+            mstream_fmt(ms, "%S %s ? sqlite3_bind_null(ctx->", a->name, data, null_cmp);
             write_func_name(ms, g, q, data);
             mstream_fmt(ms, ", %d) : ", i);
         }
@@ -1949,21 +1952,34 @@ write_sqlite_exec_callback(struct mstream* ms, const struct query_group* g, cons
     {
         const char* sqlite_type = "";
         const char* cast = "";
+        const char* null_value = "";
 
         if (str_eq_cstr("uint64_t", a->type, data))
-            { sqlite_type = "int64"; cast = "(uint64_t)"; }
+            { sqlite_type = "int64"; cast = "(uint64_t)"; null_value = "(uint64_t)-1"; }
         else if (str_eq_cstr("int64_t", a->type, data))
-            sqlite_type = "int64";
+            { sqlite_type = "int64"; null_value = "-1"; }
         else if (str_eq_cstr("int", a->type, data))
-            sqlite_type = "int";
-        else if (str_eq_cstr("int", a->type, data))
-            { sqlite_type = "int"; cast = "(uint16_t)"; }
+            { sqlite_type = "int"; null_value = "-1"; }
+        else if (str_eq_cstr("uint32_t", a->type, data))
+            { sqlite_type = "int"; cast = "(uint32_t)"; null_value = "(uint32_t)-1"; }
+        else if (str_eq_cstr("uint16_t", a->type, data))
+            { sqlite_type = "int"; cast = "(uint16_t)"; null_value = "(uint16_t)-1"; }
         else if (str_eq_cstr("struct str_view", a->type, data))
-            { sqlite_type = "text"; cast = "(const char*)"; }
+            { sqlite_type = "text"; cast = "(const char*)"; null_value = "NULL"; }
         else if (str_eq_cstr("const char*", a->type, data))
-            { sqlite_type = "text"; cast = "(const char*)"; }
+            { sqlite_type = "text"; cast = "(const char*)"; null_value = "NULL"; }
 
-        mstream_fmt(ms, "                %ssqlite3_column_%s(ctx->", cast, sqlite_type);
+        mstream_cstr(ms, "                ");
+        if (a->nullable)
+        {
+            mstream_cstr(ms, "sqlite3_column_type(ctx->");
+            write_func_name(ms, g, q, data);
+            mstream_fmt(ms, ", %d) == SQLITE_NULL ? ", i);
+            mstream_cstr(ms, null_value);
+            mstream_cstr(ms, " : ");
+        }
+
+        mstream_fmt(ms, "%ssqlite3_column_%s(ctx->", cast, sqlite_type);
         write_func_name(ms, g, q, data);
         mstream_fmt(ms, ", %d)," NL, i);
     }
@@ -2229,7 +2245,7 @@ write_run_sql_stmts_func(struct mstream* ms, const struct root* root, const char
 static void
 write_version_func(struct mstream* ms, const struct root* root, const char* data)
 {
-    mstream_fmt (ms, "static int %S_version(struct db* ctx)" NL "{" NL, PREFIX(root->prefix, data));
+    mstream_fmt (ms, "static int %S_version(struct %S* ctx)" NL "{" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
     mstream_cstr(ms, "    int ret, version = 0;" NL);
     mstream_cstr(ms, "    sqlite3_stmt* stmt;" NL NL);
 
@@ -2283,6 +2299,7 @@ write_migration_body(struct mstream* ms, const struct root* root, const char* da
     mstream_cstr(ms, "    }" NL NL);
 
     mstream_cstr(ms, "    switch (version)" NL "    {" NL);
+    mstream_cstr(ms, "        default:" NL);
     m = root->downgrade;
     while (m)
     {
@@ -2298,9 +2315,6 @@ write_migration_body(struct mstream* ms, const struct root* root, const char* da
         m = m->next;
     }
     mstream_cstr(ms, "        case 0: break;" NL);
-    mstream_cstr(ms, "        default:" NL);
-    mstream_fmt (ms, "            %S(\"Failed to downgrade db: Unknown version %%d\", version);" NL, LOG_ERR(root->log_err, data));
-    mstream_cstr(ms, "            goto migration_failed;" NL);
     mstream_cstr(ms, "    }" NL NL);
 
     mstream_cstr(ms, "    switch (version)" NL "    {" NL);
@@ -2320,7 +2334,7 @@ write_migration_body(struct mstream* ms, const struct root* root, const char* da
     }
     mstream_fmt (ms, "        case %d: break;" NL, max_version);
     mstream_cstr(ms, "        default:" NL);
-    mstream_fmt(ms, "            %S(\"Failed to upgrade db: Unknown version %%d\", version);" NL, LOG_ERR(root->log_err, data));
+    mstream_fmt(ms, "            %S(\"Failed to upgrade db: Unknown version %%d\\n\", version);" NL, LOG_ERR(root->log_err, data));
     mstream_cstr(ms, "            goto migration_failed;" NL);
     mstream_cstr(ms, "    }" NL NL);
 
@@ -2358,7 +2372,7 @@ write_migration_body(struct mstream* ms, const struct root* root, const char* da
 static void
 write_migration_to_func(struct mstream* ms, const struct root* root, const char* data)
 {
-    mstream_fmt(ms, "static int %S_migrate_to(struct db* ctx, int target_version)" NL "{" NL, PREFIX(root->prefix, data));
+    mstream_fmt(ms, "static int %S_migrate_to(struct %S* ctx, int target_version)" NL "{" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
     write_migration_body(ms, root, data, 0);
     mstream_cstr(ms, "}" NL NL);
 }
@@ -2373,7 +2387,7 @@ write_upgrade_func(struct mstream* ms, const struct root* root, const char* data
         max_version = m->version;
         m = m->next;
     }
-    mstream_fmt(ms, "static int %S_upgrade(struct db* ctx)" NL "{" NL, PREFIX(root->prefix, data));
+    mstream_fmt(ms, "static int %S_upgrade(struct %S* ctx)" NL "{" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
     mstream_fmt(ms, "    return %S_migrate_to(ctx, %d);" NL, PREFIX(root->prefix, data), max_version);
     mstream_cstr(ms, "}" NL NL);
 }
@@ -2381,7 +2395,7 @@ write_upgrade_func(struct mstream* ms, const struct root* root, const char* data
 static void
 write_reinit_func(struct mstream* ms, const struct root* root, const char* data)
 {
-    mstream_fmt(ms, "static int %S_reinit(struct db* ctx)" NL "{" NL, PREFIX(root->prefix, data));
+    mstream_fmt(ms, "static int %S_reinit(struct %S* ctx)" NL "{" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
     write_migration_body(ms, root, data, 1);
     mstream_cstr(ms, "}" NL NL);
 }
@@ -2958,7 +2972,7 @@ gen_source(const struct root* root, const char* data, const char* file_name,
     q = root->queries;
     while (q)
     {
-        mstream_fmt(&ms, "    sqlite3_finalize(ctx->%S);" NL, q->name.len, data + q->name.off);
+        mstream_fmt(&ms, "    sqlite3_finalize(ctx->%S);" NL, q->name, data);
         q = q->next;
     }
     /* Grouped queries */
@@ -3071,17 +3085,63 @@ gen_source(const struct root* root, const char* data, const char* file_name,
         }
 
         /* Open and close wrappers */
-        mstream_fmt(&ms, "static struct %S* dbg_%S_open(const char* uri)" NL "{" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
-        mstream_fmt(&ms, "    %S(\"Opening database \\\"%%s\\\"\\n\", uri);" NL, LOG_DBG(root->log_dbg, data));
-        mstream_cstr(&ms, "    return db_sqlite3.open(uri);" NL);
+        mstream_fmt (&ms, "static struct %S* dbg_%S_open(const char* uri)" NL "{" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
+        mstream_fmt (&ms, "    struct %S* ctx;" NL, PREFIX(root->prefix, data));
+        mstream_fmt (&ms, "    %S(\"Opening database \\\"%%s\\\"\\n\", uri);" NL, LOG_DBG(root->log_dbg, data));
+        mstream_cstr(&ms, "    ctx = db_sqlite3.open(uri);" NL);
+        mstream_fmt (&ms, "    %S(\"retval=%%p\\n\", ctx);" NL, LOG_DBG(root->log_dbg, data));
+        mstream_cstr(&ms, "    return ctx;" NL);
         mstream_cstr(&ms, "}" NL NL);
-        mstream_fmt(&ms, "static void dbg_%S_close(struct %S* ctx)" NL "{" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
-        mstream_fmt(&ms, "    %S(\"Closing database\\n\");" NL, LOG_DBG(root->log_dbg, data));
+
+        mstream_fmt (&ms, "static void dbg_%S_close(struct %S* ctx)" NL "{" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
+        mstream_fmt (&ms, "    %S(\"Closing database\\n\");" NL, LOG_DBG(root->log_dbg, data));
         mstream_cstr(&ms, "    db_sqlite3.close(ctx);" NL);
+        mstream_cstr(&ms, "}" NL NL);
+        
+        mstream_fmt (&ms, "static int dbg_%S_version(struct %S* ctx)" NL "{" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
+        mstream_cstr(&ms, "    int version;" NL);
+        mstream_fmt (&ms, "    %S(\"Getting version...\\n\");" NL, LOG_DBG(root->log_dbg, data));
+        mstream_cstr(&ms, "    version = db_sqlite3.version(ctx);" NL);
+        mstream_fmt (&ms, "    %S(\"retval=%%d\\n\", version);" NL, LOG_DBG(root->log_dbg, data));
+        mstream_cstr(&ms, "    return version;" NL);
+        mstream_cstr(&ms, "}" NL NL);
+
+        mstream_fmt (&ms, "static int dbg_%S_upgrade(struct %S* ctx)" NL "{" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
+        mstream_cstr(&ms, "    int ret;" NL);
+        mstream_fmt (&ms, "    %S(\"Upgrading db...\\n\");" NL, LOG_DBG(root->log_dbg, data));
+        mstream_cstr(&ms, "    ret = db_sqlite3.upgrade(ctx);" NL);
+        mstream_fmt (&ms, "    %S(\"retval=%%d\\n\", ret);" NL, LOG_DBG(root->log_dbg, data));
+        mstream_cstr(&ms, "    return ret;" NL);
+        mstream_cstr(&ms, "}" NL NL);
+        
+        mstream_fmt (&ms, "static int dbg_%S_reinit(struct %S* ctx)" NL "{" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
+        mstream_cstr(&ms, "    int ret;" NL);
+        mstream_fmt (&ms, "    %S(\"Re-initializing db...\\n\");" NL, LOG_DBG(root->log_dbg, data));
+        mstream_cstr(&ms, "    ret = db_sqlite3.reinit(ctx);" NL);
+        mstream_fmt (&ms, "    %S(\"retval=%%d\\n\", ret);" NL, LOG_DBG(root->log_dbg, data));
+        mstream_cstr(&ms, "    return ret;" NL);
+        mstream_cstr(&ms, "}" NL NL);
+        
+        mstream_fmt (&ms, "static int dbg_%S_migrate_to(struct %S* ctx, int target_version)" NL "{" NL, PREFIX(root->prefix, data), PREFIX(root->prefix, data));
+        mstream_cstr(&ms, "    int ret;" NL);
+        mstream_fmt (&ms, "    %S(\"Migrating db to version: %%d...\\n\", target_version);" NL, LOG_DBG(root->log_dbg, data));
+        mstream_cstr(&ms, "    ret = db_sqlite3.migrate_to(ctx, target_version);" NL);
+        mstream_fmt (&ms, "    %S(\"retval=%%d\\n\", ret);" NL, LOG_DBG(root->log_dbg, data));
+        mstream_cstr(&ms, "    return ret;" NL);
         mstream_cstr(&ms, "}" NL NL);
 
         mstream_fmt(&ms, "static struct %S_interface dbg_db_sqlite3 = {" NL, PREFIX(root->prefix, data));
-        mstream_fmt(&ms, "    dbg_%S_open," NL "    dbg_%S_close," NL,
+        mstream_fmt(&ms,
+            "    dbg_%S_open," NL
+            "    dbg_%S_close," NL
+            "    dbg_%S_version," NL
+            "    dbg_%S_upgrade," NL
+            "    dbg_%S_reinit," NL
+            "    dbg_%S_migrate_to," NL,
+                PREFIX(root->prefix, data),
+                PREFIX(root->prefix, data),
+                PREFIX(root->prefix, data),
+                PREFIX(root->prefix, data),
                 PREFIX(root->prefix, data),
                 PREFIX(root->prefix, data));
         /* Functions */

@@ -24,7 +24,7 @@ add_subdirectory ("sqlgen")
 This gives you access to a CMake macro:
 ```cmake
 sqlgen_target (mydb
-    INPUT db.sqlgen
+    INPUT mydb.sqlgen
     BACKENDS sqlite3)
 
 add_executable (my_project
@@ -41,7 +41,7 @@ following:
 %option prefix="mydb"
 
 %source-includes {
-    #include "sqlite/sqlite3.h"
+    #include "sqlite3.h"
     #include "mydb.sqlgen.h"
 }
 ```
@@ -49,7 +49,7 @@ following:
 You can run this through ```sqlgen``` and inspect the header/source files to
 see the basic structure.
 
-There are 3 public functions generated, along with a scructure containing the
+There are 3 public functions generated, along with a structure containing the
 query interface: 
 ```c
 struct mydb;
@@ -57,6 +57,10 @@ struct mydb_interface
 {
     struct mydb* (*open)(const char* uri);
     void (*close)(struct mydb* ctx);
+    int (*version)(struct mydb* ctx);
+    int (*upgrade)(struct mydb* ctx);
+    int (*reinit)(struct mydb* ctx);
+    int (*migrate_to)(struct mydb* ctx, int target_version);
 };
 
 int mydb_init(void);
@@ -64,33 +68,123 @@ void mydb_deinit(void);
 struct mydb_interface* mydb(const char* backend);
 ```
 
+You will notice that all symbols begin with "mydb". This is set using the option
+```prefix="mydb"```. This option is optional, but it is recommended to give
+the database a custom name in case you end up having multiple databases. If not
+specified, the prefix will default to "sqlgen".
+
 The most basic program, thus, looks like this:
 ```c
 #include "mydb.sqlgen.h"
-
-int main()
-{
-    mydb_init();
+int main() {
+    mydb_init();  /* Global init */
     struct mydb_interface* dbi = mydb("sqlite3");
-    struct mydb* db = dbi->open("test.db");
+    struct mydb* db = dbi->open("example.db");
+    
     /* do queries here */
+    
     dbi->close(db);
     mydb_deinit();
     return 0;
 }
-
 ```
+## Migrations
+
+The first step for any database is creating its structure. ```sqlgen``` has
+two directives for managing migrations: ```%upgrade``` and ```%downgrade```:
+
+
+```c
+%option prefix="mydb"
+
+%upgrade 1 {
+    CREATE TABLE IF NOT EXISTS people (
+        id INTEGER PRIMARY KEY NOT NULL,
+        first_name TEXT NOT NULL,
+        last_name TEXT NOT NULL,
+        UNIQUE(first_name, LAST_NAME));
+}
+%downgrade 0 {
+    DROP TABLE IF EXISTS people;
+}
+
+%source-includes {
+    #include "sqlite3.h"
+    #include "mydb.sqlgen.h"
+}
+```
+
+You will notice the number following```%upgrade 1 { ... }``` and ```%downgrade 0 { ... }```.
+These numbers specify the version you are upgrading/downgrading to. A fresh, empty database
+starts at version 0, so the initial migration is an upgrade to version 1. Conversely,
+to undo this upgrade, we add the opposite statements to downgrade back to version 0.
+
+How does this look in code? Well, there are a few options:
+
+```c
+#include "mydb.sqlgen.h"
+int main() {
+    ...
+    dbi->upgrade(db);        /* Runs all migrations up to the most recent version */
+    dbi->migrate_to(db, 1);  /* Specifically migrates to version 1 */
+    dbi->reinit(db);         /* Downgrades to 0, then upgrades to most recent version */
+    ...
+}
+```
+
+You likely want to be using ```dbi->upgrade(db)``` in most cases. This will
+first check the current version of the database, and then apply all ```%upgrade```
+directives that have a newer version than the current version, in order. If
+the database is already up-to-date then ```dbi->upgrade(db)``` is a no-op.
+
+During development,  it is often useful to re-initialize the database because
+you'll be making tweaks to the schema iteratively. You might consider doing
+something like the following to make things easier:
+```c
+if (argv_contains(argc, argv, "--reinit-db"))
+   dbi->reinit(db);
+else
+   dbi->upgrade(db);
+```
+
+And finally, ```dbi->migrate_to(db, target_version)``` is a combination of both. If
+the current version is higher than the target version, then all ```%downgrade```
+directives down to the target version will be executed. If the current version
+is lower than the target version, then all ```%upgrade``` directives up to the
+target version will be executed.
+
 ## Adding Queries
 
-Let's go back to our definition file and add some queries:
+Let's go back to our definition file and add some more queries:
 
 ```c
 %option prefix="mydb"
 //%option debug-layer
 
-%source-includes {
-    #include "sqlite/sqlite3.h"
-    #include "mydb.sqlgen.h"
+%upgrade 1 {
+    CREATE TABLE IF NOT EXISTS people (
+        id INTEGER PRIMARY KEY NOT NULL,
+        first_name TEXT NOT NULL,
+        last_name TEXT NOT NULL,
+        UNIQUE(first_name, LAST_NAME));
+}
+%upgrade 2 {
+    CREATE TABLE pets (
+        id INTEGER PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        fave_food TEXT NOT NULL,
+        UNIQUE(name));
+    CREATE TABLE owned_pets (
+        person_id INTEGER NOT NULL,
+        pet_id INTEGER NOT NULL,
+        UNIQUE(person_id, pet_id));
+}
+%downgrade 1 {
+    DROP TABLE IF EXISTS owned_pets;
+    DROP TABLE IF EXISTS pets;
+}
+%downgrade 0 {
+    DROP TABLE IF EXISTS people;
 }
 
 %query person,add_or_get(const char* first_name, const char* last_name) {
@@ -117,24 +211,11 @@ Let's go back to our definition file and add some queries:
     }
     callback const char* name, const char* fave_food
 }
-```
 
-Make sure to also create the relevant tables in the db using sqlite3's CLI:
-```sql
-CREATE TABLE people (
-    id INTEGER PRIMARY KEY NOT NULL,
-    first_name TEXT NOT NULL,
-    last_name TEXT NOT NULL,
-    UNIQUE(first_name, LAST_NAME));
-CREATE TABLE pets (
-    id INTEGER PRIMARY KEY NOT NULL,
-    name TEXT NOT NULL,
-    fave_food TEXT NOT NULL,
-    UNIQUE(name));
-CREATE TABLE owned_pets (
-    person_id INTEGER NOT NULL,
-    pet_id INTEGER NOT NULL,
-    UNIQUE(person_id, pet_id));
+%source-includes {
+    #include "sqlite3.h"
+    #include "mydb.sqlgen.h"
+}
 ```
 
 In the main program, we can now add some people/pets and then query them:
@@ -153,6 +234,8 @@ int main()
     mydb_init();
     struct mydb_interface* dbi = mydb("sqlite3");
     struct mydb* db = dbi->open("test.db");
+    dbi->upgrade(db);
+    printf("DB version: %d\n", dbi->version(db));
 
     int person_id = dbi->person.add_or_get(db, "The", "Comet");
     int pet_id = dbi->pet.add_or_get(db, "Floofy Fluffballs", "Mouse");
@@ -172,6 +255,7 @@ int main()
 
 Running this program will print:
 ```
+DB version: 2
 TheComet's pets:
   Floofy Fluffballs likes Mouse
   Shithead (pronounced shith-ead) likes Mouse
@@ -191,29 +275,36 @@ interface and print out all of the parameters and results:
 
 The output now looks much more verbose:
 ```
-Opening database "test.db"
+Opening database "example.db"
+retval=0000022A711737D0
+Upgrading db...
+retval=0
+Getting version...
+retval=2
+DB version: 2
 db_sqlite3.person.add_or_get("The", "Comet")
-retval=8
+retval=1
 INSERT INTO people (first_name, last_name) VALUES ('The', 'Comet') ON CONFLICT DO UPDATE SET first_name=excluded.first_name RETURNING id;
 
 db_sqlite3.pet.add_or_get("Floofy Fluffballs", "Mouse")
-retval=5
+retval=1
 INSERT INTO pets (name, fave_food) VALUES ('Floofy Fluffballs', 'Mouse') ON CONFLICT DO UPDATE SET name=excluded.name RETURNING id;
 
-db_sqlite3.person.associate_pet(8, 5)
+db_sqlite3.person.associate_pet(1, 1)
 retval=0
-INSERT OR IGNORE INTO owned_pets (person_id, pet_id) VALUES (8, 5);
+INSERT OR IGNORE INTO owned_pets (person_id, pet_id) VALUES (1, 1);
 
 db_sqlite3.pet.add_or_get("Shithead (pronounced shith-ead)", "Mouse")
-retval=6
+retval=2
 INSERT INTO pets (name, fave_food) VALUES ('Shithead (pronounced shith-ead)', 'Mouse') ON CONFLICT DO UPDATE SET name=excluded.name RETURNING id;
 
-db_sqlite3.person.associate_pet(8, 6)
+db_sqlite3.person.associate_pet(1, 2)
 retval=0
-INSERT OR IGNORE INTO owned_pets (person_id, pet_id) VALUES (8, 6);
+INSERT OR IGNORE INTO owned_pets (person_id, pet_id) VALUES (1, 2);
 
 TheComet's pets:
 db_sqlite3.person.get_pet_names("The", "Comet")
+  name | fave_food
   "Floofy Fluffballs" | "Mouse"
   Floofy Fluffballs likes Mouse
   "Shithead (pronounced shith-ead)" | "Mouse"
@@ -275,6 +366,18 @@ will have the signature ```int my_callback(int a, const char* c, void* user_ptr)
 
 Every callback always takes a ```void*``` as its last parameter for passing on custom
 data. This pointer is passed in to the generated query function ```dbi->example(a, b, my_callback, user_ptr);```
+
+```c
+static int on_row(int a, const char* c, void* user_ptr) {
+    return 1;  /* Indicates that you wish to stop iterating over rows */
+    return 0;  /* Indicates that you wish to continue iterating over rows */
+    return -1; /* Indicates an error. Iteration will stop */
+}
+
+/* Returns the same value that "on_row()" returns, which means we can error check */
+if (dbi->example(db, 1, 2, "test", on_row, NULL) < 0)
+    error();
+```
 
 ### Query Types
 
@@ -371,7 +474,7 @@ by specifying a custom ```stmt```
 
 ### Custom statements
 
-In call of the above examples, one can replace ```table``` with ```stmt``` and achieve
+In all of the above examples, one can replace ```table``` with ```stmt``` and achieve
 the same result. The statement can span multiple lines, and is copied verbatim into
 the call to ```sqlite3_prepare_v2()```.
 
@@ -398,6 +501,65 @@ arguments to ```callback```.
     callback const char* name, const char* occupation, int salary
 }
 ```
+
+Sometimes, you might run into a situation where you need to bind the same
+parameter twice, or change the bind order. For this, you can use the ```bind```
+statement to specify the order:
+```c
+%query example(uint64_t time_stamp) {
+    type select-all
+    stmt {
+        SELECT name, birth_date, death_date
+        FROM people
+        WHERE birth_date >= ? AND death_date <= ?;
+    }
+    bind time_stamp, time_stamp
+    callback const char* name, uint64_t birth_date, uint64_t death_date
+}
+```
+
+### NULL parameters
+
+If you are passing values in to the db that may be null, you can mark those in
+the ```%query``` statement with ```null```:
+```c
+%query example(const char* name null, int age null) {
+    ...
+}
+```
+This will generate the following binding code:
+```c
+if ((ret = name == NULL ? sqlite3_bind_null(ctx->test, 1) : sqlite3_bind_text(ctx->test, 1, name, -1, SQLITE_STATIC)) != SQLITE_OK ||
+    (ret = age < 0 ? sqlite3_bind_null(ctx->test, 2) : sqlite3_bind_int(ctx->test, 2, age)) != SQLITE_OK)
+{
+    sqlgen_error(ret, sqlite3_errstr(ret), sqlite3_errmsg(ctx->db));
+    return -1;
+}
+```
+
+In other words, by passing in a negative value for ```age```, or by passing in
+NULL for ```name```, the database will bind NULL in those cases.
+
+When returning NULL values out of the db, you should also qualify those columns
+in the ```callback``` statement with ```null```:
+```c
+%query example(...) {
+    type select-all
+    table people
+    callback const char* name null, int age null
+}
+```
+
+This will generate the following callback code:
+```c
+on_row(
+    sqlite3_column_type(ctx->example_get, 0) == SQLITE_NULL ? NULL : (const char*)sqlite3_column_text(ctx->example_get, 0),
+    sqlite3_column_type(ctx->example_get, 1) == SQLITE_NULL ? -1 : sqlite3_column_int(ctx->example_get, 1),
+    user_ptr);
+```
+In other words, if the value in the db's column is NULL, in your callback, you will either
+receive NULL if the value is a string, or -1 if the value is an integer. When dealing with unsigned
+types, you will receive ```(uint64_t)-1```, ```(uint32_t)-1```, etc.
 
 ### Query Groups and Global Queries
 
