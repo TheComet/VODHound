@@ -61,8 +61,8 @@ float line_cross(vec2 uv, vec2 center, vec2 blur) {\n\
 }\n\
 \n\
 float rect(vec2 uv, vec2 center, vec2 dims, vec2 blur) {\n\
-    float band1 = band(uv.x, center.x-dims.x, center.x+dims.x, blur.x);\n\
-    float band2 = band(uv.y, center.y-dims.y, center.y+dims.y, blur.y);\n\
+    float band1 = band(uv.x, center.x-dims.x/2.0, center.x+dims.x/2.0, blur.x);\n\
+    float band2 = band(uv.y, center.y-dims.y/2.0, center.y+dims.y/2.0, blur.y);\n\
     return band1 * band2;\n\
 }\n\
 \n\
@@ -192,8 +192,9 @@ struct plugin_ctx
     struct db* db;
 
     struct gfx gfx;
-    struct rect* place_rect;
-    struct rect* resize_rect;
+    unsigned char drag_resize;
+    struct rect* drag_rect;
+    struct point drag_start;
     struct point drag_offset;
 
     /* These are loaded from the video player plugin */
@@ -419,6 +420,31 @@ scale_canvas_to_texture(struct plugin_ctx* ctx, struct point p)
     p.y = (int)((((GLfloat)p.y/canvas_height) * aspecty) * texture_height);
     return p;
 }
+static void
+drag_update_rect(double x, double y, struct plugin_ctx* ctx)
+{
+    struct point dp = {
+        (int)x,
+        (int)y
+    };
+
+    if (ctx->drag_rect == NULL)
+        return;
+    dp = scale_canvas_to_texture(ctx, dp);
+
+    if (ctx->drag_resize == 0)
+    {
+        ctx->drag_rect->center.x = ctx->drag_start.x + ctx->drag_offset.x + dp.x;
+        ctx->drag_rect->center.y = ctx->drag_start.y + ctx->drag_offset.y + dp.y;
+    }
+    else
+    {
+        ctx->drag_rect->center.x = ctx->drag_start.x + ctx->drag_offset.x + (dp.x - ctx->drag_offset.x) / 2;
+        ctx->drag_rect->center.y = ctx->drag_start.y + ctx->drag_offset.y + (dp.y - ctx->drag_offset.y) / 2;
+        ctx->drag_rect->dims.x = abs(dp.x - ctx->drag_offset.x);
+        ctx->drag_rect->dims.y = abs(dp.y - ctx->drag_offset.y);
+    }
+}
 
 static void
 drag_place_begin(GtkGestureDrag* gesture, double x, double y, struct plugin_ctx* ctx)
@@ -433,26 +459,32 @@ drag_place_begin(GtkGestureDrag* gesture, double x, double y, struct plugin_ctx*
         if (p.x > r->center.x - r->dims.x && p.x < r->center.x + r->dims.x &&
             p.y > r->center.y - r->dims.y && p.y < r->center.y + r->dims.y)
         {
-            ctx->place_rect = NULL;
-            ctx->resize_rect = r;
-            ctx->drag_offset.x = p.x - r->center.x;
-            ctx->drag_offset.y = p.y - r->center.y;
+            int signx = p.x > r->center.x ? 1 : -1;
+            int signy = p.y > r->center.y ? 1 : -1;
+            ctx->drag_resize = 1;
+            ctx->drag_start = p;
+            ctx->drag_offset.x = r->center.x - p.x - r->dims.x / 2 * signx;
+            ctx->drag_offset.y = r->center.y - p.y - r->dims.y / 2 * signy;
+            ctx->drag_rect = r;
+            drag_update_rect(0, 0, ctx);
+            gtk_gl_area_queue_render(GTK_GL_AREA(ctx->video_canvas));
             return;
         }
     VEC_END_EACH
 
-    ctx->place_rect = NULL;
-    ctx->resize_rect = vec_emplace(&ctx->gfx.rects);
-    ctx->resize_rect->center = p;
-    ctx->resize_rect->dims.x = 10;
-    ctx->resize_rect->dims.y = 10;
+    ctx->drag_resize = 1;
+    ctx->drag_start = p;
     ctx->drag_offset.x = 0;
     ctx->drag_offset.y = 0;
+    ctx->drag_rect = vec_emplace(&ctx->gfx.rects);
+    ctx->drag_rect->center = p;
+    ctx->drag_rect->dims.x = 10;
+    ctx->drag_rect->dims.y = 10;
     gtk_gl_area_queue_render(GTK_GL_AREA(ctx->video_canvas));
 }
 
 static void
-drag_resize_begin(GtkGestureDrag* gesture, double x, double y, struct plugin_ctx* ctx)
+drag_move_begin(GtkGestureDrag* gesture, double x, double y, struct plugin_ctx* ctx)
 {
     struct point p = {
         (int)x,
@@ -464,68 +496,35 @@ drag_resize_begin(GtkGestureDrag* gesture, double x, double y, struct plugin_ctx
         if (p.x > r->center.x - r->dims.x && p.x < r->center.x + r->dims.x &&
             p.y > r->center.y - r->dims.y && p.y < r->center.y + r->dims.y)
         {
-            ctx->resize_rect = NULL;
-            ctx->place_rect = r;
-            ctx->drag_offset.x = r->center.x;
-            ctx->drag_offset.y = r->center.y;
+            ctx->drag_resize = 0;
+            ctx->drag_start = p;
+            ctx->drag_offset.x = r->center.x - p.x;
+            ctx->drag_offset.y = r->center.y - p.y;
+            ctx->drag_rect = r;
             return;
         }
     VEC_END_EACH
 
-    ctx->place_rect = NULL;
-    ctx->resize_rect = NULL;
+    /* Nothing was selected, disable dragging/resizing */
+    ctx->drag_rect = NULL;
 }
 
 static void
 drag_update(GtkGestureDrag* gesture, double x, double y, struct plugin_ctx* ctx)
 {
-    struct point p = {
-        (int)x,
-        (int)y
-    };
-    p = scale_canvas_to_texture(ctx, p);
-
-    if (ctx->resize_rect)
-    {
-        ctx->resize_rect->dims.x = abs(p.x + ctx->drag_offset.x);
-        ctx->resize_rect->dims.y = abs(p.y + ctx->drag_offset.y);
-    }
-
-    if (ctx->place_rect)
-    {
-        ctx->place_rect->center.x = p.x + ctx->drag_offset.x;
-        ctx->place_rect->center.y = p.y + ctx->drag_offset.y;
-    }
-
+    drag_update_rect(x, y, ctx);
     gtk_gl_area_queue_render(GTK_GL_AREA(ctx->video_canvas));
 }
 
 static void
 drag_end(GtkGestureDrag* gesture, double x, double y, struct plugin_ctx* ctx)
 {
-    struct point p = {
-        (int)x,
-        (int)y
-    };
-    p = scale_canvas_to_texture(ctx, p);
+    drag_update_rect(x, y, ctx);
 
-    if (ctx->resize_rect)
-    {
-        ctx->resize_rect->dims.x = abs(p.x + ctx->drag_offset.x);
-        ctx->resize_rect->dims.y = abs(p.y + ctx->drag_offset.y);
-
-        if (ctx->resize_rect->dims.x < 10 || ctx->resize_rect->dims.y < 10)
-        {
+    if (ctx->drag_rect)
+        if (ctx->drag_rect->dims.x < 10 || ctx->drag_rect->dims.y < 10)
             vec_erase_index(&ctx->gfx.rects,
-                vec_find(&ctx->gfx.rects, ctx->resize_rect));
-        }
-    }
-
-    if (ctx->place_rect)
-    {
-        ctx->place_rect->center.x = p.x + ctx->drag_offset.x;
-        ctx->place_rect->center.y = p.y + ctx->drag_offset.y;
-    }
+                vec_find(&ctx->gfx.rects, ctx->drag_rect));
 
     gtk_gl_area_queue_render(GTK_GL_AREA(ctx->video_canvas));
 }
@@ -579,7 +578,7 @@ static GtkWidget* ui_create(struct plugin_ctx* ctx)
     drag = gtk_gesture_drag_new();
     gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(drag), GDK_BUTTON_SECONDARY);
     gtk_widget_add_controller(ctx->video_canvas, GTK_EVENT_CONTROLLER(drag));
-    g_signal_connect(drag, "drag-begin", G_CALLBACK(drag_resize_begin), ctx);
+    g_signal_connect(drag, "drag-begin", G_CALLBACK(drag_move_begin), ctx);
     g_signal_connect(drag, "drag-update", G_CALLBACK(drag_update), ctx);
     g_signal_connect(drag, "drag-end", G_CALLBACK(drag_end), ctx);
 
