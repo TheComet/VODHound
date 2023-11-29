@@ -7,7 +7,7 @@ Generates sqlite3 C bindings from SQL statements.
 sqlgen consists of a single C89 compliant source file. All you have to do is
 compile it:
 ```sh
-gcc -o sqlgen src/sqlgen.c
+gcc -o sqlgen sqlgen/sqlgen.c
 ```
 
 You can now generate header/source file pairs for a particular backend with:

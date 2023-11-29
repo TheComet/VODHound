@@ -9,3 +9,5 @@ CMakeLists.txt.user
 
 # Other files
 *.xcf
+sqlgen/.git
+

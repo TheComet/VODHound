@@ -192,7 +192,6 @@ struct plugin_ctx
     struct db* db;
 
     struct gfx gfx;
-    unsigned char drag_resize;
     struct rect* drag_rect;
     struct point drag_start;
     struct point drag_offset;
@@ -201,6 +200,8 @@ struct plugin_ctx
     struct plugin_lib video_plugin;
     struct plugin_ctx* video_ctx;
     GtkWidget* video_canvas;
+
+    unsigned drag_resize : 1;
 };
 
 static int on_scan_plugin(struct plugin_lib lib, void* user)
