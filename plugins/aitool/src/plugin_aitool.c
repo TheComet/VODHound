@@ -1,3 +1,5 @@
+#include "vh/db.h"
+#include "vh/frame_data.h"
 #include "vh/log.h"
 #include "vh/mem.h"
 #include "vh/plugin.h"
@@ -191,6 +193,8 @@ struct plugin_ctx
     struct db_interface* dbi;
     struct db* db;
 
+    struct frame_data fdata;
+
     struct gfx gfx;
     struct rect* drag_rect;
     struct point drag_start;
@@ -198,7 +202,7 @@ struct plugin_ctx
 
     /* These are loaded from the video player plugin */
     struct plugin_lib video_plugin;
-    struct plugin_ctx* video_ctx;
+    void* video_ctx;
     GtkWidget* video_canvas;
 
     unsigned drag_resize : 1;
@@ -232,6 +236,8 @@ create(GTypeModule* type_module, struct db_interface* dbi, struct db* db)
     ctx->type_module = type_module;
     ctx->dbi = dbi;
     ctx->db = db;
+
+    frame_data_init(&ctx->fdata);
 
     ctx->video_plugin.handle = NULL;
     ctx->video_ctx = NULL;
@@ -530,6 +536,75 @@ drag_end(GtkGestureDrag* gesture, double x, double y, struct plugin_ctx* ctx)
     gtk_gl_area_queue_render(GTK_GL_AREA(ctx->video_canvas));
 }
 
+static gboolean
+shortcut_prev_motion(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
+{
+    struct plugin_ctx* ctx = user_pointer;
+
+    return TRUE;
+}
+
+static gboolean
+shortcut_next_motion(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
+{
+    int i;
+    uint64_t motion;
+    struct plugin_ctx* ctx = user_pointer;
+    struct video_player_interface* vi = ctx->video_plugin.i->video;
+    void* vctx = ctx->video_ctx;
+
+    /* Get current offset in milliseconds */
+    uint64_t ts = vi->offset(vctx, 1, 1000);
+
+    int player_idx = 1;
+
+    for (i = 0; i != ctx->fdata.frame_count; ++i)
+        if (ctx->fdata.timestamp[player_idx][i] - ctx->fdata.timestamp[player_idx][0] > ts)
+            break;
+    if (i != ctx->fdata.frame_count)
+    {
+        motion = ctx->fdata.motion[player_idx][i];
+        while (i != ctx->fdata.frame_count && motion == ctx->fdata.motion[player_idx][i])
+            i++;
+    }
+    if (i != ctx->fdata.frame_count)
+    {
+        ts = ctx->fdata.timestamp[player_idx][i] - ctx->fdata.timestamp[player_idx][0];
+        vi->seek(vctx, ts, 1, 1000);
+        while (vi->offset(vctx, 1, 1000) < ts)
+            vi->step(vctx, 1);
+    }
+
+    return TRUE;
+}
+
+static void
+add_shortcuts(struct plugin_ctx* ctx, GtkWidget* ui)
+{
+    GtkEventController* controller;
+    GtkShortcutTrigger* trigger;
+    GtkShortcutAction* action;
+    GtkShortcut* shortcut;
+
+    controller = gtk_shortcut_controller_new();
+    gtk_shortcut_controller_set_scope(
+        GTK_SHORTCUT_CONTROLLER(controller),
+        GTK_SHORTCUT_SCOPE_GLOBAL);
+    gtk_widget_add_controller(ui, controller);
+
+    gtk_shortcut_controller_add_shortcut(
+        GTK_SHORTCUT_CONTROLLER(controller),
+        gtk_shortcut_new(
+            gtk_keyval_trigger_new(GDK_KEY_h, GDK_SHIFT_MASK),
+            gtk_callback_action_new(shortcut_prev_motion, ctx, NULL)));
+
+    gtk_shortcut_controller_add_shortcut(
+        GTK_SHORTCUT_CONTROLLER(controller),
+        gtk_shortcut_new(
+            gtk_keyval_trigger_new(GDK_KEY_l, GDK_SHIFT_MASK),
+            gtk_callback_action_new(shortcut_next_motion, ctx, NULL)));
+}
+
 static GtkWidget* ui_create(struct plugin_ctx* ctx)
 {
     GtkAdjustment* adj;
@@ -583,6 +658,8 @@ static GtkWidget* ui_create(struct plugin_ctx* ctx)
     g_signal_connect(drag, "drag-update", G_CALLBACK(drag_update), ctx);
     g_signal_connect(drag, "drag-end", G_CALLBACK(drag_end), ctx);
 
+    add_shortcuts(ctx, ctx->video_canvas);
+
     return g_object_ref_sink(ui);
 }
 static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
@@ -591,14 +668,34 @@ static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
     g_object_unref(ui);
 }
 
-static struct ui_center_interface ui = {
+static struct ui_center_interface ui_center = {
     ui_create,
     ui_destroy
+};
+
+static void replay_select(struct plugin_ctx* ctx, const int* game_ids, int count)
+{
+    frame_data_load(&ctx->fdata, game_ids[0]);
+    
+}
+static void replay_clear(struct plugin_ctx* ctx)
+{
+    if (frame_data_is_loaded(&ctx->fdata))
+        frame_data_free(&ctx->fdata);
+}
+
+static struct replay_interface replay = {
+    replay_select,
+    replay_clear
 };
 
 static int video_open_file(struct plugin_ctx* ctx, const char* file_name)
 {
     return ctx->video_plugin.i->video->open_file(ctx->video_ctx, file_name);
+}
+static void video_set_game_start(struct plugin_ctx* ctx, int64_t game_start_ts, int num, int den)
+{
+    ctx->video_plugin.i->video->set_game_start(ctx->video_ctx, game_start_ts, num, den);
 }
 static void video_close(struct plugin_ctx* ctx)
 {
@@ -655,6 +752,7 @@ static int video_volume(const struct plugin_ctx* ctx)
 
 static struct video_player_interface controls = {
     video_open_file,
+    video_set_game_start,
     video_close,
     video_clear,
     video_is_open,
@@ -684,8 +782,8 @@ PLUGIN_API struct plugin_interface vh_plugin = {
     &info,
     create,
     destroy,
-    &ui,
+    &ui_center,
     NULL,
-    NULL,
+    &replay,
     &controls
 };

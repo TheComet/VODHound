@@ -239,7 +239,7 @@ mem_threadlocal_deinit(void)
     if (hm_count(&state.report) != 0)
     {
         HM_FOR_EACH(&state.report, void*, struct report_info, key, info)
-            log_mem_note("  un-freed memory at %" PRIx64 ", size %" PRIx32 "\n",
+            log_mem_err("  un-freed memory at %" PRIx64 ", size %" PRIx32 "\n",
                     info->location, info->size);
 
 #if defined(VH_MEM_BACKTRACE)
@@ -249,7 +249,7 @@ mem_threadlocal_deinit(void)
                 {
                     if (strstr(info->backtrace[i], "invoke_main"))
                         break;
-                    log_mem_note("    %s\n", info->backtrace[i]);
+                    log_mem_err("    %s\n", info->backtrace[i]);
                 }
             }
             backtrace_free(info->backtrace); /* this was allocated when malloc() was called */

@@ -6,6 +6,8 @@
 #include "vh/plugin.h"
 #include "vh/vec.h"
 
+#include <libavutil/rational.h>
+
 #include <gtk/gtk.h>
 
 #include <string.h>
@@ -17,6 +19,9 @@ struct plugin_ctx
     struct decoder decoder;
 
     struct vec canvas_list;
+
+    int64_t game_start_ts;
+    AVRational game_start_time_base;
 };
 
 static void
@@ -92,6 +97,11 @@ static int video_open_file(struct plugin_ctx* ctx, const char* file_name)
 
     return ret;
 }
+static void video_set_game_start(struct plugin_ctx* ctx, int64_t game_start_ts, int num, int den)
+{
+    ctx->game_start_ts = game_start_ts;
+    ctx->game_start_time_base = av_make_q(num, den);
+}
 static void video_close(struct plugin_ctx* ctx)
 {
     decoder_close(&ctx->decoder);
@@ -103,13 +113,25 @@ static void video_clear(struct plugin_ctx* ctx)
         gtk_gl_area_queue_render(*pcanvas);
     VEC_END_EACH
 }
-static int video_is_open(const struct plugin_ctx* ctx) { return decoder_is_open(&ctx->decoder); }
+static int video_is_open(const struct plugin_ctx* ctx)
+{
+    return decoder_is_open(&ctx->decoder);
+}
 static void video_play(struct plugin_ctx* ctx) {}
 static void video_pause(struct plugin_ctx* ctx) {}
-static void video_step(struct plugin_ctx* ctx, int frames) { decode_next_frame(&ctx->decoder); }
+static void video_step(struct plugin_ctx* ctx, int frames)
+{
+    decode_next_frame(&ctx->decoder);
+    update_canvas(&ctx->canvas_list, ctx->gfx, &ctx->decoder);
+}
 static int video_seek(struct plugin_ctx* ctx, uint64_t offset, int num, int den)
 { 
-    if (decoder_seek_near_keyframe(&ctx->decoder, offset, num, den) < 0)
+    /* The offset passed in is relative to the start timestamp */
+    AVRational from = ctx->game_start_time_base;
+    AVRational to = av_make_q(num, den);
+    int64_t game_start = av_rescale_q(ctx->game_start_ts, from, to);
+
+    if (decoder_seek_near_keyframe(&ctx->decoder, offset + game_start, num, den) < 0)
         return -1;
     if (decode_next_frame(&ctx->decoder) < 0)
         return -1;
@@ -117,7 +139,14 @@ static int video_seek(struct plugin_ctx* ctx, uint64_t offset, int num, int den)
     return 0;
 }
 static int video_is_playing(const struct plugin_ctx* ctx) { return 0; }
-static uint64_t video_offset(const struct plugin_ctx* ctx, int num, int den) { return 0; }
+static uint64_t video_offset(const struct plugin_ctx* ctx, int num, int den)
+{
+    AVRational from = ctx->game_start_time_base;
+    AVRational to = av_make_q(num, den);
+    uint64_t offset = decoder_offset(&ctx->decoder, num, den);
+    int64_t game_start = av_rescale_q(ctx->game_start_ts, from, to);
+    return offset > game_start ? offset - game_start : 0;
+}
 static uint64_t video_duration(const struct plugin_ctx* ctx, int num, int den) { return 0; }
 static void video_dimensions(const struct plugin_ctx* ctx, int* width, int* height)
 {
@@ -134,6 +163,7 @@ static int video_volume(const struct plugin_ctx* ctx) { return 0; }
 
 static struct video_player_interface controls = {
     video_open_file,
+    video_set_game_start,
     video_close,
     video_clear,
     video_is_open,

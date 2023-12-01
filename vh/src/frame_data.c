@@ -99,7 +99,7 @@ frame_data_load(struct frame_data* fdata, int game_id)
 
     sprintf(file_name, "fdata/%d.fdat", game_id);
     if (mfile_map(&fdata->file, file_name) < 0)
-        goto  map_file_failed;
+        goto map_file_failed;
     ms = mstream_from_memory(fdata->file.address, fdata->file.size);
 
     const char* magic = (const char*)mstream_read(&ms, 4);
@@ -213,4 +213,6 @@ frame_data_free(struct frame_data* fdata)
     if (fdata->file.size)
         mfile_unmap(&fdata->file);
     mem_free((void*)fdata->timestamp);
+
+    frame_data_init(fdata);  /* ensures frame_data_is_loaded() returns false */
 }

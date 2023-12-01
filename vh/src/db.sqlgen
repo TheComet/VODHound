@@ -817,7 +817,7 @@ DROP INDEX IF EXISTS idx_motions_hash40;
         JOIN videos ON game_videos.video_id = videos.id
         WHERE game_videos.game_id = ?;
     }
-    callback const char* file_path, const char* path_hint, int64_t frame_offset
+    callback const char* file_name, const char* path_hint, int64_t frame_offset
 }
 %query game,add_player(
         int person_id,

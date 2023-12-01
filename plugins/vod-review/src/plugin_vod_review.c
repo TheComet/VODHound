@@ -151,7 +151,7 @@ static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
     g_object_unref(ui);
 }
 
-static struct ui_center_interface ui = {
+static struct ui_center_interface ui_center = {
     ui_create,
     ui_destroy
 };
@@ -159,6 +159,10 @@ static struct ui_center_interface ui = {
 static int video_open_file(struct plugin_ctx* ctx, const char* file_name)
 {
     return ctx->video_plugin.i->video->open_file(ctx->video_ctx, file_name);
+}
+static void video_set_game_start(struct plugin_ctx* ctx, int64_t game_start_ts, int num, int den)
+{
+    ctx->video_plugin.i->video->set_game_start(ctx->video_ctx, game_start_ts, num, den);
 }
 static void video_close(struct plugin_ctx* ctx)
 {
@@ -215,6 +219,7 @@ static int video_volume(const struct plugin_ctx* ctx)
 
 static struct video_player_interface controls = {
     video_open_file,
+    video_set_game_start,
     video_close,
     video_clear,
     video_is_open,
@@ -244,7 +249,7 @@ PLUGIN_API struct plugin_interface vh_plugin = {
     &info,
     create,
     destroy,
-    &ui,
+    &ui_center,
     NULL,
     NULL,
     &controls

@@ -30,6 +30,9 @@ decoder_is_open(const struct decoder* decoder);
 int
 decoder_seek_near_keyframe(struct decoder* decoder, int64_t target_ts, int num, int den);
 
+uint64_t
+decoder_offset(const struct decoder* decoder, int num, int den);
+
 int
 decode_next_frame(struct decoder* decoder);
 

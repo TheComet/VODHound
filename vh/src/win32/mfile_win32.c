@@ -1,3 +1,4 @@
+#include "vh/mem.h"
 #include "vh/mfile.h"
 #include "vh/utf8.h"
 
@@ -78,6 +79,7 @@ mfile_map(struct mfile* mf, const char* utf8_filename)
     CloseHandle(hFile);
     utf_free(utf16_filename);
 
+    mem_track_allocation(mf->address);
     mf->size = liFileSize.QuadPart;
 
     return 0;
@@ -91,5 +93,6 @@ mfile_map(struct mfile* mf, const char* utf8_filename)
 
 void mfile_unmap(struct mfile* mf)
 {
+    mem_track_deallocation(mf->address);
     UnmapViewOfFile(mf->address);
 }

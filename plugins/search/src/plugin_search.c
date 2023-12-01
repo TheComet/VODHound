@@ -246,7 +246,7 @@ static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
     g_object_unref(ui);
 }
 
-static struct ui_pane_interface ui = {
+static struct ui_pane_interface ui_center = {
     ui_create,
     ui_destroy
 };
@@ -291,7 +291,7 @@ PLUGIN_API struct plugin_interface vh_plugin = {
     &info,
     create, destroy,
     NULL,
-    &ui,
+    &ui_center,
     &replays,
     NULL
 };

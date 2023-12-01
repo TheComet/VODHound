@@ -164,11 +164,9 @@ close_plugin(struct plugin* plugin)
 {
     if (plugin->lib.i->video && plugin->lib.i->video->is_open(plugin->ctx))
         plugin->lib.i->video->close(plugin->ctx);
-/*
-    if (plugin->ui_pane)
-        IupDetach(plugin->ui_pane);
-    if (plugin->ui_center)
-        IupDetach(plugin->ui_center);*/
+    
+    if (plugin->lib.i->replays)
+        plugin->lib.i->replays->clear(plugin->ctx);
 
     if (plugin->ui_pane)
         plugin->lib.i->ui_pane->destroy(plugin->ctx, plugin->ui_pane);
@@ -206,7 +204,7 @@ plugin_view_new(struct vec* plugins)
 static gboolean
 shortcut_activated(GtkWidget* widget,
     GVariant* unused,
-    gpointer   row)
+    gpointer user_data)
 {
     log_dbg("activated shift+r\n");
     return TRUE;
@@ -364,9 +362,8 @@ on_games_selected(VhAppGameBrowser* game_browser, int* game_ids, int count, gpoi
         /* Seek to offset where game starts */
         if (i->video->is_open(plugin->ctx))
         {
-            i->video->seek(plugin->ctx,
-                video_ctx.frame_offset > 0 ? (uint64_t)video_ctx.frame_offset : 0,
-                1, 60);
+            i->video->set_game_start(plugin->ctx, video_ctx.frame_offset, 1, 60);
+            i->video->seek(plugin->ctx, 0, 1, 60);
         }
         else
         {

@@ -42,6 +42,8 @@ struct video_player_interface
      */
     int (*open_file)(struct plugin_ctx* ctx, const char* file_name);
 
+    void (*set_game_start)(struct plugin_ctx* ctx, int64_t game_start_ts, int num, int den);
+
     /*!
      * \brief Close the video. Player should reset everything, but keep the
      * last decoded frame visible on the canvas.

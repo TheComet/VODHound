@@ -266,6 +266,14 @@ decoder_seek_near_keyframe(struct decoder* decoder, int64_t target_ts, int num, 
     return 0;
 }
 
+uint64_t
+decoder_offset(const struct decoder* decoder, int num, int den)
+{
+    AVRational from = decoder->input_ctx->streams[decoder->vstream_idx]->time_base;
+    AVRational to = av_make_q(num, den);
+    return av_rescale_q(decoder->current_frame->pts, from, to);
+}
+
 // ----------------------------------------------------------------------------
 int64_t
 to_codec_timestamp(struct decoder* decoder, int64_t ts, int num, int den)
