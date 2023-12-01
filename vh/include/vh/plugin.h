@@ -32,13 +32,15 @@ struct replay_interface
 struct video_player_interface
 {
     /*!
-     * \brief Open a video file and decode the first frame. If pause is
-     * true, then the video player should be in a paused state. Otherwise,
-     * start normal playback.
+     * \brief Open a video file.
+     * The video decoder is not expected to decode or display anything
+     * in this function. VODHound will follow up with a call to seek()
+     * after a successful open to jump to (typically) the beginning of the
+     * game within the video.
      * \note VODHound will guarantee that this function won't be called
      * twice in a row. close() will always be called first if necessary.
      */
-    int (*open_file)(struct plugin_ctx* ctx, const char* file_name, int pause);
+    int (*open_file)(struct plugin_ctx* ctx, const char* file_name);
 
     /*!
      * \brief Close the video. Player should reset everything, but keep the

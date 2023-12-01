@@ -596,9 +596,9 @@ static struct ui_center_interface ui = {
     ui_destroy
 };
 
-static int video_open_file(struct plugin_ctx* ctx, const char* file_name, int pause)
+static int video_open_file(struct plugin_ctx* ctx, const char* file_name)
 {
-    return ctx->video_plugin.i->video->open_file(ctx->video_ctx, file_name, pause);
+    return ctx->video_plugin.i->video->open_file(ctx->video_ctx, file_name);
 }
 static void video_close(struct plugin_ctx* ctx)
 {

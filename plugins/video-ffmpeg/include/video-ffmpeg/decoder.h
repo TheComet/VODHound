@@ -19,7 +19,7 @@ struct decoder
 };
 
 int
-decoder_open_file(struct decoder* decoder, const char* file_name, int pause);
+decoder_open_file(struct decoder* decoder, const char* file_name);
 
 void
 decoder_close(struct decoder* decoder);
@@ -28,7 +28,7 @@ int
 decoder_is_open(const struct decoder* decoder);
 
 int
-decoder_seek_near_keyframe(struct decoder* decoder, int64_t target_ts);
+decoder_seek_near_keyframe(struct decoder* decoder, int64_t target_ts, int num, int den);
 
 int
 decode_next_frame(struct decoder* decoder);

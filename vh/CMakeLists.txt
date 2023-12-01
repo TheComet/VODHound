@@ -241,6 +241,7 @@ if (VODHOUND_TESTS)
         "tests/test_vh_btree_as_set.cpp"
         "tests/test_vh_db.cpp"
         "tests/test_vh_frame_data.cpp"
+        "tests/test_vh_fs.cpp"
         "tests/test_vh_mem.cpp"
         "tests/test_vh_hm.cpp"
         "tests/test_vh_rb.cpp"

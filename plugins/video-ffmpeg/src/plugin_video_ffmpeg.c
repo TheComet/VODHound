@@ -66,20 +66,22 @@ destroy(GTypeModule* type_module, struct plugin_ctx* ctx)
     mem_free(ctx);
 }
 
-static int video_open_file(struct plugin_ctx* ctx, const char* file_name, int pause)
+static void update_canvas(struct vec* canvas_list, struct gfx* gfx, const struct decoder* decoder)
 {
-    int ret = decoder_open_file(&ctx->decoder, file_name, pause);
+    int w, h;
+    decoder_frame_size(decoder, &w, &h);
+    gfx_set_frame(gfx, w, h, decoder_rgb24_data(decoder));
+
+    VEC_FOR_EACH(canvas_list, GtkGLArea*, pcanvas)
+        gtk_gl_area_queue_render(*pcanvas);
+    VEC_END_EACH
+}
+
+static int video_open_file(struct plugin_ctx* ctx, const char* file_name)
+{
+    int ret = decoder_open_file(&ctx->decoder, file_name);
     if (ret == 0 && ctx->gfx)
     {
-        int w, h;
-        decode_next_frame(&ctx->decoder);
-        decoder_frame_size(&ctx->decoder, &w, &h);
-        gfx_set_frame(ctx->gfx, w, h, decoder_rgb24_data(&ctx->decoder));
-
-        VEC_FOR_EACH(&ctx->canvas_list, GtkGLArea*, pcanvas)
-            gtk_gl_area_queue_render(*pcanvas);
-        VEC_END_EACH
-
         /* TODO Create GdkGLContext and start rendering thread */
         /*
         snprintf(buf, 22, "%dx%d", w, h);
@@ -96,15 +98,24 @@ static void video_close(struct plugin_ctx* ctx)
 }
 static void video_clear(struct plugin_ctx* ctx)
 {
-    /*
-    IupSetAttribute(ctx->canvas, "TEXRGBA", NULL);
-    IupRedraw(ctx->canvas, 0);*/
+    gfx_set_frame(ctx->gfx, 0, 0, NULL);
+    VEC_FOR_EACH(&ctx->canvas_list, GtkGLArea*, pcanvas)
+        gtk_gl_area_queue_render(*pcanvas);
+    VEC_END_EACH
 }
 static int video_is_open(const struct plugin_ctx* ctx) { return decoder_is_open(&ctx->decoder); }
 static void video_play(struct plugin_ctx* ctx) {}
 static void video_pause(struct plugin_ctx* ctx) {}
 static void video_step(struct plugin_ctx* ctx, int frames) { decode_next_frame(&ctx->decoder); }
-static int video_seek(struct plugin_ctx* ctx, uint64_t offset, int num, int den) { return decoder_seek_near_keyframe(&ctx->decoder, offset); }
+static int video_seek(struct plugin_ctx* ctx, uint64_t offset, int num, int den)
+{ 
+    if (decoder_seek_near_keyframe(&ctx->decoder, offset, num, den) < 0)
+        return -1;
+    if (decode_next_frame(&ctx->decoder) < 0)
+        return -1;
+    update_canvas(&ctx->canvas_list, ctx->gfx, &ctx->decoder);
+    return 0;
+}
 static int video_is_playing(const struct plugin_ctx* ctx) { return 0; }
 static uint64_t video_offset(const struct plugin_ctx* ctx, int num, int den) { return 0; }
 static uint64_t video_duration(const struct plugin_ctx* ctx, int num, int den) { return 0; }

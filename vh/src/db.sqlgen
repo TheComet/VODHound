@@ -556,10 +556,21 @@ DROP INDEX IF EXISTS idx_motions_hash40;
     type update pronouns
     table people
 }
-%query game,_exists(
-        uint64_t time_started,
-        int p1_id, int p2_id, int p3_id, int p4_id,
-        int person_count) {
+%query game,exists_1v1(int p1_id, int p2_id, uint64_t time_started) {
+    type exists
+    stmt {
+        WITH matches AS (
+            WITH t(person_id) AS (VALUES (?), (?))
+            SELECT COUNT(*) count FROM games
+            JOIN game_players ON game_players.game_id=games.id
+            JOIN t ON t.person_id=game_players.person_id
+            WHERE time_started=?
+            GROUP BY games.id)
+        SELECT 1 FROM matches
+        WHERE count=2;
+    }
+}
+%query game,exists_2v2(int p1_id, int p2_id, int p3_id, int p4_id, uint64_t time_started) {
     type exists
     stmt {
         WITH matches AS (
@@ -570,22 +581,13 @@ DROP INDEX IF EXISTS idx_motions_hash40;
             WHERE time_started=?
             GROUP BY games.id)
         SELECT 1 FROM matches
-        WHERE count=?;
+        WHERE count=2;
     }
-    bind p1_id, p2_id, p3_id, p4_id, time_started, person_count
 }
 %query game,count() {
     type select-first
     stmt { SELECT COUNT(*) FROM games; }
     return count
-}
-%function game,exists(uint64_t time_started, int* people_ids, int person_count) {
-    return game__exists(ctx, time_started,
-        people_ids[0],
-        person_count > 1 ? people_ids[1] : -1,
-        person_count > 2 ? people_ids[2] : -1,
-        person_count > 3 ? people_ids[3] : -1,
-        person_count);
 }
 %query game,add(
         int round_type_id null,

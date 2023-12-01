@@ -36,20 +36,25 @@ fs_deinit(void)
     utf_free(appdata_dir.data);
 }
 
-void
-path_set_take(struct path* path, struct str str)
-{
-    path->str = str;
-    str_replace_char(&path->str, '/', '\\');
-}
-
 int
 path_set(struct path* path, struct str_view str)
 {
     if (str_set(&path->str, str) != 0)
         return -1;
     str_replace_char(&path->str, '/', '\\');
+    while (path->str.len && path->str.data[path->str.len - 1] == '\\')
+        path->str.len--;
     return 0;
+}
+
+void
+path_set_take(struct path* path, struct path* other)
+{
+    path_deinit(path);
+    path->str = str_take(&other->str);
+    str_replace_char(&path->str, '/', '\\');
+    while (path->str.len && path->str.data[path->str.len - 1] == '\\')
+        path->str.len--;
 }
 
 int
@@ -62,19 +67,31 @@ path_join(struct path* path, struct str_view trailing)
     if (str_append(&path->str, trailing) != 0)
         return -1;
     str_replace_char(&path->str, '/', '\\');
+    while (path->str.len && path->str.data[path->str.len - 1] == '\\')
+        path->str.len--;
     return 0;
 }
 
-void
-path_dirname(struct path* path)
+struct str_view
+path_dirname_view(const struct path* path)
 {
-    /* Trailling slashes */
-    path->str.len--;
-    while (path->str.data[path->str.len] == '\\')
-        path->str.len--;
+    struct str_view view = str_view(path->str);
 
-    while (path->str.len && path->str.data[path->str.len] != '\\')
-        path->str.len--;
+    /* Special case on windows -- If path starts with "\" it is invalid */
+    if (view.len && view.data[0] == '\\')
+    {
+        view.len = 0;
+        return view;
+    }
+
+    while (view.len && view.data[view.len - 1] == '\\')
+        view.len--;
+    while (view.len && view.data[view.len - 1] != '\\')
+        view.len--;
+    while (view.len && view.data[view.len - 1] == '\\')
+        view.len--;
+
+    return view;
 }
 
 int

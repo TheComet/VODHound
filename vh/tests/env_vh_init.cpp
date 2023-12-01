@@ -14,11 +14,6 @@ public:
         testing::FLAGS_gtest_death_test_style = "threadsafe";
         ASSERT_THAT(vh_threadlocal_init(), Eq(0));
         ASSERT_THAT(vh_init(), Eq(0));
-
-        struct db_interface* dbi = ::db("sqlite3");
-        struct db* db = dbi->open("test.db");
-        dbi->reinit(db);
-        dbi->close(db);
     }
 
     virtual void TearDown()

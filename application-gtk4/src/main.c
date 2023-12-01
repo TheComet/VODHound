@@ -238,7 +238,6 @@ struct on_video_path_ctx
 {
     struct db_interface* dbi;
     struct db* db;
-    struct vec* plugins;
     int64_t frame_offset;
     struct str_view file_name;
     struct path file_path;
@@ -247,7 +246,6 @@ struct on_video_path_ctx
 static int
 on_video_path(const char* path, void* user)
 {
-    int combined_success = 0;
     struct on_video_path_ctx* ctx = user;
 
     if (path_set(&ctx->file_path, cstr_view(path)) < 0)
@@ -256,24 +254,8 @@ on_video_path(const char* path, void* user)
         return -1;
     path_terminate(&ctx->file_path);
 
-    if (!fs_file_exists(ctx->file_path.str.data))
-        return 0;
-
-    /*
-     * Notify all plugins implementing the video interface of the video file.
-     * If any of them succeed in opening it, then we return "1" to stop iterating
-     * over more video search paths. This also has the effect of setting the
-     * current path as the path hint, which makes opening the video next time
-     * faster.
-     */
-    VEC_FOR_EACH(ctx->plugins, struct plugin, state)
-        struct plugin_interface* i = state->lib.i;
-        if (i->video == NULL)
-            continue;
-        combined_success |= i->video->open_file(state->ctx, ctx->file_path.str.data, 1) == 0;
-    VEC_END_EACH
-
-    return combined_success;
+    /* Stop iterating (return 1) if the file exists */
+    return fs_file_exists(ctx->file_path.str.data);
 }
 
 static int
@@ -283,6 +265,7 @@ on_game_video(const char* file_name, const char* path_hint, int64_t frame_offset
 
     /* Try the path hint first */
     ctx->file_name = cstr_view(file_name);
+    ctx->frame_offset = frame_offset;
     if (*path_hint)
         switch (on_video_path(path_hint, ctx))
         {
@@ -295,8 +278,10 @@ on_game_video(const char* file_name, const char* path_hint, int64_t frame_offset
     switch (ctx->dbi->video.get_paths(ctx->db, on_video_path, ctx))
     {
         case 1  :
-            path_dirname(&ctx->file_path);
-            ctx->dbi->video.set_path_hint(ctx->db, ctx->file_name, path_view(ctx->file_path));
+            /* Update path hint, since the hint failed but we found a matchinig file */
+            ctx->dbi->video.set_path_hint(ctx->db,
+                ctx->file_name,
+                path_dirname_view(&ctx->file_path));
             return 1;
         case 0  : break;
         default : return -1;
@@ -309,16 +294,45 @@ struct app_activate_ctx
 {
     struct db_interface* dbi;
     struct db* db;
+    struct path current_video_file;
     struct vec plugins;
 };
 
 static void
 on_games_selected(VhAppGameBrowser* game_browser, int* game_ids, int count, gpointer user_pointer)
 {
-    int do_clear_video_canvas;
+    int reuse_video = 0;
     struct app_activate_ctx* ctx = user_pointer;
+    struct on_video_path_ctx video_ctx = {
+        ctx->dbi,
+        ctx->db
+    };
+    path_init(&video_ctx.file_path);
 
-    log_dbg("Selected game: %d\n", game_ids[0]);
+    /*
+     * If this is a single selection, try to find the video associate with this
+     * game ID. It's pretty common that multiple games are recorded in a single
+     * video, so we try to avoid re-opening the same video if possible, because
+     * it takes quite a bit of time.
+     */
+    if (count == 1)
+        if (ctx->dbi->game.get_videos(ctx->db, game_ids[0], on_game_video, &video_ctx) > 0)
+            if (str_equal(path_view(ctx->current_video_file), path_view(video_ctx.file_path)))
+                reuse_video = 1;
+
+    /* Close all open video files */
+    if (!reuse_video)
+    {
+        VEC_FOR_EACH(&ctx->plugins, struct plugin, plugin)
+            struct plugin_interface* i = plugin->lib.i;
+            if (i->video == NULL)
+                continue;
+            if (i->video->is_open(plugin->ctx))
+                i->video->close(plugin->ctx);
+        VEC_END_EACH
+
+        path_clear(&ctx->current_video_file);
+    }
 
     /* Clear replay selection in plugins */
     VEC_FOR_EACH(&ctx->plugins, struct plugin, plugin)
@@ -327,53 +341,44 @@ on_games_selected(VhAppGameBrowser* game_browser, int* game_ids, int count, gpoi
             i->replays->clear(plugin->ctx);
     VEC_END_EACH
 
-    /* Close all open video files */
+    /* Notify plugins of new replay selection */
+    if (count > 0)
+    {
+        VEC_FOR_EACH(&ctx->plugins, struct plugin, plugin)
+            struct plugin_interface* i = plugin->lib.i;
+            if (i->replays)
+                i->replays->select(plugin->ctx, game_ids, count);
+        VEC_END_EACH
+    }
+
     VEC_FOR_EACH(&ctx->plugins, struct plugin, plugin)
         struct plugin_interface* i = plugin->lib.i;
         if (i->video == NULL)
             continue;
+
+        /* Open video file and update current video path */
+        if (!reuse_video && video_ctx.file_path.str.len)
+            if (i->video->open_file(plugin->ctx, video_ctx.file_path.str.data) == 0)
+                path_set_take(&ctx->current_video_file, &video_ctx.file_path);
+
+        /* Seek to offset where game starts */
         if (i->video->is_open(plugin->ctx))
-            i->video->close(plugin->ctx);
+        {
+            i->video->seek(plugin->ctx,
+                video_ctx.frame_offset > 0 ? (uint64_t)video_ctx.frame_offset : 0,
+                1, 60);
+        }
+        else
+        {
+            /* 
+             * We want to avoid clearing when switching between videos (causes flicker).
+             * Only clear if all else fails.
+             */
+            i->video->clear(plugin->ctx);
+        }
     VEC_END_EACH
 
-    /* Notify plugins of new replay selection */
-    VEC_FOR_EACH(&ctx->plugins, struct plugin, plugin)
-        struct plugin_interface* i = plugin->lib.i;
-        if (i->replays)
-            i->replays->select(plugin->ctx, game_ids, count);
-    VEC_END_EACH
-
-    /*
-     * If this is a single selection, try to open the video associate with this
-     * game ID. Otherwise, make sure to clear the video canvas.
-     */
-    do_clear_video_canvas = 0;
-    if (count == 1)
-    {
-        struct on_video_path_ctx video_ctx = {
-            ctx->dbi,
-            ctx->db,
-            &ctx->plugins
-        };
-        path_init(&video_ctx.file_path);
-        if (ctx->dbi->game.get_videos(ctx->db, game_ids[0], on_game_video, &video_ctx) <= 0)
-            do_clear_video_canvas = 1;
-        path_deinit(&video_ctx.file_path);
-    }
-    else
-        do_clear_video_canvas = 1;
-
-    /* If video failed to open, or if multiple games were selected, clear canvas */
-    if (do_clear_video_canvas)
-    {
-        VEC_FOR_EACH(&ctx->plugins, struct plugin, plugin)
-            struct plugin_interface* i = plugin->lib.i;
-            if (i->video == NULL)
-                continue;
-            if (!i->video->is_open(plugin->ctx))
-                i->video->clear(plugin->ctx);
-        VEC_END_EACH
-    }
+    path_deinit(&video_ctx.file_path);
 }
 
 static void
@@ -458,7 +463,9 @@ int main(int argc, char** argv)
 
     ctx.dbi = dbi;
     ctx.db = db;
+    path_init(&ctx.current_video_file);
     vec_init(&ctx.plugins, sizeof(struct plugin));
+
     g_signal_connect(app, "activate", G_CALLBACK(activate), &ctx);
     status = g_application_run(G_APPLICATION(app), argc, argv);
     g_object_unref(app);
@@ -467,6 +474,7 @@ int main(int argc, char** argv)
         close_plugin(plugin);
     VEC_END_EACH
     vec_deinit(&ctx.plugins);
+    path_deinit(&ctx.current_video_file);
 
     dbi->close(db);
     vh_deinit();

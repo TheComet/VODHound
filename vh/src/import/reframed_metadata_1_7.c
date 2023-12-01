@@ -262,7 +262,12 @@ import_reframed_metadata_1_7(
      * different players. By also checking if the game has the same players,
      * we support importing games with identical timestamps.
      */
-    if (dbi->game.exists(db, time_started, people_ids, player_count))
+    if (player_count == 2 && dbi->game.exists_1v1(db, people_ids[0], people_ids[1], time_started))
+    {
+        log_warn("Duplicate rfr, skipping...\n");
+        return -1;
+    }
+    if (player_count == 4 && dbi->game.exists_2v2(db, people_ids[0], people_ids[1], people_ids[2], people_ids[3], time_started))
     {
         log_warn("Duplicate rfr, skipping...\n");
         return -1;

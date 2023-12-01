@@ -43,14 +43,26 @@ path_terminate(struct path* path)
 VH_PUBLIC_API int
 path_set(struct path* path, struct str_view str);
 
-VH_PUBLIC_API struct path
-path_take_str(struct str* str);
+VH_PUBLIC_API void
+path_set_take(struct path* path, struct path* other);
+
+static inline void
+path_clear(struct path* path)
+{
+    str_clear(&path->str);
+}
 
 VH_PUBLIC_API int
 path_join(struct path* path, struct str_view str);
 
-VH_PUBLIC_API void
-path_dirname(struct path* path);
+VH_PUBLIC_API struct str_view
+path_dirname_view(const struct path* path);
+
+static inline void
+path_dirname(struct path* path)
+{
+    path->str.len = path_dirname_view(path).len;
+}
 
 VH_PUBLIC_API int
 fs_list(struct str_view path, int (*on_entry)(const char* name, void* user), void* user);

@@ -8,7 +8,7 @@
 #include <libswscale/swscale.h>
 
 int
-decoder_open_file(struct decoder* decoder, const char* file_name, int pause)
+decoder_open_file(struct decoder* decoder, const char* file_name)
 {
     int result;
     const AVCodec* vcodec;
@@ -226,8 +226,15 @@ decoder_is_open(const struct decoder* decoder)
 
 // ----------------------------------------------------------------------------
 int
-decoder_seek_near_keyframe(struct decoder* decoder, int64_t target_ts)
+decoder_seek_near_keyframe(struct decoder* decoder, int64_t target_ts, int num, int den)
 {
+    int seek_result;
+
+    /* Convert timestamp to codec timebase */
+    AVRational from = av_make_q(num, den);
+    AVRational to = decoder->input_ctx->streams[decoder->vstream_idx]->time_base;
+    target_ts = av_rescale_q(target_ts, from, to);
+
     /*
      * AVSEEK_FLAG_BACKWARD should seek to the first keyframe that occurs
      * before the specific time_stamp, however, people online have said that
@@ -237,8 +244,8 @@ decoder_seek_near_keyframe(struct decoder* decoder, int64_t target_ts)
      * https://stackoverflow.com/questions/20734814/ffmpeg-av-seek-frame-with-avseek-flag-any-causes-grey-screen
      */
 
-    // Seek and decode frame
-    int seek_result = av_seek_frame(decoder->input_ctx, decoder->vstream_idx, target_ts, AVSEEK_FLAG_BACKWARD);
+    /* Seek and decode frame */
+    seek_result = av_seek_frame(decoder->input_ctx, decoder->vstream_idx, target_ts, AVSEEK_FLAG_BACKWARD);
 
     /*
      * Some files don't start with a keyframe (mp4's created by Nintendo Switch)

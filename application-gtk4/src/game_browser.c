@@ -521,10 +521,9 @@ selection_changed_cb(GtkSelectionModel* self, guint position_hint, guint n_items
         g_object_unref(row);
     }
 
-    if (vec_count(&game_browser->selected_game_ids) > 0)
-        g_signal_emit(game_browser, game_browser_signals[SIGNAL_GAMES_SELECTED], 0,
-            vec_data(&game_browser->selected_game_ids),
-            (int)vec_count(&game_browser->selected_game_ids));
+    g_signal_emit(game_browser, game_browser_signals[SIGNAL_GAMES_SELECTED], 0,
+        vec_data(&game_browser->selected_game_ids),
+        (int)vec_count(&game_browser->selected_game_ids));
 }
 
 static GtkWidget*
