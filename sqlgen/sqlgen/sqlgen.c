@@ -2297,7 +2297,7 @@ write_downgrade_forward_compat_func(struct mstream* ms, const struct root* root,
     mstream_cstr(ms, "    ret = sqlite3_step(stmt);" NL);
     mstream_cstr(ms, "    switch (ret)" NL "    {" NL);
     mstream_cstr(ms, "        case SQLITE_ROW:" NL);
-    mstream_cstr(ms, "            tmp = realloc(sql, sizeof(char*) * (sql_num + 1));" NL);
+    mstream_cstr(ms, "            tmp = realloc(sql, sizeof(char*) * (size_t)(sql_num + 1));" NL);
     mstream_cstr(ms, "            if (tmp == NULL) goto done;" NL);
     mstream_cstr(ms, "            sql = tmp;" NL NL);
     mstream_cstr(ms, "            str = (const char*)sqlite3_column_text(stmt, 0);" NL);
@@ -2378,6 +2378,7 @@ write_migration_body(struct mstream* ms, const struct root* root, const char* da
         mstream_fmt (ms, "                goto migration_failed;" NL);
         mstream_fmt (ms, "            version = %d;" NL,
             root->downgrade ? root->downgrade->version + 1 : 0);
+        mstream_cstr(ms, "            /* fallthrough */" NL);
     }
 
     m = root->downgrade;

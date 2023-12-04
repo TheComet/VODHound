@@ -3,6 +3,7 @@
 #include "vh/config.h"
 #include "vh/mfile.h"
 #include <stdint.h>
+#include <stddef.h>
 
 C_BEGIN
 

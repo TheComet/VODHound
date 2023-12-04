@@ -34,7 +34,7 @@ int mfile_map(struct mfile* mf, const char* file_name)
     return 0;
 
     mmap_failed    :
-    file_too_large :
+    /*file_too_large :*/
     fstat_failed   : close(fd);
     open_failed    : return -1;
 }

@@ -6,17 +6,10 @@
 #include "zlib.h"
 
 int
-import_reframed_framedata_1_5(
-        struct db_interface* dbi,
-        struct db* db,
-        struct mstream* ms, int game_id);
+import_reframed_framedata_1_5(struct mstream* ms, int game_id);
 
 int
-import_reframed_framedata(
-        struct db_interface* dbi,
-        struct db* db,
-        struct mstream* ms,
-        int game_id)
+import_reframed_framedata(struct mstream* ms, int game_id)
 {
     uint8_t major = mstream_read_u8(ms);
     uint8_t minor = mstream_read_u8(ms);
@@ -37,7 +30,7 @@ import_reframed_framedata(
 
         struct mstream uncompressed_stream = mstream_from_memory(
                 uncompressed_data, (int)uncompressed_size);
-        int result = import_reframed_framedata_1_5(dbi, db, &uncompressed_stream, game_id);
+        int result = import_reframed_framedata_1_5(&uncompressed_stream, game_id);
         mem_free(uncompressed_data);
         return result;
     }

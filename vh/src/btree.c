@@ -17,7 +17,7 @@ btree_mem_realloc(struct btree* btree, btree_size new_capacity)
      */
     if (!btree->data)
     {
-        btree->data = mem_alloc(new_capacity * BTREE_KV_SIZE(btree));
+        btree->data = mem_alloc((mem_size)(new_capacity * BTREE_KV_SIZE(btree)));
         if (!btree->data)
             return -1;
         btree->capacity = new_capacity;
@@ -30,7 +30,7 @@ btree_mem_realloc(struct btree* btree, btree_size new_capacity)
      */
     if (new_capacity >= btree->capacity)
     {
-        void* new_data = mem_realloc(btree->data, new_capacity * BTREE_KV_SIZE(btree));
+        void* new_data = mem_realloc(btree->data, (mem_size)(new_capacity * BTREE_KV_SIZE(btree)));
         if (!new_data)
             return -1;
         btree->data = new_data;
@@ -55,7 +55,7 @@ btree_mem_realloc(struct btree* btree, btree_size new_capacity)
      */
     if (new_capacity < btree->capacity)
     {
-        void* new_data = mem_realloc(btree->data, new_capacity * BTREE_KV_SIZE(btree));
+        void* new_data = mem_realloc(btree->data, (mem_size)(new_capacity * BTREE_KV_SIZE(btree)));
         if (new_data)
             btree->data = new_data;
         else

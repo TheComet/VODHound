@@ -7,10 +7,7 @@
 #include <stdio.h>
 
 int
-import_reframed_framedata_1_5(
-        struct db_interface* dbi,
-        struct db* db,
-        struct mstream* ms, int game_id)
+import_reframed_framedata_1_5(struct mstream* ms, int game_id)
 {
     struct frame_data fdata;
     int frame_count = (int)mstream_read_lu32(ms);

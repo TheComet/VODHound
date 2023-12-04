@@ -156,8 +156,8 @@ target_include_directories (vh
 target_compile_options (vh
     PRIVATE
         $<$<C_COMPILER_ID:MSVC>:/W4 /wd4706 /wd4305 /wd4244>
-        $<$<C_COMPILER_ID:GNU>:-W -Wall -Wextra -Wshadow -Wconversion -Wno-unused-parameter $<$<BOOL:${VH_PROFILING}>:-pg -fno-omit-frame-pointer>>
-        $<$<C_COMPILER_ID:Clang>:-W -Wall -Wextra -Wshadow -Wconversion -Wno-unused-parameter $<$<BOOL:${VH_PROFILING}>:-pg -fno-omit-frame-pointer>>)
+        $<$<C_COMPILER_ID:GNU>:-W -Wall -Wextra -Wshadow -Wconversion -Wno-unused-function $<$<BOOL:${VH_PROFILING}>:-pg -fno-omit-frame-pointer>>
+        $<$<C_COMPILER_ID:Clang>:-W -Wall -Wextra -Wshadow -Wconversion -Wno-unused-function $<$<BOOL:${VH_PROFILING}>:-pg -fno-omit-frame-pointer>>)
 target_compile_definitions (vh
     PRIVATE
         VH_BUILDING

@@ -65,7 +65,7 @@ static inline void
 path_basename(struct path* path)
 {
     struct str_view view = path_basename_view(path);
-    memmove(path->str.data, view.data, view.len);
+    memmove(path->str.data, view.data, (size_t)view.len);
     path->str.len = view.len;
 }
 

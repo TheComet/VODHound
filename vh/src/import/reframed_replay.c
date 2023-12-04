@@ -17,11 +17,7 @@ import_reframed_videometadata(
         int game_id);
 
 int
-import_reframed_framedata(
-        struct db_interface* dbi,
-        struct db* db,
-        struct mstream* ms,
-        int game_id);
+import_reframed_framedata(struct mstream* ms, int game_id);
 
 int
 import_reframed_replay(
@@ -108,7 +104,7 @@ import_reframed_replay(
         if (memcmp(entries[i].type, "FDAT", 4) == 0)
         {
             struct mstream blob = mstream_from_mstream(&ms, entries[i].offset, entries[i].size);
-            if (import_reframed_framedata(dbi, db, &blob, game_id) < 0)
+            if (import_reframed_framedata(&blob, game_id) < 0)
                 goto fail;
             break;
         }
