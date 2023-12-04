@@ -12,9 +12,9 @@ static HANDLE hProcess;
 int
 backtrace_init(void)
 {
-    hProcess = GetCurrentProcess();
-    if (SymInitialize(hProcess, NULL, TRUE) != TRUE)
-        return -1;
+    /*if (SymInitialize(hProcess, NULL, TRUE) != TRUE)
+        return -1;*/
+    SymInitialize(hProcess, NULL, TRUE);
     return 0;
 }
 
@@ -22,7 +22,7 @@ backtrace_init(void)
 void
 backtrace_deinit(void)
 {
-    /* This crashes for some reason?
+    /* XXX: This crashes for some reason?
     SymCleanup(hProcess);*/
 }
 

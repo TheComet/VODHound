@@ -379,6 +379,11 @@ DROP INDEX IF EXISTS idx_motions_hash40;
     type exists
     table motions
 }
+%query motion,string(uint64_t hash40) {
+    type select-first
+    table motions
+    callback const char* string
+}
 %query motion_label,add_or_get_group(struct str_view name) {
     type insert
     table motion_groups
@@ -812,12 +817,16 @@ DROP INDEX IF EXISTS idx_motions_hash40;
 %query game,get_videos(int game_id) {
     type select-all
     stmt {
-        SELECT file_name, path_hint, frame_offset
+        SELECT video_id, file_name, path_hint, frame_offset
         FROM game_videos
         JOIN videos ON game_videos.video_id = videos.id
         WHERE game_videos.game_id = ?;
     }
-    callback const char* file_name, const char* path_hint, int64_t frame_offset
+    callback int video_id, const char* file_name, const char* path_hint, int64_t frame_offset
+}
+%query game,set_frame_offset(int game_id, int video_id, int64_t frame_offset) {
+    type update frame_offset
+    table game_videos
 }
 %query game,add_player(
         int person_id,

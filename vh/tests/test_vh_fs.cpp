@@ -203,3 +203,117 @@ TEST_F(NAME, path_dirname_on_path_5)
     EXPECT_THAT(path.str.data, StrEq(""));
 #endif
 }
+
+TEST_F(NAME, path_basename_empty)
+{
+    path_set(&path, cstr_view(""));
+    path_basename(&path);
+    path_terminate(&path);
+    EXPECT_THAT(path.str.data, StrEq(""));
+}
+
+TEST_F(NAME, path_basename_file_1)
+{
+    path_set(&path, cstr_view("file.dat.xz"));
+    path_basename(&path);
+    path_terminate(&path);
+    EXPECT_THAT(path.str.data, StrEq("file.dat.xz"));
+}
+
+TEST_F(NAME, path_basename_on_file_2)
+{
+#ifdef _WIN32
+    path_set(&path, cstr_view("/file.dat.xz"));
+    path_basename(&path);
+    path_terminate(&path);
+    EXPECT_THAT(path.str.data, StrEq(""));  /* Paths starting with "\" are invalid on windows */
+#else
+    path_set(&path, cstr_view("\\file.dat.xz"));
+    path_basename(&path);
+    path_terminate(&path);
+    EXPECT_THAT(path.str.data, StrEq("file.dat.xz"));
+#endif
+}
+
+TEST_F(NAME, path_basename_on_file_3)
+{
+#ifdef _WIN32
+    path_set(&path, cstr_view("some/unix/file.dat.xz"));
+    path_basename(&path);
+    path_terminate(&path);
+    EXPECT_THAT(path.str.data, StrEq("file.dat.xz"));
+#else
+    path_set(&path, cstr_view("some\\windows\\file.dat.xz"));
+    path_basename(&path);
+    path_terminate(&path);
+    EXPECT_THAT(path.str.data, StrEq("file.dat.xz"));
+#endif
+}
+
+TEST_F(NAME, path_basename_on_path_1)
+{
+#ifdef _WIN32
+    path_set(&path, cstr_view("some/unix/path"));
+    path_basename(&path);
+    path_terminate(&path);
+    EXPECT_THAT(path.str.data, StrEq("path"));
+#else
+    path_set(&path, cstr_view("some\\windows\\path"));
+    path_basename(&path);
+    path_terminate(&path);
+    EXPECT_THAT(path.str.data, StrEq("path"));
+#endif
+}
+
+TEST_F(NAME, path_basename_on_path_2)
+{
+#ifdef _WIN32
+    path_set(&path, cstr_view("some/unix/path/"));
+    path_basename(&path);
+    path_terminate(&path);
+    EXPECT_THAT(path.str.data, StrEq("path"));
+#else
+    path_set(&path, cstr_view("some\\windows\\path\\"));
+    path_basename(&path);
+    path_terminate(&path);
+    EXPECT_THAT(path.str.data, StrEq("path"));
+#endif
+}
+
+TEST_F(NAME, path_basename_on_path_3)
+{
+#ifdef _WIN32
+    path_set(&path, cstr_view("/some/unix/path"));
+    path_basename(&path);
+    path_terminate(&path);
+    EXPECT_THAT(path.str.data, StrEq(""));  /* paths starting with "\" are invalid on windows */
+#else
+    path_set(&path, cstr_view("\\some\\windows\\path"));
+    path_basename(&path);
+    path_terminate(&path);
+    EXPECT_THAT(path.str.data, StrEq("path"));
+#endif
+}
+
+TEST_F(NAME, path_basename_on_path_4)
+{
+    path_set(&path, cstr_view("dir"));
+    path_basename(&path);
+    path_terminate(&path);
+    EXPECT_THAT(path.str.data, StrEq("dir"));
+}
+
+TEST_F(NAME, path_basename_on_path_5)
+{
+#ifdef _WIN32
+    path_set(&path, cstr_view("/"));
+    path_basename(&path);
+    path_terminate(&path);
+    EXPECT_THAT(path.str.data, StrEq(""));  /* paths starting with "\" are invalid on windows */
+#else
+    path_set(&path, cstr_view("\\"));
+    path_basename(&path);
+    path_terminate(&path);
+    EXPECT_THAT(path.str.data, StrEq("/"));
+#endif
+}

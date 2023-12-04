@@ -160,10 +160,6 @@ static int video_open_file(struct plugin_ctx* ctx, const char* file_name)
 {
     return ctx->video_plugin.i->video->open_file(ctx->video_ctx, file_name);
 }
-static void video_set_game_start(struct plugin_ctx* ctx, int64_t game_start_ts, int num, int den)
-{
-    ctx->video_plugin.i->video->set_game_start(ctx->video_ctx, game_start_ts, num, den);
-}
 static void video_close(struct plugin_ctx* ctx)
 {
     ctx->video_plugin.i->video->close(ctx->video_ctx);
@@ -184,19 +180,19 @@ static void video_pause(struct plugin_ctx* ctx)
 {
     ctx->video_plugin.i->video->pause(ctx->video_ctx);
 }
-static void video_step(struct plugin_ctx* ctx, int frames)
+static int video_step(struct plugin_ctx* ctx, int frames)
 {
-    ctx->video_plugin.i->video->step(ctx->video_ctx, frames);
+    return ctx->video_plugin.i->video->step(ctx->video_ctx, frames);
 }
-static int video_seek(struct plugin_ctx* ctx, uint64_t offset, int num, int den)
+static int video_seek(struct plugin_ctx* ctx, int64_t offset, int num, int den)
 {
     return ctx->video_plugin.i->video->seek(ctx->video_ctx, offset, num, den);
 }
-static uint64_t video_offset(const struct plugin_ctx* ctx, int num, int den)
+static int64_t video_offset(const struct plugin_ctx* ctx, int num, int den)
 {
     return ctx->video_plugin.i->video->offset(ctx->video_ctx, num, den);
 }
-static uint64_t video_duration(const struct plugin_ctx* ctx, int num, int den)
+static int64_t video_duration(const struct plugin_ctx* ctx, int num, int den)
 {
     return ctx->video_plugin.i->video->duration(ctx->video_ctx, num, den);
 }
@@ -219,7 +215,6 @@ static int video_volume(const struct plugin_ctx* ctx)
 
 static struct video_player_interface controls = {
     video_open_file,
-    video_set_game_start,
     video_close,
     video_clear,
     video_is_open,

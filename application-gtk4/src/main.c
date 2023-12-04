@@ -257,7 +257,7 @@ on_video_path(const char* path, void* user)
 }
 
 static int
-on_game_video(const char* file_name, const char* path_hint, int64_t frame_offset, void* user)
+on_game_video(int video_id, const char* file_name, const char* path_hint, int64_t frame_offset, void* user)
 {
     struct on_video_path_ctx* ctx = user;
 
@@ -359,12 +359,9 @@ on_games_selected(VhAppGameBrowser* game_browser, int* game_ids, int count, gpoi
             if (i->video->open_file(plugin->ctx, video_ctx.file_path.str.data) == 0)
                 path_set_take(&ctx->current_video_file, &video_ctx.file_path);
 
-        /* Seek to offset where game starts */
+        /* Seek to beginning */
         if (i->video->is_open(plugin->ctx))
-        {
-            i->video->set_game_start(plugin->ctx, video_ctx.frame_offset, 1, 60);
             i->video->seek(plugin->ctx, 0, 1, 60);
-        }
         else
         {
             /* 

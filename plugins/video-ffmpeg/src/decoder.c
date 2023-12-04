@@ -226,14 +226,9 @@ decoder_is_open(const struct decoder* decoder)
 
 // ----------------------------------------------------------------------------
 int
-decoder_seek_near_keyframe(struct decoder* decoder, int64_t target_ts, int num, int den)
+decoder_seek_near_keyframe(struct decoder* decoder, int64_t target_ts)
 {
     int seek_result;
-
-    /* Convert timestamp to codec timebase */
-    AVRational from = av_make_q(num, den);
-    AVRational to = decoder->input_ctx->streams[decoder->vstream_idx]->time_base;
-    target_ts = av_rescale_q(target_ts, from, to);
 
     /*
      * AVSEEK_FLAG_BACKWARD should seek to the first keyframe that occurs
@@ -266,39 +261,28 @@ decoder_seek_near_keyframe(struct decoder* decoder, int64_t target_ts, int num, 
     return 0;
 }
 
-uint64_t
-decoder_offset(const struct decoder* decoder, int num, int den)
-{
-    AVRational from = decoder->input_ctx->streams[decoder->vstream_idx]->time_base;
-    AVRational to = av_make_q(num, den);
-    return av_rescale_q(decoder->current_frame->pts, from, to);
-}
-
-// ----------------------------------------------------------------------------
 int64_t
-to_codec_timestamp(struct decoder* decoder, int64_t ts, int num, int den)
+decoder_offset(const struct decoder* decoder)
 {
-    AVRational from = av_make_q(num, den);
-    AVRational to = decoder->input_ctx->streams[decoder->vstream_idx]->time_base;
-    return av_rescale_q(ts, from, to);
+    return decoder->current_frame->pts;
 }
 
-// ----------------------------------------------------------------------------
+AVRational
+decoder_frame_rate(const struct decoder* decoder)
+{
+    return decoder->input_ctx->streams[decoder->vstream_idx]->r_frame_rate;
+}
+
+AVRational
+decoder_time_base(const struct decoder* decoder)
+{
+    return decoder->input_ctx->streams[decoder->vstream_idx]->time_base;
+}
+
 int64_t
-from_codec_timestamp(struct decoder* decoder, int64_t codec_ts, int num, int den)
+decoder_duration(const struct decoder* decoder)
 {
-    AVRational from = decoder->input_ctx->streams[decoder->vstream_idx]->time_base;
-    AVRational to = av_make_q(num, den);
-    return av_rescale_q(codec_ts, from, to);
-}
-
-// ----------------------------------------------------------------------------
-void
-framerate(struct decoder* decoder, int* num, int* den)
-{
-    AVRational r = decoder->input_ctx->streams[decoder->vstream_idx]->r_frame_rate;
-    *num = r.num;
-    *den = r.den;
+    return decoder->input_ctx->streams[decoder->vstream_idx]->duration;
 }
 
 // ----------------------------------------------------------------------------

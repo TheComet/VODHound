@@ -40,9 +40,7 @@ struct video_player_interface
      * \note VODHound will guarantee that this function won't be called
      * twice in a row. close() will always be called first if necessary.
      */
-    int (*open_file)(struct plugin_ctx* ctx, const char* file_name);
-
-    void (*set_game_start)(struct plugin_ctx* ctx, int64_t game_start_ts, int num, int den);
+    int (*open_file)(struct plugin_ctx* ctx, const char* file_path);
 
     /*!
      * \brief Close the video. Player should reset everything, but keep the
@@ -87,8 +85,10 @@ struct video_player_interface
      *
      * \param frames The number of frames to seek. Can be negative. This
      * value is guaranteed to be "small", i.e. in the range of -30 to 30.
+     * 
+     * \return Returns 0 on success, -1 on error.
      */
-    void (*step)(struct plugin_ctx* ctx, int frames);
+    int (*step)(struct plugin_ctx* ctx, int frames);
 
     /*!
      * \brief Seek to a specific timestamp in the video.
@@ -105,7 +105,7 @@ struct video_player_interface
      * game is paused, the video will continue but there will be a large gap in
      * between the timestamps of the frames where the game was paused.
      */
-    int (*seek)(struct plugin_ctx* ctx, uint64_t offset, int num, int den);
+    int (*seek)(struct plugin_ctx* ctx, int64_t offset, int num, int den);
 
     /*!
      * \brief Return true if the video is currently playing, otherwise false.
@@ -115,12 +115,12 @@ struct video_player_interface
     /*!
      * \brief Get the current video offset in units of num/den.
      */
-    uint64_t (*offset)(const struct plugin_ctx* ctx, int num, int den);
+    int64_t (*offset)(const struct plugin_ctx* ctx, int num, int den);
 
     /*!
      * \brief Get the total video duration in units of num/den.
      */
-    uint64_t (*duration)(const struct plugin_ctx* ctx, int num, int den);
+    int64_t (*duration)(const struct plugin_ctx* ctx, int num, int den);
 
     void (*dimensions)(const struct plugin_ctx* ctx, int* width, int* height);
 

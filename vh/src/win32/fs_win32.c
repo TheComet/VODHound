@@ -73,6 +73,54 @@ path_join(struct path* path, struct str_view trailing)
 }
 
 struct str_view
+path_basename_view(const struct path* path)
+{
+    struct str_view view = str_view(path->str);
+    int orig_len = view.len;
+
+    /* Special case on windows -- If path starts with "\" it is invalid */
+    if (view.len && view.data[0] == '\\')
+    {
+        view.len = 0;
+        return view;
+    }
+
+    while (view.len && view.data[view.len - 1] == '\\')
+        view.len--;
+    while (view.len && view.data[view.len - 1] != '\\')
+        view.len--;
+
+    view.data += view.len;
+    view.len = orig_len - view.len;
+
+    return view;
+}
+
+struct str_view
+cpath_basename_view(const char* path)
+{
+    struct str_view view = cstr_view(path);
+    int orig_len = view.len;
+
+    /* Special case on windows -- If path starts with "\" it is invalid */
+    if (view.len && view.data[0] == '\\')
+    {
+        view.len = 0;
+        return view;
+    }
+
+    while (view.len && (view.data[view.len - 1] == '\\' || view.data[view.len - 1] == '/'))
+        view.len--;
+    while (view.len && (view.data[view.len - 1] != '\\' && view.data[view.len - 1] != '/'))
+        view.len--;
+
+    view.data += view.len;
+    view.len = orig_len - view.len;
+
+    return view;
+}
+
+struct str_view
 path_dirname_view(const struct path* path)
 {
     struct str_view view = str_view(path->str);

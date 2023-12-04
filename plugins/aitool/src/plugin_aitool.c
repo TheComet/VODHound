@@ -1,5 +1,6 @@
 #include "vh/db.h"
 #include "vh/frame_data.h"
+#include "vh/fs.h"
 #include "vh/log.h"
 #include "vh/mem.h"
 #include "vh/plugin.h"
@@ -192,6 +193,10 @@ struct plugin_ctx
     GTypeModule* type_module;
     struct db_interface* dbi;
     struct db* db;
+
+    int64_t game_offset;
+    int game_id;
+    int video_id;
 
     struct frame_data fdata;
 
@@ -537,9 +542,79 @@ drag_end(GtkGestureDrag* gesture, double x, double y, struct plugin_ctx* ctx)
 }
 
 static gboolean
-shortcut_prev_motion(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
+shortcut_prev_frame(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
 {
     struct plugin_ctx* ctx = user_pointer;
+    ctx->video_plugin.i->video->step(ctx->video_ctx, -1);
+    return TRUE;
+}
+
+static gboolean
+shortcut_next_frame(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
+{
+    struct plugin_ctx* ctx = user_pointer;
+    ctx->video_plugin.i->video->step(ctx->video_ctx, 1);
+    return TRUE;
+}
+
+static gboolean
+shortcut_prev_frame_adj(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
+{
+    struct plugin_ctx* ctx = user_pointer;
+    struct video_player_interface* vi = ctx->video_plugin.i->video;
+    void* vctx = ctx->video_ctx;
+
+    int64_t offset = vi->offset(vctx, 1, 60) - ctx->game_offset;
+    ctx->game_offset--;
+    vi->seek(vctx, ctx->game_offset + offset, 1, 60);
+
+    ctx->dbi->game.set_frame_offset(ctx->db, ctx->game_id, ctx->video_id, ctx->game_offset);
+
+    return TRUE;
+}
+
+static gboolean
+shortcut_next_frame_adj(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
+{
+    struct plugin_ctx* ctx = user_pointer;
+    struct video_player_interface* vi = ctx->video_plugin.i->video;
+    void* vctx = ctx->video_ctx;
+
+    int64_t offset = vi->offset(vctx, 1, 60) - ctx->game_offset;
+    ctx->game_offset++;
+    vi->seek(vctx, ctx->game_offset + offset, 1, 60);
+
+    ctx->dbi->game.set_frame_offset(ctx->db, ctx->game_id, ctx->video_id, ctx->game_offset);
+
+    return TRUE;
+}
+
+static gboolean
+shortcut_prev_motion(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
+{
+    int i;
+    uint64_t motion;
+    struct plugin_ctx* ctx = user_pointer;
+    struct video_player_interface* vi = ctx->video_plugin.i->video;
+    void* vctx = ctx->video_ctx;
+
+    int player_idx = 1;
+    const uint64_t* motions = ctx->fdata.motion[player_idx];
+
+    i = (int)vi->offset(vctx, 1, 60) - ctx->game_offset;
+    if (i >= ctx->fdata.frame_count)
+        i = ctx->fdata.frame_count - 1;
+    if (i <= 0)
+        return TRUE;
+
+    /* Find previous motion */
+    i--;
+    motion = motions[i];
+    while (i != 0 && motion == motions[i])
+        i--;
+    i++;
+
+    vi->seek(vctx, ctx->game_offset + i, 1, 60);
 
     return TRUE;
 }
@@ -553,27 +628,21 @@ shortcut_next_motion(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
     struct video_player_interface* vi = ctx->video_plugin.i->video;
     void* vctx = ctx->video_ctx;
 
-    /* Get current offset in milliseconds */
-    uint64_t ts = vi->offset(vctx, 1, 1000);
-
     int player_idx = 1;
+    const uint64_t* motions = ctx->fdata.motion[player_idx];
 
-    for (i = 0; i != ctx->fdata.frame_count; ++i)
-        if (ctx->fdata.timestamp[player_idx][i] - ctx->fdata.timestamp[player_idx][0] > ts)
-            break;
-    if (i != ctx->fdata.frame_count)
-    {
-        motion = ctx->fdata.motion[player_idx][i];
-        while (i != ctx->fdata.frame_count && motion == ctx->fdata.motion[player_idx][i])
-            i++;
-    }
-    if (i != ctx->fdata.frame_count)
-    {
-        ts = ctx->fdata.timestamp[player_idx][i] - ctx->fdata.timestamp[player_idx][0];
-        vi->seek(vctx, ts, 1, 1000);
-        while (vi->offset(vctx, 1, 1000) < ts)
-            vi->step(vctx, 1);
-    }
+    i = (int)vi->offset(vctx, 1, 60) - ctx->game_offset;
+    if (i >= ctx->fdata.frame_count - 1)
+        return TRUE;
+    if (i < 0)
+        i = 0;
+
+    /* Find next motion */
+    motion = motions[i];
+    do i++;
+    while (i != ctx->fdata.frame_count && motion == motions[i]);
+
+    vi->seek(vctx, ctx->game_offset + i, 1, 60);
 
     return TRUE;
 }
@@ -591,6 +660,30 @@ add_shortcuts(struct plugin_ctx* ctx, GtkWidget* ui)
         GTK_SHORTCUT_CONTROLLER(controller),
         GTK_SHORTCUT_SCOPE_GLOBAL);
     gtk_widget_add_controller(ui, controller);
+
+    gtk_shortcut_controller_add_shortcut(
+        GTK_SHORTCUT_CONTROLLER(controller),
+        gtk_shortcut_new(
+            gtk_keyval_trigger_new(GDK_KEY_h, GDK_CONTROL_MASK),
+            gtk_callback_action_new(shortcut_prev_frame, ctx, NULL)));
+
+    gtk_shortcut_controller_add_shortcut(
+        GTK_SHORTCUT_CONTROLLER(controller),
+        gtk_shortcut_new(
+            gtk_keyval_trigger_new(GDK_KEY_l, GDK_CONTROL_MASK),
+            gtk_callback_action_new(shortcut_next_frame, ctx, NULL)));
+
+    gtk_shortcut_controller_add_shortcut(
+        GTK_SHORTCUT_CONTROLLER(controller),
+        gtk_shortcut_new(
+            gtk_keyval_trigger_new(GDK_KEY_j, GDK_CONTROL_MASK),
+            gtk_callback_action_new(shortcut_prev_frame_adj, ctx, NULL)));
+
+    gtk_shortcut_controller_add_shortcut(
+        GTK_SHORTCUT_CONTROLLER(controller),
+        gtk_shortcut_new(
+            gtk_keyval_trigger_new(GDK_KEY_k, GDK_CONTROL_MASK),
+            gtk_callback_action_new(shortcut_next_frame_adj, ctx, NULL)));
 
     gtk_shortcut_controller_add_shortcut(
         GTK_SHORTCUT_CONTROLLER(controller),
@@ -673,8 +766,22 @@ static struct ui_center_interface ui_center = {
     ui_destroy
 };
 
+static int on_game_video(int video_id, const char* file_name, const char* path_hint, int64_t frame_offset, void* user)
+{
+    struct plugin_ctx* ctx = user;
+    ctx->video_id = video_id;
+    ctx->game_offset = frame_offset;
+    return 1;
+}
+
 static void replay_select(struct plugin_ctx* ctx, const int* game_ids, int count)
 {
+    /* Figure out where in the video the game starts. We use this to seek correctly */
+    ctx->game_offset = 0;  /* default */
+    ctx->video_id = -1;
+    ctx->game_id = game_ids[0];
+    ctx->dbi->game.get_videos(ctx->db, game_ids[0], on_game_video, ctx);
+
     frame_data_load(&ctx->fdata, game_ids[0]);
     
 }
@@ -689,13 +796,9 @@ static struct replay_interface replay = {
     replay_clear
 };
 
-static int video_open_file(struct plugin_ctx* ctx, const char* file_name)
+static int video_open_file(struct plugin_ctx* ctx, const char* file_path)
 {
-    return ctx->video_plugin.i->video->open_file(ctx->video_ctx, file_name);
-}
-static void video_set_game_start(struct plugin_ctx* ctx, int64_t game_start_ts, int num, int den)
-{
-    ctx->video_plugin.i->video->set_game_start(ctx->video_ctx, game_start_ts, num, den);
+    return ctx->video_plugin.i->video->open_file(ctx->video_ctx, file_path);
 }
 static void video_close(struct plugin_ctx* ctx)
 {
@@ -717,20 +820,24 @@ static void video_pause(struct plugin_ctx* ctx)
 {
     ctx->video_plugin.i->video->pause(ctx->video_ctx);
 }
-static void video_step(struct plugin_ctx* ctx, int frames)
+static int video_step(struct plugin_ctx* ctx, int frames)
 {
-    ctx->video_plugin.i->video->step(ctx->video_ctx, frames);
+    return ctx->video_plugin.i->video->step(ctx->video_ctx, frames);
 }
-static int video_seek(struct plugin_ctx* ctx, uint64_t offset, int num, int den)
+static int video_seek(struct plugin_ctx* ctx, int64_t offset, int num, int den)
 {
-    return ctx->video_plugin.i->video->seek(ctx->video_ctx, offset, num, den);
+    int64_t game_offset = ctx->game_offset * 60 * num / den;
+    return ctx->video_plugin.i->video->seek(ctx->video_ctx, offset + game_offset, num, den);
 }
-static uint64_t video_offset(const struct plugin_ctx* ctx, int num, int den)
+static int64_t video_offset(const struct plugin_ctx* ctx, int num, int den)
 {
-    return ctx->video_plugin.i->video->offset(ctx->video_ctx, num, den);
+    int64_t offset = ctx->video_plugin.i->video->offset(ctx->video_ctx, num, den);
+    int64_t game_offset = ctx->game_offset * 60 * num / den;
+    return offset - game_offset;
 }
-static uint64_t video_duration(const struct plugin_ctx* ctx, int num, int den)
+static int64_t video_duration(const struct plugin_ctx* ctx, int num, int den)
 {
+    /* TODO duration of game, not of video */
     return ctx->video_plugin.i->video->duration(ctx->video_ctx, num, den);
 }
 static void video_dimensions(const struct plugin_ctx* ctx, int* width, int* height)
@@ -752,7 +859,6 @@ static int video_volume(const struct plugin_ctx* ctx)
 
 static struct video_player_interface controls = {
     video_open_file,
-    video_set_game_start,
     video_close,
     video_clear,
     video_is_open,

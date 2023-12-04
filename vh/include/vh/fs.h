@@ -56,6 +56,20 @@ VH_PUBLIC_API int
 path_join(struct path* path, struct str_view str);
 
 VH_PUBLIC_API struct str_view
+path_basename_view(const struct path* path);
+
+VH_PUBLIC_API struct str_view
+cpath_basename_view(const char* path);
+
+static inline void
+path_basename(struct path* path)
+{
+    struct str_view view = path_basename_view(path);
+    memmove(path->str.data, view.data, view.len);
+    path->str.len = view.len;
+}
+
+VH_PUBLIC_API struct str_view
 path_dirname_view(const struct path* path);
 
 static inline void
