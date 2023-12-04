@@ -121,8 +121,15 @@ track_allocation(uintptr_t addr, mem_size size)
 
     state.ignore_malloc = 1;
         /* insert info into hashmap */
-        if (hm_insert(&state.report, &addr, (void**)&info) != 1)
-            log_mem_err("Hashmap insert failed! Expect to see incorrect memory leak reports!\n");
+        switch (hm_insert(&state.report, &addr, (void**)&info))
+        {
+            case 1: break;
+            case 0:
+                log_mem_err("Double allocation! This is usually caused by calling mem_track_allocation() on the same address twice.\n");
+                print_backtrace();
+                break;
+            default: log_mem_err("Hashmap insert failed! Expect to see incorrect memory leak reports!\n");
+         }
 
         /* record the location and size of the allocation */
         info->location = addr;
@@ -283,5 +290,5 @@ mem_track_allocation(void* p)
 void
 mem_track_deallocation(void* p)
 {
-    track_deallocation((uintptr_t)p, "sentinel()");
+    track_deallocation((uintptr_t)p, "track_deallocation()");
 }
