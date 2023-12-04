@@ -224,7 +224,7 @@ on_search_text_changed(GtkWidget* search_box, int c, char* new_value)
     parse_failed         : return -1;
 }
 
-static GtkWidget* ui_create(struct plugin_ctx* ctx)
+static GtkWidget* ui_center_create(struct plugin_ctx* ctx)
 {
     GtkWidget* search_box;
     GtkWidget* label;
@@ -241,14 +241,14 @@ static GtkWidget* ui_create(struct plugin_ctx* ctx)
 
     return g_object_ref_sink(vbox);
 }
-static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
+static void ui_center_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
 {
     g_object_unref(ui);
 }
 
 static struct ui_pane_interface ui_center = {
-    ui_create,
-    ui_destroy
+    ui_center_create,
+    ui_center_destroy
 };
 
 static void select_replays(struct plugin_ctx* ctx, const int* game_ids, int count)

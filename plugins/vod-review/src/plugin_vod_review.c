@@ -105,7 +105,7 @@ static void ui_add_timeline(struct plugin_ctx* ctx)
     IupRefresh(ctx->controls);*/
 }
 
-static GtkWidget* ui_create(struct plugin_ctx* ctx)
+static GtkWidget* ui_center_create(struct plugin_ctx* ctx)
 {
     GtkAdjustment* adj;
     GtkWidget* slider;
@@ -145,15 +145,15 @@ static GtkWidget* ui_create(struct plugin_ctx* ctx)
 
     return g_object_ref_sink(ui);
 }
-static void ui_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
+static void ui_center_destroy(struct plugin_ctx* ctx, GtkWidget* ui)
 {
     ctx->video_plugin.i->ui_center->destroy(ctx->video_ctx, ctx->video_canvas);
     g_object_unref(ui);
 }
 
 static struct ui_center_interface ui_center = {
-    ui_create,
-    ui_destroy
+    ui_center_create,
+    ui_center_destroy
 };
 
 static int video_open_file(struct plugin_ctx* ctx, const char* file_name)
