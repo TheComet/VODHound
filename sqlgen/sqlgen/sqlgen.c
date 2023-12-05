@@ -4,6 +4,7 @@
 #define NL "\r\n"
 #else
 #define _GNU_SOURCE
+#include <errno.h>
 #include <unistd.h>
 #include <sys/fcntl.h>
 #include <sys/mman.h>
@@ -91,7 +92,7 @@ utf_free(void* utf)
 #endif
 
 static int
-mfile_map_read(struct mfile* mf, const char* file_name)
+mfile_map_read(struct mfile* mf, const char* file_name, int silence_open_error)
 {
 #if defined(WIN32)
     HANDLE hFile;
@@ -158,15 +159,29 @@ mfile_map_read(struct mfile* mf, const char* file_name)
 
     fd = open(file_name, O_RDONLY);
     if (fd < 0)
+    {
+        if (!silence_open_error)
+            fprintf(stderr, "Error: Failed to open file \"%s\": %s\n", file_name, strerror(errno));
         goto open_failed;
+    }
 
     if (fstat(fd, &stbuf) != 0)
+    {
+        fprintf(stderr, "Error: Failed to stat file \"%s\": %s\n", file_name, strerror(errno));
         goto fstat_failed;
+    }
     if (!S_ISREG(stbuf.st_mode))
+    {
+        fprintf(stderr, "Error: File \"%s\" is not a regular file!\n", file_name);
         goto fstat_failed;
+    }
+
     mf->address = mmap(NULL, (size_t)stbuf.st_size, PROT_READ, MAP_PRIVATE | MAP_NORESERVE, fd, 0);
     if (mf->address == MAP_FAILED)
+    {
+        fprintf(stderr, "Error: Failed to mmap() file \"%s\": %s\n", file_name, strerror(errno));
         goto mmap_failed;
+    }
 
     /* file descriptor no longer required */
     close(fd);
@@ -240,16 +255,26 @@ mfile_map_write(struct mfile* mf, const char* file_name, int size)
 #else
     int fd = open(file_name, O_CREAT|O_RDWR|O_TRUNC, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
     if (fd < 0)
+    {
+        fprintf(stderr, "Error: Failed to open file \"%s\" for writing: %s\n", file_name, strerror(errno));
         goto open_failed;
+    }
 
     /* When truncating the file, it must be expanded again, otherwise writes to
      * the memory will cause SIGBUS.
      * NOTE: If this ever gets ported to non-Linux, see posix_fallocate() */
     if (fallocate(fd, 0, 0, size) != 0)
+    {
+        fprintf(stderr, "Error: Failed to resize file \"%s\": %s\n", file_name, strerror(errno));
         goto mmap_failed;
+    }
+
     mf->address = mmap(NULL, (size_t)size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (mf->address == MAP_FAILED)
+    {
+        fprintf(stderr, "Error: Failed to mmap() file \"%s\" for writing: %s\n", file_name, strerror(errno));
         goto mmap_failed;
+    }
 
     /* file descriptor no longer required */
     close(fd);
@@ -2945,7 +2970,7 @@ gen_header(const struct root* root, const char* data, const char* file_name,
 
     /* Don't write header if it is identical to the existing one -- causes less
      * rebuilds */
-    if (mfile_map_read(&mf, file_name) == 0)
+    if (mfile_map_read(&mf, file_name, 1) == 0)
     {
         if (mf.size == ms.idx && memcmp(mf.address, ms.address, mf.size) == 0)
             return 0;
@@ -3389,7 +3414,7 @@ gen_source(const struct root* root, const char* data, const char* file_name,
 
     /* Don't write source if it is identical to the existing one -- causes less
      * rebuilds */
-    if (mfile_map_read(&mf, file_name) == 0)
+    if (mfile_map_read(&mf, file_name, 1) == 0)
     {
         if (mf.size == ms.idx && memcmp(mf.address, ms.address, mf.size) == 0)
             return 0;
@@ -3413,7 +3438,7 @@ int main(int argc, char** argv)
     if (parse_cmdline(argc, argv, &cfg) != 0)
         return -1;
 
-    if (mfile_map_read(&mf, cfg.input_file) < 0)
+    if (mfile_map_read(&mf, cfg.input_file, 0) < 0)
         return -1;
 
     root_init(&root);

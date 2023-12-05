@@ -668,6 +668,14 @@ shortcut_prev_motion(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
     return TRUE;
 }
 
+static int
+on_motion_string(const char* string, void* user_data)
+{
+    GtkLabel* label = GTK_LABEL(user_data);
+    gtk_label_set_text(label, string);
+    return 1;
+}
+
 static gboolean
 shortcut_next_motion(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
 {
@@ -677,7 +685,7 @@ shortcut_next_motion(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
     struct video_player_interface* vi = ctx->video_plugin.i->video;
     void* vctx = ctx->video_ctx;
 
-    int player_idx = 1;
+    int player_idx = 0;
     const uint64_t* motions = ctx->fdata.motion[player_idx];
 
     i = (int)vi->offset(vctx, 1, 60) - ctx->game_offset;
@@ -690,8 +698,18 @@ shortcut_next_motion(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
     motion = motions[i];
     do i++;
     while (i != ctx->fdata.frame_count && motion == motions[i]);
+    if (i == ctx->fdata.frame_count)
+        return TRUE;
 
     vi->seek(vctx, ctx->game_offset + i, 1, 60);
+
+    /* Update UI */
+    if (ctx->dbi->motion.string(ctx->db, motions[i], on_motion_string, ctx->pane.string) != 1)
+    {
+        char buf[sizeof("0x1122334455667788")];
+        sprintf(buf, "0x%" PRIx64, motions[i]);
+        gtk_label_set_text(ctx->pane.string, buf);
+    }
 
     return TRUE;
 }
@@ -843,8 +861,8 @@ static GtkWidget* ui_pane_create(struct plugin_ctx* ctx)
     vbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     label = gtk_label_new("Motion:");
     gtk_box_append(GTK_BOX(vbox), label);
-    label = gtk_label_new("idle");
-    gtk_box_append(GTK_BOX(vbox), label);
+    ctx->pane.string = gtk_label_new("idle");
+    gtk_box_append(GTK_BOX(vbox), GTK_WIDGET(ctx->pane.string));
     gtk_box_append(GTK_BOX(ui), vbox);
 
     return g_object_ref_sink(ui);
@@ -877,7 +895,7 @@ static void replay_select(struct plugin_ctx* ctx, const int* game_ids, int count
     ctx->dbi->game.get_videos(ctx->db, game_ids[0], on_game_video, ctx);
 
     frame_data_load(&ctx->fdata, game_ids[0]);
-    
+
 }
 static void replay_clear(struct plugin_ctx* ctx)
 {
