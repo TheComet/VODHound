@@ -880,7 +880,7 @@ DROP INDEX IF EXISTS idx_motions_hash40;
 }
 
 %source-preamble {
-void
+static void
 log_sql_err(int error_code, const char* error_code_str, const char* error_msg)
 {
     log_err("%s (%d): %s\n", error_code_str, error_code, error_msg);

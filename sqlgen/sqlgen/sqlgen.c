@@ -2348,6 +2348,16 @@ write_migration_body(struct mstream* ms, const struct root* root, const char* da
     if (!reinit_db)
         mstream_cstr(ms, "    char buf[sizeof(\"PRAGMA user_version=+2147483648;\")];" NL NL);
 
+    /* Ensure requested version is within range */
+    if (!reinit_db)
+    {
+        mstream_fmt (ms, "    if (target_version < 0 || target_version > %d)" NL "    {" NL, max_version);
+        mstream_fmt (ms, "        %S(\"Invalid version requested for migration: %%d. Support versions 0-%d\", target_version);" NL,
+            LOG_ERR(root->log_err, data), max_version);
+        mstream_cstr(ms, "        return -1;" NL);
+        mstream_cstr(ms, "    }" NL NL);
+    }
+
     /* Get current db version */
     mstream_fmt (ms, "    version = %S_version(ctx);" NL, PREFIX(root->prefix, data));
     mstream_cstr(ms, "    if (version < 0)" NL);
@@ -2487,6 +2497,16 @@ write_migration_body(struct mstream* ms, const struct root* root, const char* da
     mstream_fmt(ms, "            %S(\"Failed to upgrade db: Unknown version %%d\\n\", version);" NL, LOG_ERR(root->log_err, data));
     mstream_cstr(ms, "            goto migration_failed;" NL);
     mstream_cstr(ms, "    }" NL NL);
+
+    /* Ensure that we have reached the target version */
+    if (!reinit_db)
+    {
+        mstream_cstr(ms, "    if (version != target_version)" NL "    {" NL);
+        mstream_fmt (ms, "        %S(\"Failed to migrate db to version %%d. Migration stopped at version %%d\", target_version, version);" NL,
+            LOG_ERR(root->log_err, data));
+        mstream_cstr(ms, "        goto migration_failed;" NL);
+        mstream_cstr(ms, "    }" NL NL);
+    }
 
     /* Write new version to db */
     if (reinit_db)

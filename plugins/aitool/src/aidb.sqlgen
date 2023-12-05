@@ -1,0 +1,48 @@
+%option prefix="aidb"
+%option malloc="mem_alloc"
+%option free="mem_free"
+%option log-dbg="log_dbg"
+%option log-error="log_err"
+%option log-sql-error="log_sql_err"
+
+%header-preamble {
+	#include <inttypes.h>
+}
+
+%source-includes {
+	#include "sqlite/sqlite3.h"
+	#include "aitool/db.h"
+	#include "vh/log.h"
+	#include "vh/mem.h"
+}
+
+%source-preamble {
+	static void log_sql_err(int error_code, const char* error_code_str, const char* error_msg)
+	{
+		log_err("%s (%d): %s\n", error_code_str, error_code, error_msg);
+	}
+}
+
+%upgrade 1 {
+	CREATE TABLE IF NOT EXISTS label_data (
+		id INTEGER PRIMARY KEY NOT NULL,
+		game_id INTEGER NOT NULL,
+		video_id INTEGER NOT NULL,
+		fighter_id INTEGER NOT NULL,
+		frame_offset INTEGER NOT NULL,
+		hash40 INTEGER NOT NULL,
+		cx INTEGER NOT NULL,
+		cy INTEGER NOT NULL,
+		w INTEGER NOT NULL,
+		h INTEGER NOT NULL,
+		UNIQUE(game_id, video_id, fighter_id, frame_offset)
+	);
+}
+%downgrade 0 {
+	DROP TABLE IF EXISTS video_data;
+}
+
+%query label,add(int game_id, int video_id, int fighter_id, int64_t frame_offset, uint64_t hash40, int cx, int cy, int w, int h) {
+	type insert
+	table label_data
+}

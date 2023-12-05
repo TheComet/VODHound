@@ -1,3 +1,5 @@
+#include "aitool/db.h"
+
 #include "vh/db.h"
 #include "vh/frame_data.h"
 #include "vh/fs.h"
@@ -214,6 +216,9 @@ struct plugin_ctx
     struct db_interface* dbi;
     struct db* db;
 
+    struct aidb_interface* aidbi;
+    struct aidb* aidb;
+
     int64_t game_offset;
     int game_id;
     int video_id;
@@ -248,15 +253,29 @@ static int on_scan_plugin(struct plugin_lib lib, void* user)
     return 0;
 }
 
+static int aidb_init_refs = 0;
 static struct plugin_ctx*
 create(GTypeModule* type_module, struct db_interface* dbi, struct db* db)
 {
-    struct strlist plugins;
     struct plugin_ctx* ctx = mem_alloc(sizeof(struct plugin_ctx));
 
     ctx->type_module = type_module;
     ctx->dbi = dbi;
     ctx->db = db;
+
+    if (aidb_init_refs++ == 0)
+        if (aidb_init() < 0)
+        {
+            aidb_init_refs--;
+            goto init_aidb_failed;
+        }
+
+    ctx->aidbi = aidb("sqlite3");
+    ctx->aidb = ctx->aidbi->open("aitool.db");
+    if (ctx->aidb == NULL)
+        goto open_aidb_failed;
+    if (ctx->aidbi->migrate_to(ctx->aidb, 1) < 0)
+        goto migrate_aidb_failed;
 
     frame_data_init(&ctx->fdata);
 
@@ -270,6 +289,12 @@ create(GTypeModule* type_module, struct db_interface* dbi, struct db* db)
     return ctx;
 
 load_video_plugin_failed:
+migrate_aidb_failed:
+    ctx->aidbi->close(ctx->aidb);
+open_aidb_failed:
+    if (--aidb_init_refs == 0)
+        aidb_deinit();
+init_aidb_failed:
     mem_free(ctx);
     return NULL;
 }
@@ -279,6 +304,10 @@ destroy(GTypeModule* type_module, struct plugin_ctx* ctx)
 {
     ctx->video_plugin.i->destroy(type_module, ctx->video_ctx);
     plugin_unload(&ctx->video_plugin);
+
+    ctx->aidbi->close(ctx->aidb);
+    if (--aidb_init_refs == 0)
+        aidb_deinit();
 
     mem_free(ctx);
 }

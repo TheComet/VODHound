@@ -17,6 +17,7 @@ vodhound_add_plugin (${PROJECT_NAME}
         "include"
     LIBS
         VODHound::vh
+        sqlite
         GTK4::glib
         GTK4::cairo
         GTK4::pango
@@ -27,5 +28,10 @@ vodhound_add_plugin (${PROJECT_NAME}
         GTK4::gtk)
 
 if (VODHOUND_AITOOL)
+    sqlgen_target (aidb
+        INPUT "src/aidb.sqlgen"
+        HEADER "include/aitool/db.h"
+        BACKENDS sqlite3)
+    target_sources (${PROJECT_NAME} PRIVATE ${SQLGEN_aidb_OUTPUTS})
+    target_include_directories (${PROJECT_NAME} PRIVATE "${PROJECT_BINARY_DIR}/include")
 endif ()
-
