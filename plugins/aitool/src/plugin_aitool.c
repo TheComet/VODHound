@@ -193,7 +193,7 @@ GLuint gl_load_shader(const GLchar* vs, const GLchar* fs, const char* attribute_
 struct pane
 {
     GtkSpinButton* game_offset;
-    GtkComboBox* fighter;
+    GtkComboBoxText* fighter;
     GtkLabel* frame;
     GtkLabel* hash40;
     GtkLabel* string;
@@ -223,6 +223,8 @@ struct plugin_ctx
     int64_t game_offset;
     int game_id;
     int video_id;
+    int fighter_idx;
+    int fighter_ids[8];
 
     struct frame_data fdata;
 
@@ -275,6 +277,7 @@ create(GTypeModule* type_module, struct db_interface* dbi, struct db* db)
     ctx->aidb = ctx->aidbi->open("aitool.db");
     if (ctx->aidb == NULL)
         goto open_aidb_failed;
+    ctx->aidbi->migrate_to(ctx->aidb, 0);
     if (ctx->aidbi->migrate_to(ctx->aidb, 1) < 0)
         goto migrate_aidb_failed;
 
@@ -580,15 +583,56 @@ drag_update(GtkGestureDrag* gesture, double x, double y, struct plugin_ctx* ctx)
 static void
 drag_end(GtkGestureDrag* gesture, double x, double y, struct plugin_ctx* ctx)
 {
+    struct video_player_interface* vi = ctx->video_plugin.i->video;
+    int64_t video_offset = vi->offset(ctx->video_ctx, 1, 60);
     struct center* c = &ctx->center;
+
     drag_update_rect(x, y, ctx);
 
-    if (c->drag_rect)
-        if (c->drag_rect->dims.x < 10 || c->drag_rect->dims.y < 10)
-            vec_erase_index(&ctx->gfx.rects,
-                vec_find(&ctx->gfx.rects, c->drag_rect));
+    if (c->drag_rect->dims.x < 10 || c->drag_rect->dims.y < 10)
+    {
+        ctx->aidbi->label.remove(ctx->aidb, ctx->game_id, ctx->video_id,
+            ctx->fighter_ids[ctx->fighter_idx], video_offset);
+
+        vec_erase_index(&ctx->gfx.rects,
+            vec_find(&ctx->gfx.rects, c->drag_rect));
+    }
+    else
+    {
+        const uint64_t* motions = ctx->fdata.motion[ctx->fighter_idx];
+        int frame = video_offset - ctx->game_offset;
+
+        ctx->aidbi->label.add_or_update(ctx->aidb, ctx->game_id, ctx->video_id,
+            ctx->fighter_ids[ctx->fighter_idx], video_offset, motions[frame],
+            c->drag_rect->center.x, c->drag_rect->center.y,
+            c->drag_rect->dims.x, c->drag_rect->dims.y);
+    }
 
     gtk_gl_area_queue_render(GTK_GL_AREA(c->video_canvas));
+}
+
+static int
+on_motion_string(const char* string, void* user_data)
+{
+    GtkLabel* label = GTK_LABEL(user_data);
+    gtk_label_set_text(label, string);
+    return 1;
+}
+
+static void
+update_pane_frame_data(struct plugin_ctx* ctx)
+{
+    struct video_player_interface* vi = ctx->video_plugin.i->video;
+    void* vctx = ctx->video_ctx;
+    const uint64_t* motions = ctx->fdata.motion[ctx->fighter_idx];
+    int frame = vi->offset(vctx, 1, 60) - ctx->game_offset;
+
+    if (ctx->dbi->motion.string(ctx->db, motions[frame], on_motion_string, ctx->pane.string) != 1)
+    {
+        char buf[sizeof("0x1122334455667788")];
+        sprintf(buf, "0x%" PRIx64, motions[frame]);
+        gtk_label_set_text(ctx->pane.string, buf);
+    }
 }
 
 static gboolean
@@ -596,6 +640,7 @@ shortcut_prev_frame(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
 {
     struct plugin_ctx* ctx = user_pointer;
     ctx->video_plugin.i->video->step(ctx->video_ctx, -1);
+    update_pane_frame_data(ctx);
     return TRUE;
 }
 
@@ -604,6 +649,7 @@ shortcut_next_frame(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
 {
     struct plugin_ctx* ctx = user_pointer;
     ctx->video_plugin.i->video->step(ctx->video_ctx, 1);
+    update_pane_frame_data(ctx);
     return TRUE;
 }
 
@@ -619,6 +665,7 @@ shortcut_prev_frame_adj(GtkWidget* widget, GVariant* unused, gpointer user_point
     vi->seek(vctx, ctx->game_offset + offset, 1, 60);
 
     ctx->dbi->game.set_frame_offset(ctx->db, ctx->game_id, ctx->video_id, ctx->game_offset);
+    update_pane_frame_data(ctx);
 
     return TRUE;
 }
@@ -635,6 +682,7 @@ shortcut_next_frame_adj(GtkWidget* widget, GVariant* unused, gpointer user_point
     vi->seek(vctx, ctx->game_offset + offset, 1, 60);
 
     ctx->dbi->game.set_frame_offset(ctx->db, ctx->game_id, ctx->video_id, ctx->game_offset);
+    update_pane_frame_data(ctx);
 
     return TRUE;
 }
@@ -665,16 +713,9 @@ shortcut_prev_motion(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
     i++;
 
     vi->seek(vctx, ctx->game_offset + i, 1, 60);
+    update_pane_frame_data(ctx);
 
     return TRUE;
-}
-
-static int
-on_motion_string(const char* string, void* user_data)
-{
-    GtkLabel* label = GTK_LABEL(user_data);
-    gtk_label_set_text(label, string);
-    return 1;
 }
 
 static gboolean
@@ -705,12 +746,7 @@ shortcut_next_motion(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
     vi->seek(vctx, ctx->game_offset + i, 1, 60);
 
     /* Update UI */
-    if (ctx->dbi->motion.string(ctx->db, motions[i], on_motion_string, ctx->pane.string) != 1)
-    {
-        char buf[sizeof("0x1122334455667788")];
-        sprintf(buf, "0x%" PRIx64, motions[i]);
-        gtk_label_set_text(ctx->pane.string, buf);
-    }
+    update_pane_frame_data(ctx);
 
     return TRUE;
 }
@@ -834,6 +870,13 @@ static struct ui_center_interface ui_center = {
     ui_center_destroy
 };
 
+static void on_fighter_changed(GtkComboBox* self, gpointer user_data)
+{
+    struct plugin_ctx* ctx = user_data;
+    ctx->fighter_idx = gtk_combo_box_get_active(self);
+    update_pane_frame_data(ctx);
+}
+
 static GtkWidget* ui_pane_create(struct plugin_ctx* ctx)
 {
     GtkWidget* label;
@@ -843,10 +886,11 @@ static GtkWidget* ui_pane_create(struct plugin_ctx* ctx)
 
     ui = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 
-    ctx->pane.fighter = GTK_COMBO_BOX(gtk_combo_box_new());
+    ctx->pane.fighter = GTK_COMBO_BOX_TEXT(gtk_combo_box_text_new());
     gtk_box_append(GTK_BOX(ui), GTK_WIDGET(ctx->pane.fighter));
+    g_signal_connect(ctx->pane.fighter, "changed", G_CALLBACK(on_fighter_changed), ctx);
 
-    label = gtk_label_new("Frame Offset:");
+    label = gtk_label_new("Game Start:");
     game_offset = gtk_spin_button_new_with_range(-32768, 32767, 1);
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(game_offset), 0);
 
@@ -890,7 +934,17 @@ static int on_game_video(int video_id, const char* file_name, const char* path_h
     return 1;
 }
 
-//static int on_game_player(int slot, const char* )
+static int on_game_player_and_fighter(const char* player, int fighter_id, const char* fighter, void* user)
+{
+    struct plugin_ctx* ctx = user;
+    char buf[64];
+    snprintf(buf, 64, "%s (%s)", player, fighter);
+    gtk_combo_box_text_append_text(ctx->pane.fighter, buf);
+
+    ctx->fighter_ids[ctx->fighter_idx++] = fighter_id;
+
+    return 0;
+}
 
 static void replay_select(struct plugin_ctx* ctx, const int* game_ids, int count)
 {
@@ -902,7 +956,9 @@ static void replay_select(struct plugin_ctx* ctx, const int* game_ids, int count
 
     frame_data_load(&ctx->fdata, game_ids[0]);
 
-    //ctx->dbi->game.get_players(game_ids[0], on_game_player, ctx);
+    ctx->fighter_idx = 0;
+    ctx->dbi->game.get_player_and_fighter_names(ctx->db, game_ids[0], on_game_player_and_fighter, ctx);
+    gtk_combo_box_set_active(GTK_COMBO_BOX(ctx->pane.fighter), 0);
 }
 static void replay_clear(struct plugin_ctx* ctx)
 {

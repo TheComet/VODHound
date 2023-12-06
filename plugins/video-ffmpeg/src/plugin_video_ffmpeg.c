@@ -159,9 +159,15 @@ static int video_seek(struct plugin_ctx* ctx, int64_t offset, int num, int den)
 static int video_is_playing(const struct plugin_ctx* ctx) { return 0; }
 static int64_t video_offset(const struct plugin_ctx* ctx, int num, int den)
 {
-    AVRational from = decoder_time_base(&ctx->decoder);
-    AVRational to = av_make_q(num, den);
-    int64_t offset = decoder_offset(&ctx->decoder);
+    AVRational from, to;
+    int64_t offset;
+
+    if (!decoder_is_open(&ctx->decoder))
+        return 0;
+
+    from = decoder_time_base(&ctx->decoder);
+    to = av_make_q(num, den);
+    offset = decoder_offset(&ctx->decoder);
     return av_rescale_q(offset, from, to);
 }
 static int64_t video_duration(const struct plugin_ctx* ctx, int num, int den) { return 0; }

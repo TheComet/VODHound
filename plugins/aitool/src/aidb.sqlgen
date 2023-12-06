@@ -29,20 +29,26 @@
 		game_id INTEGER NOT NULL,
 		video_id INTEGER NOT NULL,
 		fighter_id INTEGER NOT NULL,
-		frame_offset INTEGER NOT NULL,
+		video_offset INTEGER NOT NULL,
 		hash40 INTEGER NOT NULL,
 		cx INTEGER NOT NULL,
 		cy INTEGER NOT NULL,
 		w INTEGER NOT NULL,
 		h INTEGER NOT NULL,
-		UNIQUE(game_id, video_id, fighter_id, frame_offset)
+		UNIQUE(game_id, video_id, fighter_id, video_offset)
 	);
 }
 %downgrade 0 {
-	DROP TABLE IF EXISTS video_data;
+	DROP TABLE IF EXISTS label_data;
 }
 
-%query label,add(int game_id, int video_id, int fighter_id, int64_t frame_offset, uint64_t hash40, int cx, int cy, int w, int h) {
-	type insert
+%query label,add_or_update(int game_id, int video_id, int fighter_id,
+		int64_t video_offset, uint64_t hash40,
+		int cx, int cy, int w, int h) {
+	type upsert cx, cy, w, h
+	table label_data
+}
+%query label,remove(int game_id, int video_id, int fighter_id, int64_t video_offset) {
+	type delete
 	table label_data
 }

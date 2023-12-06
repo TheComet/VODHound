@@ -839,6 +839,17 @@ DROP INDEX IF EXISTS idx_motions_hash40;
     type insert
     table game_players
 }
+%query game,get_player_and_fighter_names(int game_id) {
+    type select-all
+    stmt {
+        SELECT people.name, fighters.id, fighters.name FROM game_players
+        JOIN fighters ON fighters.id=fighter_id
+        JOIN people ON people.id=person_id
+        WHERE game_id=?
+        ORDER BY slot;
+    }
+    callback const char* player, int fighter_id, const char* fighter
+}
 %query group,add_or_get(struct str_view name) {
     type insert
     table groups
