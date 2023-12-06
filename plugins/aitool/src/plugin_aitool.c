@@ -193,6 +193,7 @@ GLuint gl_load_shader(const GLchar* vs, const GLchar* fs, const char* attribute_
 struct pane
 {
     GtkSpinButton* game_offset;
+    GtkComboBox* fighter;
     GtkLabel* frame;
     GtkLabel* hash40;
     GtkLabel* string;
@@ -842,6 +843,9 @@ static GtkWidget* ui_pane_create(struct plugin_ctx* ctx)
 
     ui = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 
+    ctx->pane.fighter = GTK_COMBO_BOX(gtk_combo_box_new());
+    gtk_box_append(GTK_BOX(ui), GTK_WIDGET(ctx->pane.fighter));
+
     label = gtk_label_new("Frame Offset:");
     game_offset = gtk_spin_button_new_with_range(-32768, 32767, 1);
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(game_offset), 0);
@@ -861,7 +865,7 @@ static GtkWidget* ui_pane_create(struct plugin_ctx* ctx)
     vbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     label = gtk_label_new("Motion:");
     gtk_box_append(GTK_BOX(vbox), label);
-    ctx->pane.string = gtk_label_new("idle");
+    ctx->pane.string = GTK_LABEL(gtk_label_new(""));
     gtk_box_append(GTK_BOX(vbox), GTK_WIDGET(ctx->pane.string));
     gtk_box_append(GTK_BOX(ui), vbox);
 
@@ -886,6 +890,8 @@ static int on_game_video(int video_id, const char* file_name, const char* path_h
     return 1;
 }
 
+//static int on_game_player(int slot, const char* )
+
 static void replay_select(struct plugin_ctx* ctx, const int* game_ids, int count)
 {
     /* Figure out where in the video the game starts. We use this to seek correctly */
@@ -896,9 +902,12 @@ static void replay_select(struct plugin_ctx* ctx, const int* game_ids, int count
 
     frame_data_load(&ctx->fdata, game_ids[0]);
 
+    //ctx->dbi->game.get_players(game_ids[0], on_game_player, ctx);
 }
 static void replay_clear(struct plugin_ctx* ctx)
 {
+    gtk_combo_box_text_remove_all(ctx->pane.fighter);
+
     if (frame_data_is_loaded(&ctx->fdata))
         frame_data_free(&ctx->fdata);
 }
