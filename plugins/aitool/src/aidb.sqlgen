@@ -6,49 +6,54 @@
 %option log-sql-error="log_sql_err"
 
 %header-preamble {
-	#include <inttypes.h>
+    #include <inttypes.h>
 }
 
 %source-includes {
-	#include "sqlite/sqlite3.h"
-	#include "aitool/db.h"
-	#include "vh/log.h"
-	#include "vh/mem.h"
+    #include "sqlite/sqlite3.h"
+    #include "aitool/db.h"
+    #include "vh/log.h"
+    #include "vh/mem.h"
 }
 
 %source-preamble {
-	static void log_sql_err(int error_code, const char* error_code_str, const char* error_msg)
-	{
-		log_err("%s (%d): %s\n", error_code_str, error_code, error_msg);
-	}
+    static void log_sql_err(int error_code, const char* error_code_str, const char* error_msg)
+    {
+        log_err("%s (%d): %s\n", error_code_str, error_code, error_msg);
+    }
 }
 
 %upgrade 1 {
-	CREATE TABLE IF NOT EXISTS label_data (
-		id INTEGER PRIMARY KEY NOT NULL,
-		game_id INTEGER NOT NULL,
-		video_id INTEGER NOT NULL,
-		fighter_id INTEGER NOT NULL,
-		video_offset INTEGER NOT NULL,
-		hash40 INTEGER NOT NULL,
-		cx INTEGER NOT NULL,
-		cy INTEGER NOT NULL,
-		w INTEGER NOT NULL,
-		h INTEGER NOT NULL,
-		UNIQUE(game_id, video_id, fighter_id, video_offset)
-	);
+    CREATE TABLE IF NOT EXISTS label_data (
+        id INTEGER PRIMARY KEY NOT NULL,
+        game_id INTEGER NOT NULL,
+        video_id INTEGER NOT NULL,
+        fighter_id INTEGER NOT NULL,
+        video_offset INTEGER NOT NULL,
+        hash40 INTEGER NOT NULL,
+        cx INTEGER NOT NULL,
+        cy INTEGER NOT NULL,
+        w INTEGER NOT NULL,
+        h INTEGER NOT NULL,
+        UNIQUE(game_id, video_id, fighter_id, video_offset)
+    );
 }
 %downgrade 0 {
-	DROP TABLE IF EXISTS label_data;
+    DROP TABLE IF EXISTS label_data;
 }
 
 %query label,add_or_update(int game_id, int video_id, int fighter_id,
-		int64_t video_offset, uint64_t hash40,
-		int cx, int cy, int w, int h) {
-	type upsert cx, cy, w, h
-	table label_data
+        int64_t video_offset, uint64_t hash40,
+        int cx, int cy, int w, int h) {
+    type upsert cx, cy, w, h
+    table label_data
 }
 %query label,remove(int game_id, int video_id, int fighter_id, int64_t video_offset) {
-	type delete
-	table label_data
+    type delete
+    table label_data
+}
+%query label,get(int game_id, int video_id, int fighter_id, int64_t video_offset) {
+    type select-first
+    table label_data
+    callback uint64_t hash40, int cx, int cy, int w, int h
 }

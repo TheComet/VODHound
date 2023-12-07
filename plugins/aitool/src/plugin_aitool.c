@@ -74,7 +74,7 @@ float rect(vec2 uv, vec2 center, vec2 dims, vec2 blur) {\n\
 void main() {\n\
     float rect = rect(f_texcoord, u_center, u_dims, u_pixsize);\n\
     float cr = rect * line_cross(f_texcoord, u_center, u_pixsize);\n\
-    gl_FragColor = vec4(1.0, 0.8, 0.5, (rect + cr) * 0.5);\n\
+    gl_FragColor = vec4(1.0, 0.0, 0.0, (rect + cr) * 0.5);\n\
 }";
 
 struct point
@@ -277,7 +277,7 @@ create(GTypeModule* type_module, struct db_interface* dbi, struct db* db)
     ctx->aidb = ctx->aidbi->open("aitool.db");
     if (ctx->aidb == NULL)
         goto open_aidb_failed;
-    ctx->aidbi->migrate_to(ctx->aidb, 0);
+    //ctx->aidbi->migrate_to(ctx->aidb, 0);
     if (ctx->aidbi->migrate_to(ctx->aidb, 1) < 0)
         goto migrate_aidb_failed;
 
@@ -635,12 +635,41 @@ update_pane_frame_data(struct plugin_ctx* ctx)
     }
 }
 
+static int
+on_label_data(uint64_t hash40, int cx, int cy, int w, int h, void* rects)
+{
+    struct rect* r = vec_emplace(rects);
+    r->center.x = cx;
+    r->center.y = cy;
+    r->dims.x = w;
+    r->dims.y = h;
+    return 1;
+}
+
+static void
+update_rects_for_frame(struct plugin_ctx* ctx)
+{
+    struct video_player_interface* vi = ctx->video_plugin.i->video;
+    void* vctx = ctx->video_ctx;
+    const uint64_t* motions = ctx->fdata.motion[ctx->fighter_idx];
+    int64_t video_offset = vi->offset(vctx, 1, 60);
+
+    vec_clear(&ctx->gfx.rects);
+    ctx->aidbi->label.get(
+                ctx->aidb, ctx->game_id, ctx->video_id,
+                ctx->fighter_ids[ctx->fighter_idx], video_offset,
+                on_label_data, &ctx->gfx.rects);
+
+    gtk_gl_area_queue_render(GTK_GL_AREA(ctx->center.video_canvas));
+}
+
 static gboolean
 shortcut_prev_frame(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
 {
     struct plugin_ctx* ctx = user_pointer;
     ctx->video_plugin.i->video->step(ctx->video_ctx, -1);
     update_pane_frame_data(ctx);
+    update_rects_for_frame(ctx);
     return TRUE;
 }
 
@@ -650,6 +679,7 @@ shortcut_next_frame(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
     struct plugin_ctx* ctx = user_pointer;
     ctx->video_plugin.i->video->step(ctx->video_ctx, 1);
     update_pane_frame_data(ctx);
+    update_rects_for_frame(ctx);
     return TRUE;
 }
 
@@ -666,6 +696,7 @@ shortcut_prev_frame_adj(GtkWidget* widget, GVariant* unused, gpointer user_point
 
     ctx->dbi->game.set_frame_offset(ctx->db, ctx->game_id, ctx->video_id, ctx->game_offset);
     update_pane_frame_data(ctx);
+    update_rects_for_frame(ctx);
 
     return TRUE;
 }
@@ -683,6 +714,7 @@ shortcut_next_frame_adj(GtkWidget* widget, GVariant* unused, gpointer user_point
 
     ctx->dbi->game.set_frame_offset(ctx->db, ctx->game_id, ctx->video_id, ctx->game_offset);
     update_pane_frame_data(ctx);
+    update_rects_for_frame(ctx);
 
     return TRUE;
 }
@@ -714,6 +746,7 @@ shortcut_prev_motion(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
 
     vi->seek(vctx, ctx->game_offset + i, 1, 60);
     update_pane_frame_data(ctx);
+    update_rects_for_frame(ctx);
 
     return TRUE;
 }
@@ -747,6 +780,7 @@ shortcut_next_motion(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
 
     /* Update UI */
     update_pane_frame_data(ctx);
+    update_rects_for_frame(ctx);
 
     return TRUE;
 }
