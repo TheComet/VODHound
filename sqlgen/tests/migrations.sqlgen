@@ -1,0 +1,24 @@
+%option prefix="migrations"
+
+%source-includes{
+#include "sqlgen/tests/migrations.h"
+#include "sqlite3.h"
+}
+
+%upgrade 1 {
+	CREATE TABLE person (
+		id INTEGER PRIMARY KEY,
+		name TEXT NOT NULL
+	);
+}
+%upgrade 2 {
+	ALTER TABLE person RENAME COLUMN name TO first_name;
+	ALTER TABLE person ADD last_name TEXT NOT NULL;
+}
+%downgrade 1 {
+	ALTER TABLE person DROP COLUMN last_name;
+	ALTER TABLE person RENAME COLUMN first_name TO name;
+}
+%downgrade 0 {
+	DROP TABLE person;
+}

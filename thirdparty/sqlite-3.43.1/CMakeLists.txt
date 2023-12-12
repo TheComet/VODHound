@@ -75,7 +75,7 @@ set_target_properties (sqlite
         POSITION_INDEPENDENT_CODE ${SQLITE_PIC})
 
 if (CMAKE_SYSTEM_NAME MATCHES "Linux" OR CMAKE_SYSTEM_NAME MATCHES "Darwin")
-    if (SQLITE_THREADS)
+    if (NOT SQLITE_THREADSAFE)
         find_package (Threads REQUIRED)
         target_link_libraries (sqlite PRIVATE Threads::Threads)
     endif ()
