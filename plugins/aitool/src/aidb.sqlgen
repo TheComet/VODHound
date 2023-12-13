@@ -45,7 +45,7 @@
 %query label,add_or_update(int game_id, int video_id, int fighter_id,
         int64_t video_offset, uint64_t hash40,
         int cx, int cy, int w, int h) {
-    type upsert cx, cy, w, h
+    type upsert
     table label_data
 }
 %query label,remove(int game_id, int video_id, int fighter_id, int64_t video_offset) {

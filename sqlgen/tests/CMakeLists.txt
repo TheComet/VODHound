@@ -23,9 +23,27 @@ sqlgen_target (migrations
     INPUT "migrations.sqlgen"
     HEADER "sqlgen/tests/migrations.h"
     BACKENDS sqlite3)
+sqlgen_target (exists
+    INPUT "exists.sqlgen"
+    HEADER "sqlgen/tests/exists.h"
+    BACKENDS sqlite3)
+sqlgen_target (insert
+    INPUT "insert.sqlgen"
+    HEADER "sqlgen/tests/insert.h"
+    BACKENDS sqlite3)
+sqlgen_target (upsert
+    INPUT "upsert.sqlgen"
+    HEADER "sqlgen/tests/upsert.h"
+    BACKENDS sqlite3)
 
 add_executable (sqlgen_tests
-    "test_migrations.cpp"
+    "exists.cpp"
+    "insert.cpp"
+    "upsert.cpp"
+    "migrations.cpp"
+    ${SQLGEN_exists_OUTPUTS}
+    ${SQLGEN_insert_OUTPUTS}
+    ${SQLGEN_upsert_OUTPUTS}
     ${SQLGEN_migrations_OUTPUTS})
 target_include_directories (sqlgen_tests PRIVATE ${PROJECT_BINARY_DIR})
 set_property(
