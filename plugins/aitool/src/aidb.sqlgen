@@ -57,3 +57,13 @@
     table label_data
     callback uint64_t hash40, int cx, int cy, int w, int h
 }
+%query label,get_range(int game_id, int video_id, int fighter_id,
+        int64_t video_offset_start, int64_t video_offset_end) {
+    type select-all
+    stmt {
+        SELECT video_offset, hash40, cx, cy, w, h FROM label_data
+        WHERE game_id=? AND video_id=? AND fighter_id=?
+        AND video_offset >= ? AND video_offset <= ?;
+    }
+    callback int64_t video_offset, uint64_t hash40, int cx, int cy, int w, int h
+}

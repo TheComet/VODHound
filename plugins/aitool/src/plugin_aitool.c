@@ -47,6 +47,7 @@ static const char* fs_quad = "\
 varying vec2 f_texcoord;\n\
 uniform vec2 u_center;\n\
 uniform vec2 u_dims;\n\
+uniform vec3 u_color;\n\
 uniform vec2 u_pixsize;\n\
 \n\
 float band(float t, float start, float end, float blur) {\n\
@@ -74,7 +75,7 @@ float rect(vec2 uv, vec2 center, vec2 dims, vec2 blur) {\n\
 void main() {\n\
     float rect = rect(f_texcoord, u_center, u_dims, u_pixsize);\n\
     float cr = rect * line_cross(f_texcoord, u_center, u_pixsize);\n\
-    gl_FragColor = vec4(1.0, 0.0, 0.0, (rect + cr) * 0.5);\n\
+    gl_FragColor = vec4(u_color, (rect + cr) * 0.5);\n\
 }";
 
 struct point
@@ -82,11 +83,21 @@ struct point
     int x, y;
 };
 
+struct rgb
+{
+    uint8_t r, g, b;
+};
+
 struct rect
 {
     struct point center;
     struct point dims;
+    struct rgb color;
 };
+
+static struct rgb RECT_COLOR_CURRENT = {255, 128, 0};
+static struct rgb RECT_COLOR_NEXT    = {255, 0, 0};
+static struct rgb RECT_COLOR_PREV    = {0, 0, 255};
 
 struct gfx
 {
@@ -97,6 +108,7 @@ struct gfx
     GLuint u_offset;
     GLuint u_center;
     GLuint u_dims;
+    GLuint u_color;
     GLuint u_pixsize;
 
     struct vec rects;
@@ -340,6 +352,7 @@ on_realize(GtkGLArea* area, struct plugin_ctx* ctx)
     ctx->gfx.u_aspect = glGetUniformLocation(ctx->gfx.program, "u_aspect");
     ctx->gfx.u_center = glGetUniformLocation(ctx->gfx.program, "u_center");
     ctx->gfx.u_dims = glGetUniformLocation(ctx->gfx.program, "u_dims");
+    ctx->gfx.u_color = glGetUniformLocation(ctx->gfx.program, "u_color");
     ctx->gfx.u_pixsize = glGetUniformLocation(ctx->gfx.program, "u_pixsize");
 
     /* Rectangles are stored here */
@@ -403,6 +416,10 @@ on_render(GtkWidget* widget, GdkGLContext* context, struct plugin_ctx* ctx)
         glUniform2f(ctx->gfx.u_dims,
             (GLfloat)r->dims.x / (GLfloat)texture_width,
             (GLfloat)r->dims.y / (GLfloat)texture_height);
+        glUniform3f(ctx->gfx.u_color,
+            (GLfloat)r->color.r / 255.0,
+            (GLfloat)r->color.g / 255.0,
+            (GLfloat)r->color.b / 255.0);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     VEC_END_EACH
 
@@ -543,6 +560,7 @@ drag_place_begin(GtkGestureDrag* gesture, double x, double y, struct plugin_ctx*
     c->drag_rect->center = p;
     c->drag_rect->dims.x = 10;
     c->drag_rect->dims.y = 10;
+    c->drag_rect->color = RECT_COLOR_CURRENT;
     gtk_gl_area_queue_render(GTK_GL_AREA(c->video_canvas));
 }
 
@@ -635,15 +653,26 @@ update_pane_frame_data(struct plugin_ctx* ctx)
     }
 }
 
-static int
-on_label_data(uint64_t hash40, int cx, int cy, int w, int h, void* rects)
+struct on_label_data_ctx
 {
-    struct rect* r = vec_emplace(rects);
+    struct vec* rects;
+    int64_t video_offset;
+};
+
+static int
+on_label_data(int64_t video_offset, uint64_t hash40, int cx, int cy, int w, int h, void* user)
+{
+    struct on_label_data_ctx* ctx = user;
+    struct rect* r = vec_emplace(ctx->rects);
     r->center.x = cx;
     r->center.y = cy;
     r->dims.x = w;
     r->dims.y = h;
-    return 1;
+    r->color =
+        video_offset > ctx->video_offset ? RECT_COLOR_NEXT :
+        video_offset < ctx->video_offset ? RECT_COLOR_PREV :
+        RECT_COLOR_CURRENT;
+    return 0;
 }
 
 static void
@@ -654,11 +683,16 @@ update_rects_for_frame(struct plugin_ctx* ctx)
     const uint64_t* motions = ctx->fdata.motion[ctx->fighter_idx];
     int64_t video_offset = vi->offset(vctx, 1, 60);
 
+    struct on_label_data_ctx label_data_ctx = {
+        &ctx->gfx.rects,
+        video_offset
+    };
+
     vec_clear(&ctx->gfx.rects);
-    ctx->aidbi->label.get(
-                ctx->aidb, ctx->game_id, ctx->video_id,
-                ctx->fighter_ids[ctx->fighter_idx], video_offset,
-                on_label_data, &ctx->gfx.rects);
+    ctx->aidbi->label.get_range(
+        ctx->aidb, ctx->game_id, ctx->video_id, ctx->fighter_ids[ctx->fighter_idx],
+        video_offset - 10, video_offset + 10,
+        on_label_data, &label_data_ctx);
 
     gtk_gl_area_queue_render(GTK_GL_AREA(ctx->center.video_canvas));
 }
@@ -771,8 +805,7 @@ shortcut_next_motion(GtkWidget* widget, GVariant* unused, gpointer user_pointer)
 
     /* Find next motion */
     motion = motions[i];
-    do i++;
-    while (i != ctx->fdata.frame_count && motion == motions[i]);
+    do i++; while (i != ctx->fdata.frame_count && motion == motions[i]);
     if (i == ctx->fdata.frame_count)
         return TRUE;
 
