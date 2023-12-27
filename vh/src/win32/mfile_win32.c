@@ -1,9 +1,9 @@
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+
 #include "vh/mem.h"
 #include "vh/mfile.h"
 #include "vh/utf8.h"
-
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
 
 static char* last_error;
 const char*
@@ -28,7 +28,7 @@ mfile_last_error_free(void)
 }
 
 int
-mfile_map(struct mfile* mf, const char* utf8_filename)
+mfile_map_read(struct mfile* mf, const char* utf8_filename)
 {
     HANDLE hFile;
     LARGE_INTEGER liFileSize;
@@ -68,7 +68,7 @@ mfile_map(struct mfile* mf, const char* utf8_filename)
 
     mf->address = MapViewOfFile(
         mapping,               /* File mapping handle */
-        FILE_MAP_READ,         /* Read-only view of file */
+        FILE_MAP_COPY,         /* Read-only view of file */
         0, 0,                  /* High/Low offset of where the mapping should begin in the file */
         0);                    /* Length of mapping. Zero means entire file */
     if (mf->address == NULL)

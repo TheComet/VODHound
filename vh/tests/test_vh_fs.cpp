@@ -1,5 +1,6 @@
-#include <gmock/gmock.h>
 #include "vh/fs.h"
+#include <gmock/gmock.h>
+#include <string_view>
 
 #define NAME vh_fs
 
@@ -18,6 +19,36 @@ struct NAME : public Test
 
     struct path path;
 };
+
+class StrViewEqMatcher : public testing::MatcherInterface<struct str_view>
+{
+public:
+    explicit StrViewEqMatcher(const std::string& expected)
+        : expected(expected)
+    {}
+
+    bool MatchAndExplain(const struct str_view actual, testing::MatchResultListener* listener) const override
+    {
+        *listener << "\"" << std::string_view(actual.data, actual.len) << "\"";
+        return cstr_equal(actual, expected.c_str());
+    }
+    void DescribeTo(std::ostream* os) const override
+    {
+        *os << "Equals \"" << expected << "\"";
+    }
+    void DescribeNegationTo(std::ostream* os) const override
+    {
+        *os << "Does not equal \"" << expected << "\"";
+    }
+
+private:
+    const std::string expected;
+};
+
+inline testing::Matcher<struct str_view> StrViewEq(const std::string& expected)
+{
+    return MakeMatcher(new StrViewEqMatcher(expected));
+}
 
 TEST_F(NAME, path_set_empty)
 {
@@ -334,23 +365,23 @@ TEST_F(NAME, path_basename_on_path_5)
 TEST_F(NAME, cpath_basename_empty)
 {
     struct str_view path = cpath_basename_view("");
-    EXPECT_THAT(path.data, StrEq(""));
+    EXPECT_THAT(path, StrViewEq(""));
 }
 
 TEST_F(NAME, cpath_basename_file_1)
 {
     struct str_view path = cpath_basename_view("file.dat.xz");
-    EXPECT_THAT(path.data, StrEq("file.dat.xz"));
+    EXPECT_THAT(path, StrViewEq("file.dat.xz"));
 }
 
 TEST_F(NAME, cpath_basename_on_file_2)
 {
 #ifdef _WIN32
     struct str_view path = cpath_basename_view("/file.dat.xz");
-    EXPECT_THAT(path.data, StrEq(""));  /* Paths starting with "\" are invalid on windows */
+    EXPECT_THAT(path, StrViewEq(""));  /* Paths starting with "\" are invalid on windows */
 #else
     struct str_view path = cpath_basename_view("\\file.dat.xz");
-    EXPECT_THAT(path.data, StrEq("file.dat.xz"));
+    EXPECT_THAT(path, StrViewEq("file.dat.xz"));
 #endif
 }
 
@@ -358,10 +389,10 @@ TEST_F(NAME, cpath_basename_on_file_3)
 {
 #ifdef _WIN32
     struct str_view path = cpath_basename_view("some/unix/file.dat.xz");
-    EXPECT_THAT(path.data, StrEq("file.dat.xz"));
+    EXPECT_THAT(path, StrViewEq("file.dat.xz"));
 #else
     struct str_view path = cpath_basename_view("some\\windows\\file.dat.xz");
-    EXPECT_THAT(path.data, StrEq("file.dat.xz"));
+    EXPECT_THAT(path, StrViewEq("file.dat.xz"));
 #endif
 }
 
@@ -369,10 +400,10 @@ TEST_F(NAME, cpath_basename_on_path_1)
 {
 #ifdef _WIN32
     struct str_view path = cpath_basename_view("some/unix/path");
-    EXPECT_THAT(path.data, StrEq("path"));
+    EXPECT_THAT(path, StrViewEq("path"));
 #else
     struct str_view path = cpath_basename_view("some\\windows\\path");
-    EXPECT_THAT(path.data, StrEq("path"));
+    EXPECT_THAT(path, StrViewEq("path"));
 #endif
 }
 
@@ -380,11 +411,10 @@ TEST_F(NAME, cpath_basename_on_path_2)
 {
 #ifdef _WIN32
     struct str_view path = cpath_basename_view("some/unix/path/");
-    EXPECT_THAT(path.data, StrEq("path"));
+    EXPECT_THAT(path, StrViewEq("path"));
 #else
     struct str_view path = cpath_basename_view("some\\windows\\path\\");
-    EXPECT_THAT(path.len, Eq(4));
-    EXPECT_THAT(memcmp(path.data, "path", 4), Eq(0));
+    EXPECT_THAT(path, StrViewEq("path"));
 #endif
 }
 
@@ -392,26 +422,26 @@ TEST_F(NAME, cpath_basename_on_path_3)
 {
 #ifdef _WIN32
     struct str_view path = cpath_basename_view("/some/unix/path");
-    EXPECT_THAT(path.data, StrEq(""));  /* paths starting with "\" are invalid on windows */
+    EXPECT_THAT(path, StrViewEq(""));  /* paths starting with "\" are invalid on windows */
 #else
     struct str_view path = cpath_basename_view("\\some\\windows\\path");
-    EXPECT_THAT(path.data, StrEq("path"));
+    EXPECT_THAT(path, StrViewEq("path"));
 #endif
 }
 
 TEST_F(NAME, cpath_basename_on_path_4)
 {
     struct str_view path = cpath_basename_view("dir");
-    EXPECT_THAT(path.data, StrEq("dir"));
+    EXPECT_THAT(path, StrViewEq("dir"));
 }
 
 TEST_F(NAME, cpath_basename_on_path_5)
 {
 #ifdef _WIN32
     struct str_view path = cpath_basename_view("\\");
-    EXPECT_THAT(path.data, StrEq(""));  /* paths starting with "\" are invalid on windows */
+    EXPECT_THAT(path, StrViewEq(""));  /* paths starting with "\" are invalid on windows */
 #else
     struct str_view path = cpath_basename_view("/");
-    EXPECT_THAT(path.data, StrEq("/"));
+    EXPECT_THAT(path, StrViewEq("/"));
 #endif
 }

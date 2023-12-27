@@ -7,6 +7,7 @@ target_link_libraries (vodhound-tests
     PRIVATE
         gmock)
 set_target_properties (vodhound-tests PROPERTIES
+    CXX_STANDARD 17
     VS_DEBUGGER_WORKING_DIRECTORY ${VODHOUND_BUILD_BINDIR}
     MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>
     RUNTIME_OUTPUT_DIRECTORY ${VODHOUND_BUILD_BINDIR}
