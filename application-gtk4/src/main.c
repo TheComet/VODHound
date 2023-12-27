@@ -9,6 +9,8 @@
 #include "vh/plugin.h"
 #include "vh/plugin_loader.h"
 
+#include "vh/frame_data.h"
+
 #include <gtk/gtk.h>
 
 #define VHAPP_TYPE_PLUGIN_MODULE (vhapp_plugin_module_get_type())
@@ -415,12 +417,12 @@ activate(GtkApplication* app, gpointer user_data)
     gtk_window_maximize(GTK_WINDOW(window));
     gtk_widget_set_visible(window, 1);
 
-    open_plugin(GTK_NOTEBOOK(plugin_view), GTK_NOTEBOOK(property_panel),
-            &ctx->plugins, ctx->dbi, ctx->db, cstr_view("AI Tool"));
     /*open_plugin(GTK_NOTEBOOK(plugin_view), GTK_NOTEBOOK(property_panel),
+            &ctx->plugins, ctx->dbi, ctx->db, cstr_view("AI Tool"));*/
+    open_plugin(GTK_NOTEBOOK(plugin_view), GTK_NOTEBOOK(property_panel),
             &ctx->plugins, ctx->dbi, ctx->db, cstr_view("VOD Review"));
     open_plugin(GTK_NOTEBOOK(plugin_view), GTK_NOTEBOOK(property_panel),
-            &ctx->plugins, ctx->dbi, ctx->db, cstr_view("Search"));*/
+            &ctx->plugins, ctx->dbi, ctx->db, cstr_view("Search"));
 }
 
 int main(int argc, char** argv)
@@ -439,12 +441,13 @@ int main(int argc, char** argv)
     struct db* db = dbi->open("vodhound.db");
     if (db == NULL)
         goto open_db_failed;
-    if (dbi->upgrade(db) != 0)
+    if (dbi->migrate_to(db, 1) != 0)
         goto migrate_db_failed;
 
     if (reinit_db)
     {
         dbi->reinit(db);
+        frame_data_delete_all();
         import_param_labels_csv(dbi, db, "ParamLabels.csv");
         import_reframed_mapping_info(dbi, db, "migrations/mappingInfo.json");
         import_reframed_all(dbi, db);

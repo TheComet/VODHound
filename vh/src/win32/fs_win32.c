@@ -103,19 +103,26 @@ cpath_basename_view(const char* path)
     int orig_len = view.len;
 
     /* Special case on windows -- If path starts with "\" it is invalid */
-    if (view.len && view.data[0] == '\\')
+    if (view.len && (view.data[0] == '\\' || view.data[0] == '/'))
     {
         view.len = 0;
         return view;
     }
 
+    /* Remove trailing slashes */
     while (view.len && (view.data[view.len - 1] == '\\' || view.data[view.len - 1] == '/'))
         view.len--;
+
+    /* Remove file name */
     while (view.len && (view.data[view.len - 1] != '\\' && view.data[view.len - 1] != '/'))
         view.len--;
 
     view.data += view.len;
     view.len = orig_len - view.len;
+
+    /* Remove trailing slashes */
+    while (view.len && (view.data[view.len - 1] == '\\' || view.data[view.len - 1] == '/'))
+        view.len--;
 
     return view;
 }
@@ -208,6 +215,14 @@ int
 fs_make_dir(const char* path)
 {
     if (CreateDirectory(path, NULL) == 0)
+        return 0;
+    return -1;
+}
+
+int
+fs_remove_file(const char* path)
+{
+    if (DeleteFile(path))
         return 0;
     return -1;
 }

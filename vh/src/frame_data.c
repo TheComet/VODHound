@@ -95,10 +95,10 @@ frame_data_load(struct frame_data* fdata, int game_id)
     char file_name[64];
     void* mem;
     uint8_t major, minor;
-    mem_size ptr_size, fighter_size;
+    mem_size ptr_table_size, fighter_size;
 
     sprintf(file_name, "fdata/%d.fdat", game_id);
-    if (mfile_map(&fdata->file, file_name) < 0)
+    if (mfile_map_read(&fdata->file, file_name) < 0)
         goto map_file_failed;
     ms = mstream_from_memory(fdata->file.address, fdata->file.size);
 
@@ -110,19 +110,17 @@ frame_data_load(struct frame_data* fdata, int game_id)
     minor = mstream_read_u8(&ms);
     if (major != 2 || minor != 0)
         goto wrong_version;
+    mstream_read_u8(&ms);    /* padding to 4-byte boundary */
 
-    mstream_read_u8(&ms);
     fdata->fighter_count = mstream_read_u8(&ms);
     fdata->frame_count = (int)mstream_read_lu32(&ms);
-    mstream_read_lu32(&ms);
+    mstream_read_lu32(&ms);  /* padding to 8-byte boundary */
 
-    ptr_size = sizeof(void*) * 12 * (mem_size)fdata->fighter_count;
-    fighter_size = frame_size * (mem_size)fdata->frame_count;
-    mem = mem_alloc(ptr_size);
-    if (mem == NULL)
-        goto alloc_buffer_failed;
+    ptr_table_size = 8 * 12 * (mem_size)fdata->fighter_count;
+    mem = mstream_read(&ms, ptr_table_size);
     init_pointers(mem, fdata, fdata->fighter_count);
 
+    fighter_size = frame_size * (mem_size)fdata->frame_count;
     for (f = 0; f != fdata->fighter_count; ++f)
     {
         fdata->timestamp[f]   = (uint64_t*)align_64((char*)mstream_ptr(&ms) + (mem_size)f * fighter_size);
@@ -141,7 +139,6 @@ frame_data_load(struct frame_data* fdata, int game_id)
 
     return 0;
 
-alloc_buffer_failed:
 wrong_version:
 wrong_magic:
     mfile_unmap(&fdata->file);
@@ -154,14 +151,13 @@ frame_data_save(const struct frame_data* fdata, int game_id)
 {
     char file_name[64];
     FILE* fp;
-    int f;
+    int f, i;
     char magic[4] = {'F', 'D', 'A', 'T'};
     uint8_t major = 2;
     uint8_t minor = 0;
-    uint8_t pad1 = 0;
+    uint32_t pad = 0;
     uint8_t fighter_count = (uint8_t)fdata->fighter_count;
     uint32_t frame_count = (uint32_t)fdata->frame_count;
-    uint32_t pad2 = 0;
 
     sprintf(file_name, "fdata/%d.fdat", game_id);
     fp = fopen_utf8_wb(file_name, (int)strlen(file_name));
@@ -177,10 +173,24 @@ frame_data_save(const struct frame_data* fdata, int game_id)
     fwrite(magic, 1, 4, fp);
     fwrite(&major, 1, 1, fp);
     fwrite(&minor, 1, 1, fp);
-    fwrite(&pad1, 1, 1, fp);
+    fwrite(&pad, 1, 1, fp);
     fwrite(&fighter_count, 1, 1, fp);
+
+    /* padded to 4-byte boundary */
     fwrite(&frame_count, sizeof(frame_count), 1, fp);
-    fwrite(&pad2, 1, 4, fp);
+
+    /* pad to 8-byte boundary */
+    fwrite(&pad, 1, 4, fp);
+
+    /* Make space for pointer table. This isn't used here, but
+     * is filled in when the file is loaded again */
+    for (f = 0; f != fdata->fighter_count; ++f)
+        for (i = 0; i != 12; ++i)
+        {
+            /* 8-byte pointers */
+            uint64_t pad64 = 0;
+            fwrite(&pad64, 1, 8, fp);
+        }
 
     for (f = 0; f != fdata->fighter_count; ++f)
     {
@@ -208,11 +218,40 @@ frame_data_save(const struct frame_data* fdata, int game_id)
 }
 
 void
+frame_data_delete(int game_id)
+{
+    char file_name[64];
+    sprintf(file_name, "fdata/%d.fdat", game_id);
+    fs_remove_file(file_name);
+}
+
+static int
+on_fdata_file_delete(const char* name, void* user)
+{
+    struct path* file_path = user;
+    path_set(file_path, cstr_view("fdata"));
+    path_join(file_path, cstr_view(name));
+    path_terminate(file_path);
+    fs_remove_file(file_path->str.data);
+    return 0;
+}
+void
+frame_data_delete_all(void)
+{
+    struct path file_path;
+    path_init(&file_path);
+    fs_list(cstr_view("fdata"), on_fdata_file_delete, &file_path);
+    path_deinit(&file_path);
+}
+
+void
 frame_data_free(struct frame_data* fdata)
 {
     if (fdata->file.size)
         mfile_unmap(&fdata->file);
-    mem_free((void*)fdata->timestamp);
+
+    if (!fdata->file.size)
+        mem_free((void*)fdata->timestamp);
 
     frame_data_init(fdata);  /* ensures frame_data_is_loaded() returns false */
 }

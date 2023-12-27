@@ -108,20 +108,20 @@ mstream_read_lf32(struct mstream* ms)
     return value;
 }
 
-static inline const void*
+static inline void*
 mstream_read(struct mstream* ms, int len)
 {
-    const void* data = (const char*)ms->address + ms->idx;
+    void* data = (char*)ms->address + ms->idx;
     ms->idx += len;
     if (ms->idx >= ms->size)
         ms->idx = ms->size;
     return data;
 }
 
-static inline const void*
+static inline void*
 mstream_ptr(struct mstream* ms)
 {
-    return (const char*)ms->address + ms->idx;
+    return (char*)ms->address + ms->idx;
 }
 
 VH_PUBLIC_API int

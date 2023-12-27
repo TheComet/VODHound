@@ -394,7 +394,7 @@ DROP INDEX IF EXISTS idx_motions_hash40;
     stmt {
         WITH priorities AS (
             WITH list(id) AS (VALUES(0))
-            SELECT IFNULL(priority, 0) + 1 priority FROM test
+            SELECT IFNULL(priority, 0) + 1 priority FROM motion_layers
             FULL OUTER JOIN list USING(id)
             ORDER BY priority DESC LIMIT 1)
         INSERT INTO motion_layers (group_id, priority, name)

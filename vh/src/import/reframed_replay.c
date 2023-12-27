@@ -40,7 +40,7 @@ import_reframed_replay(
     int entry_idx;
     int game_id;
 
-    if (mfile_map(&mf, file_name) != 0)
+    if (mfile_map_read(&mf, file_name) != 0)
     {
         log_err("Failed to open file '%s'\n", file_name);
         goto mmap_failed;

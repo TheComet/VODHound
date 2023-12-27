@@ -12,7 +12,7 @@ import_param_labels_csv(struct db_interface* dbi, struct db* db, const char* fil
     struct mfile mf;
     struct mstream ms;
 
-    if (mfile_map(&mf, file_name) != 0)
+    if (mfile_map_read(&mf, file_name) != 0)
     {
         log_err("Failed to open file '%s'\n", file_name);
         goto open_file_failed;

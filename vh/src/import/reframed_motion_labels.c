@@ -24,7 +24,7 @@ import_reframed_motion_labels(
     btree_init(&layer_ids, sizeof(int));
     btree_init(&usage_ids, sizeof(int));
 
-    if (mfile_map(&mf, file_name) != 0)
+    if (mfile_map_read(&mf, file_name) != 0)
     {
         log_err("Failed to open file '%s'\n", file_name);
         goto map_file_failed;

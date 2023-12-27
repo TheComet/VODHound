@@ -39,16 +39,24 @@ VH_PUBLIC_API int
 frame_data_alloc_structure(struct frame_data* fdata, int fighter_count, int frame_count);
 
 static inline void
-frame_data_init(struct frame_data* fdata) { fdata->file.address = NULL; }
+frame_data_init(struct frame_data* fdata)
+    { fdata->file.address = NULL; }
 
 static inline int
-frame_data_is_loaded(struct frame_data* fdata) { return fdata->file.address != NULL; }
+frame_data_is_loaded(struct frame_data* fdata)
+    { return fdata->file.address != NULL; }
 
 VH_PUBLIC_API int
 frame_data_load(struct frame_data* fdata, int game_id);
 
 VH_PUBLIC_API int
 frame_data_save(const struct frame_data* fdata, int game_id);
+
+VH_PUBLIC_API void
+frame_data_delete(int game_id);
+
+VH_PUBLIC_API void
+frame_data_delete_all(void);
 
 VH_PUBLIC_API void
 frame_data_free(struct frame_data* fdata);

@@ -100,6 +100,9 @@ fs_dir_exists(const char* file_path);
 VH_PUBLIC_API int
 fs_make_dir(const char* path);
 
+VH_PUBLIC_API int
+fs_remove_file(const char* path);
+
 VH_PUBLIC_API struct str_view
 fs_appdata_dir(void);
 
