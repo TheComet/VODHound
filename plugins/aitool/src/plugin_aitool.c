@@ -318,6 +318,8 @@ init_aidb_failed:
 static void
 destroy(GTypeModule* type_module, struct plugin_ctx* ctx)
 {
+    frame_data_deinit(&ctx->fdata);
+
     ctx->video_plugin.i->destroy(type_module, ctx->video_ctx);
     plugin_unload(&ctx->video_plugin);
 
@@ -1030,9 +1032,7 @@ static void replay_select(struct plugin_ctx* ctx, const int* game_ids, int count
 static void replay_clear(struct plugin_ctx* ctx)
 {
     gtk_combo_box_text_remove_all(ctx->pane.fighter);
-
-    if (frame_data_is_loaded(&ctx->fdata))
-        frame_data_free(&ctx->fdata);
+    frame_data_clear(&ctx->fdata);
 }
 
 static struct replay_interface replay = {

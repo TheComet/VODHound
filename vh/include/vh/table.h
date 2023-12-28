@@ -15,8 +15,18 @@ struct table
     int capacity;
 };
 
+static inline void
+table_init(struct table* table, unsigned int element_size)
+{
+    table->rows = 0;
+    table->cols = 0;
+    table->element_size = element_size;
+    table->capacity = 0;
+    table->data = NULL;
+}
+
 static inline int
-table_init(struct table* table, int rows, int cols, unsigned int element_size)
+table_init_with_size(struct table* table, int rows, int cols, unsigned int element_size)
 {
     table->rows = rows;
     table->cols = cols;
@@ -31,7 +41,38 @@ table_init(struct table* table, int rows, int cols, unsigned int element_size)
 static inline void
 table_deinit(struct table* table)
 {
-    mem_free(table->data);
+    if (table->data)
+        mem_free(table->data);
+}
+
+static inline void
+table_steal_table(struct table* table, struct table* src_table)
+{
+    table_deinit(table);
+    *table = *src_table;
+    src_table->rows = 0;
+    src_table->cols = 0;
+    src_table->capacity = 0;
+    src_table->data = NULL;
+}
+
+static inline int
+table_resize(struct table* table, int rows, int cols)
+{
+    int new_size = rows * cols * table->element_size;
+    if (new_size > table->capacity)
+    {
+        void* new_data = mem_realloc(table->data, new_size);
+        if (new_data == NULL)
+            return -1;
+        table->data = new_data;
+        table->capacity = new_size;
+    }
+
+    table->rows = rows;
+    table->cols = cols;
+
+    return 0;
 }
 
 static inline int

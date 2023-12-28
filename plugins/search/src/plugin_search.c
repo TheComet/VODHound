@@ -20,48 +20,6 @@
 #include <stdio.h>
 #include <inttypes.h>
 
-struct plugin_ctx
-{
-    struct db_interface* dbi;
-    struct db* db;
-    struct parser parser;
-    struct ast ast;
-    struct asm_dfa asm_dfa;
-    struct frame_data fdata;
-    struct search_index index;
-};
-
-static struct plugin_ctx*
-create(GTypeModule* type_module, struct db_interface* dbi, struct db* db)
-{
-    struct plugin_ctx* ctx = mem_alloc(sizeof(struct plugin_ctx));
-    memset(ctx, 0, sizeof *ctx);
-
-    ctx->dbi = dbi;
-    ctx->db = db;
-
-    parser_init(&ctx->parser);
-    ast_init(&ctx->ast);
-    search_index_init(&ctx->index);
-
-    return ctx;
-}
-
-static void
-destroy(GTypeModule* type_module, struct plugin_ctx* ctx)
-{
-    if (ctx->asm_dfa.size)
-        asm_deinit(&ctx->asm_dfa);
-    if (ctx->fdata.frame_count)
-        frame_data_free(&ctx->fdata);
-
-    search_index_deinit(&ctx->index);
-    ast_deinit(&ctx->ast);
-    parser_deinit(&ctx->parser);
-
-    mem_free(ctx);
-}
-
 struct sequence
 {
     struct vec idxs;
@@ -85,6 +43,180 @@ sequence_clear(struct sequence* seq)
 #define seq_first(s) (*(int*)vec_front(&(s)->idxs))
 #define SEQ_FOR_EACH(s, var) VEC_FOR_EACH(&(s)->idxs, int, seq_##var) int var = *seq_##var;
 #define SEQ_END_EACH VEC_END_EACH
+
+struct search
+{
+    struct parser parser;
+    struct ast ast;
+    struct asm_dfa assembly;
+    struct frame_data fdata;
+    struct search_index index;
+
+    int fighter_id;
+    int fighter_idx;
+};
+
+static void
+search_init(struct search* search)
+{
+    parser_init(&search->parser);
+    ast_init(&search->ast);
+    frame_data_init(&search->fdata);
+    search_index_init(&search->index);
+    asm_init(&search->assembly);
+
+    search->fighter_id = -1;
+    search->fighter_idx = -1;
+}
+
+static void
+search_deinit(struct search* search)
+{
+    asm_deinit(&search->assembly);
+    search_index_deinit(&search->index);
+    frame_data_deinit(&search->fdata);
+    ast_deinit(&search->ast);
+    parser_deinit(&search->parser);
+}
+
+static int
+search_compile(struct search* search, const char* text, struct db_interface* dbi, struct db* db)
+{
+    struct nfa_graph nfa;
+    struct dfa_table dfa;
+    int fighter_id = 8;
+
+    ast_clear(&search->ast);
+
+    if (parser_parse(&search->parser, text, &search->ast) < 0)
+        goto parse_failed;
+    ast_export_dot(&search->ast, "ast.dot");
+
+    if (ast_post_labels_to_motions(&search->ast, dbi, db, fighter_id) < 0)
+        goto patch_motions_failed;
+    ast_export_dot(&search->ast, "ast.dot");
+
+    if (nfa_compile(&nfa, &search->ast))
+        goto nfa_compile_failed;
+    nfa_export_dot(&nfa, "nfa.dot");
+
+    dfa_init(&dfa);
+    if (dfa_from_nfa(&dfa, &nfa))
+        goto dfa_compile_failed;
+    dfa_export_dot(&dfa, "dfa.dot");
+
+    if (asm_compile(&search->assembly, &dfa))
+        goto assemble_failed;
+
+    dfa_deinit(&dfa);
+    nfa_deinit(&nfa);
+
+    return 0;
+
+    assemble_failed      : dfa_deinit(&dfa);
+    dfa_compile_failed   : nfa_deinit(&nfa);
+    nfa_compile_failed   :
+    patch_motions_failed :
+    parse_failed         : return -1;
+}
+
+static int
+on_notation_label(const char* label, void* user_data)
+{
+    struct str* str = user_data;
+    cstr_set(str, label);
+    return 0;
+}
+
+static void
+search_run(struct search* search, struct db_interface* dbi, struct db* db)
+{
+    const union symbol* symbols;
+    struct range window;
+    struct vec results;
+    struct sequence seq;
+    struct str label;
+    int i;
+    int fighter_id = 8;
+    int usage_id = 1;  /* hard coded for now to "NOTATION" */
+
+    if (!search_index_has_data(&search->index))
+        return;
+    if (!asm_is_compiled(&search->assembly))
+        return;
+
+    vec_init(&results, sizeof(struct range));
+    str_init(&label);
+
+    symbols = search_index_symbols(&search->index, 0);
+    window = search_index_range(&search->index, 0);
+    asm_find_all(&results, &search->assembly, symbols, window);
+
+    fprintf(stderr, "Matching Ranges (window %d-%d):\n", window.start, window.end);
+    VEC_FOR_EACH(&results, struct range, r)
+        fprintf(stderr, "  %d-%d: ", r->start, r->end);
+        for (i = r->start; i != r->end; ++i)
+        {
+            uint64_t motion = ((uint64_t)symbols[i].motionh << 32) | symbols[i].motionl;
+            str_clear(&label);
+            if (dbi->motion_label.to_notation_label(db, fighter_id, motion, usage_id, on_notation_label, &label) != 0)
+                str_fmt(&label, "0x%" PRIx64, motion);
+            if (i != r->start) fprintf(stderr, " -> ");
+            fprintf(stderr, "%.*s", label.len, label.data);
+        }
+        fprintf(stderr, "\n");
+    VEC_END_EACH
+
+    sequence_init(&seq);
+    fprintf(stderr, "Matching Sequences (window %d-%d):\n", window.start, window.end);
+    VEC_FOR_EACH(&results, struct range, r)
+        fprintf(stderr, "  %d-%d: ", r->start, r->end);
+        sequence_from_search_result(&seq, symbols, *r, &search->ast);
+        SEQ_FOR_EACH(&seq, i)
+            uint64_t motion = ((uint64_t)symbols[i].motionh << 32) | symbols[i].motionl;
+            str_clear(&label);
+            if (dbi->motion_label.to_notation_label(db, fighter_id, motion, usage_id, on_notation_label, &label) != 0)
+                str_fmt(&label, "0x%" PRIx64, motion);
+            if (i != seq_first(&seq)) fprintf(stderr, " -> ");
+            fprintf(stderr, "%.*s", label.len, label.data);
+        SEQ_END_EACH
+        fprintf(stderr, "\n");
+        sequence_clear(&seq);
+    VEC_END_EACH
+    sequence_deinit(&seq);
+
+    str_deinit(&label);
+    vec_deinit(&results);
+}
+
+struct plugin_ctx
+{
+    struct db_interface* dbi;
+    struct db* db;
+
+    struct search search;
+};
+
+static struct plugin_ctx*
+create(GTypeModule* type_module, struct db_interface* dbi, struct db* db)
+{
+    struct plugin_ctx* ctx = mem_alloc(sizeof(struct plugin_ctx));
+    memset(ctx, 0, sizeof *ctx);
+
+    ctx->dbi = dbi;
+    ctx->db = db;
+
+    search_init(&ctx->search);
+
+    return ctx;
+}
+
+static void
+destroy(GTypeModule* type_module, struct plugin_ctx* ctx)
+{
+    search_deinit(&ctx->search);
+    mem_free(ctx);
+}
 
 int
 sequence_from_search_result(struct sequence* seq, const union symbol* symbols, struct range range, const struct ast* ast)
@@ -116,112 +248,14 @@ sequence_from_search_result(struct sequence* seq, const union symbol* symbols, s
 }
 
 static int
-on_notation_label(const char* label, void* user_data)
+on_search_text_changed(GtkEntry* self, struct plugin_ctx* ctx)
 {
-    struct str* str = user_data;
-    cstr_set(str, label);
+    const char* text = gtk_editable_get_text(GTK_EDITABLE(self));
+    if (search_compile(&ctx->search, text, ctx->dbi, ctx->db) < 0)
+        return -1;
+
+    search_run(&ctx->search, ctx->dbi, ctx->db);
     return 0;
-}
-
-static void
-run_search(struct plugin_ctx* ctx)
-{
-    const union symbol* symbols;
-    struct range window;
-    struct vec results;
-    struct sequence seq;
-    struct str label;
-    int fighter_id = 8;
-    int usage_id = 1;  /* hard coded for now to "NOTATION" */
-
-    if (ctx->asm_dfa.size == 0)
-        return;
-    if (!search_index_has_data(&ctx->index))
-        return;
-
-    vec_init(&results, sizeof(struct range));
-    str_init(&label);
-
-    symbols = search_index_symbols(&ctx->index, 0);
-    window = search_index_range(&ctx->index, 0);
-    asm_find_all(&results, &ctx->asm_dfa, symbols, window);
-
-    fprintf(stderr, "Matching Ranges (window %d-%d):\n", window.start, window.end);
-    VEC_FOR_EACH(&results, struct range, r)
-        fprintf(stderr, "  %d-%d: ", r->start, r->end);
-        for (int i = r->start; i != r->end; ++i)
-        {
-            uint64_t motion = ((uint64_t)symbols[i].motionh << 32) | symbols[i].motionl;
-            str_clear(&label);
-            if (ctx->dbi->motion_label.to_notation_label(ctx->db, fighter_id, motion, usage_id, on_notation_label, &label) != 0)
-                str_fmt(&label, "0x%" PRIx64, motion);
-            if (i != r->start) fprintf(stderr, " -> ");
-            fprintf(stderr, "%.*s", label.len, label.data);
-        }
-        fprintf(stderr, "\n");
-    VEC_END_EACH
-
-    sequence_init(&seq);
-    fprintf(stderr, "Matching Sequences (window %d-%d):\n", window.start, window.end);
-    VEC_FOR_EACH(&results, struct range, r)
-        fprintf(stderr, "  %d-%d: ", r->start, r->end);
-        sequence_from_search_result(&seq, symbols, *r, &ctx->ast);
-        SEQ_FOR_EACH(&seq, i)
-            uint64_t motion = ((uint64_t)symbols[i].motionh << 32) | symbols[i].motionl;
-        str_clear(&label);
-        if (ctx->dbi->motion_label.to_notation_label(ctx->db, fighter_id, motion, usage_id, on_notation_label, &label) != 0)
-            str_fmt(&label, "0x%" PRIx64, motion);
-            if (i != seq_first(&seq)) fprintf(stderr, " -> ");
-            fprintf(stderr, "%.*s", label.len, label.data);
-        SEQ_END_EACH
-        fprintf(stderr, "\n");
-        sequence_clear(&seq);
-    VEC_END_EACH
-    sequence_deinit(&seq);
-
-    str_deinit(&label);
-    vec_deinit(&results);
-}
-
-static int
-on_search_text_changed(GtkWidget* search_box, int c, char* new_value)
-{
-    struct nfa_graph nfa;
-    struct dfa_table dfa;
-    struct plugin_ctx* ctx = NULL;  /* todo */
-    int fighter_id = 8;
-
-    if (ctx->asm_dfa.size)
-    {
-        asm_deinit(&ctx->asm_dfa);
-        ctx->asm_dfa.next_state = NULL;
-        ctx->asm_dfa.size = 0;
-    }
-
-    ast_clear(&ctx->ast);
-
-    if (parser_parse(&ctx->parser, new_value, &ctx->ast) < 0)
-        goto parse_failed;
-    ast_export_dot(&ctx->ast, "ast.dot");
-    if (ast_post_labels_to_motions(&ctx->ast, ctx->dbi, ctx->db, fighter_id) < 0)
-        goto patch_motions_failed;
-    ast_export_dot(&ctx->ast, "ast.dot");
-    if (nfa_compile(&nfa, &ctx->ast))
-        goto nfa_compile_failed;
-    nfa_export_dot(&nfa, "nfa.dot");
-    if (dfa_compile(&dfa, &nfa))
-        goto dfa_compile_failed;
-    dfa_export_dot(&dfa, "dfa.dot");
-    if (asm_compile(&ctx->asm_dfa, &dfa))
-        goto assemble_failed;
-
-    run_search(ctx);
-
-    assemble_failed      : dfa_deinit(&dfa);
-    dfa_compile_failed   : nfa_deinit(&nfa);
-    nfa_compile_failed   :
-    patch_motions_failed :
-    parse_failed         : return -1;
 }
 
 static GtkWidget* ui_center_create(struct plugin_ctx* ctx)
@@ -231,6 +265,7 @@ static GtkWidget* ui_center_create(struct plugin_ctx* ctx)
     GtkWidget* vbox;
     
     search_box = gtk_entry_new();
+    g_signal_connect(search_box, "changed", G_CALLBACK(on_search_text_changed), ctx);
 
     label = gtk_label_new("Search:");
     gtk_label_set_xalign(GTK_LABEL(label), 0);
@@ -253,18 +288,15 @@ static struct ui_pane_interface ui_center = {
 
 static void select_replays(struct plugin_ctx* ctx, const int* game_ids, int count)
 {
-    search_index_clear(&ctx->index);
-    if (ctx->fdata.frame_count)
-        frame_data_free(&ctx->fdata);
-    ctx->fdata.frame_count = 0;
+    search_index_clear(&ctx->search.index);
 
-    if (frame_data_load(&ctx->fdata, game_ids[0]) != 0)
+    if (frame_data_load(&ctx->search.fdata, game_ids[0]) != 0)
         return;
 
-    if (search_index_build(&ctx->index, &ctx->fdata) < 0)
+    if (search_index_build(&ctx->search.index, &ctx->search.fdata) < 0)
         return;
 
-    run_search(ctx);
+    search_run(&ctx->search, ctx->dbi, ctx->db);
 }
 
 static void clear_replays(struct plugin_ctx* ctx)

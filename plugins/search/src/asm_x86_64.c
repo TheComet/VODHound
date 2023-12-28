@@ -58,6 +58,20 @@ free_page(void* addr, int size)
 #endif
 }
 
+void
+asm_init(struct asm_dfa* assembly)
+{
+    assembly->next_state = NULL;
+    assembly->size = 0;
+}
+
+void
+asm_deinit(struct asm_dfa* assembly)
+{
+    if (assembly->next_state)
+        free_page((void*)assembly->next_state, assembly->size);
+}
+
 static int
 write_asm(struct vec* code, int n, ...)
 {
@@ -352,20 +366,17 @@ asm_compile(struct asm_dfa* assembly, const struct dfa_table* dfa)
 
     vec_deinit(&jump_offsets);
     vec_deinit(&code);
+
+    asm_deinit(assembly);
     assembly->next_state = (asm_func)mem;
     assembly->size = page_size;
+
     return 0;
 
 push_failed:
     vec_deinit(&jump_offsets);
     vec_deinit(&code);
     return -1;
-}
-
-void
-asm_deinit(struct asm_dfa* assembly)
-{
-    free_page((void*)assembly->next_state, assembly->size);
 }
 
 static int

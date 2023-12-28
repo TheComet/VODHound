@@ -243,26 +243,23 @@ mem_threadlocal_deinit(void)
     log_mem_note("Memory report:\n");
 
     /* report details on any g_allocations that were not de-allocated */
-    if (hm_count(&state.report) != 0)
-    {
-        HM_FOR_EACH(&state.report, void*, struct report_info, key, info)
-            log_mem_err("  un-freed memory at %" PRIx64 ", size %" PRIx32 "\n",
-                    info->location, info->size);
+    HM_FOR_EACH(&state.report, void*, struct report_info, key, info)
+        log_mem_err("  un-freed memory at %" PRIx64 ", size %" PRIx32 "\n",
+                info->location, info->size);
 
 #if defined(VH_MEM_BACKTRACE)
+        {
+            int i;
+            for (i = BACKTRACE_OMIT_COUNT; i < info->backtrace_size; ++i)
             {
-                int i;
-                for (i = BACKTRACE_OMIT_COUNT; i < info->backtrace_size; ++i)
-                {
-                    if (strstr(info->backtrace[i], "invoke_main"))
-                        break;
-                    log_mem_err("    %s\n", info->backtrace[i]);
-                }
+                if (strstr(info->backtrace[i], "invoke_main"))
+                    break;
+                log_mem_err("    %s\n", info->backtrace[i]);
             }
-            backtrace_free(info->backtrace); /* this was allocated when malloc() was called */
+        }
+        backtrace_free(info->backtrace); /* this was allocated when malloc() was called */
 #endif
-        HM_END_EACH
-    }
+    HM_END_EACH
 
     /* overall report */
     leaks = (state.allocations > state.deallocations ?

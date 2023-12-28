@@ -49,7 +49,6 @@ try_patch_user_defined(
     struct db_interface* dbi, struct db* db, int fighter_id,
     struct str_view label)
 {
-
     /*
      * If the label is a user-defined label, for example "nair", then it
      * may map to more than 1 motion value, for example, "attack_air_n"
@@ -73,7 +72,7 @@ try_patch_user_defined(
     }
 
     ast_collapse_into(ast, ctx.replace_node, node);
-    return 0;
+    return 1;
 }
 
 static int

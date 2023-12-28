@@ -37,7 +37,7 @@ protected:
         ASSERT_THAT(nfa_compile(&nfa, &ast), Eq(0));
         ast_deinit(&ast);
 
-        ASSERT_THAT(dfa_compile(&dfa, &nfa), Eq(0));
+        ASSERT_THAT(dfa_from_nfa(&dfa, &nfa), Eq(0));
         nfa_deinit(&nfa);
 
         ASSERT_THAT(asm_compile(&asm_dfa, &dfa), Eq(0));

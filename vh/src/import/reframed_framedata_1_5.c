@@ -46,11 +46,11 @@ import_reframed_framedata_1_5(struct mstream* ms, int game_id)
 
     if (frame_data_save(&fdata, game_id) != 0)
         goto fail;
-    frame_data_free(&fdata);
+    frame_data_deinit(&fdata);
 
     return 0;
 
 fail:
-    frame_data_free(&fdata);
+    frame_data_deinit(&fdata);
     return -1;
 }

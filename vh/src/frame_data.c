@@ -87,6 +87,16 @@ frame_data_alloc_structure(struct frame_data* fdata, int fighter_count, int fram
     return 0;
 }
 
+void
+frame_data_deinit(struct frame_data* fdata)
+{
+    if (fdata->file.address)
+        mfile_unmap(&fdata->file);
+
+    if (fdata->file.address == NULL && fdata->fighter_count)
+        mem_free((void*)fdata->timestamp);
+}
+
 int
 frame_data_load(struct frame_data* fdata, int game_id)
 {
@@ -96,6 +106,8 @@ frame_data_load(struct frame_data* fdata, int game_id)
     void* mem;
     uint8_t major, minor;
     mem_size ptr_table_size, fighter_size;
+
+    frame_data_deinit(fdata);
 
     sprintf(file_name, "fdata/%d.fdat", game_id);
     if (mfile_map_read(&fdata->file, file_name) < 0)
@@ -242,16 +254,4 @@ frame_data_delete_all(void)
     path_init(&file_path);
     fs_list(cstr_view("fdata"), on_fdata_file_delete, &file_path);
     path_deinit(&file_path);
-}
-
-void
-frame_data_free(struct frame_data* fdata)
-{
-    if (fdata->file.size)
-        mfile_unmap(&fdata->file);
-
-    if (!fdata->file.size)
-        mem_free((void*)fdata->timestamp);
-
-    frame_data_init(fdata);  /* ensures frame_data_is_loaded() returns false */
 }

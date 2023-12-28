@@ -67,7 +67,7 @@ nfa_export_table(const struct table* tt, const struct vec* tf, const char* file_
     if (fp == NULL)
         goto fopen_failed;
 
-    if (table_init(&tt_str, tt->rows, tt->cols, sizeof(struct str)) < 0)
+    if (table_init_with_size(&tt_str, tt->rows, tt->cols, sizeof(struct str)) < 0)
         goto table_init_failed;
     for (c = 0; c != tt_str.cols; ++c)
         for (r = 0; r != tt_str.rows; ++r)
@@ -206,7 +206,7 @@ dfa_export_table(const struct table* tt, const struct vec* tf, const char* file_
     if (fp == NULL)
         goto fopen_failed;
 
-    if (table_init(&tt_str, tt->rows, tt->cols, sizeof(struct str)) < 0)
+    if (table_init_with_size(&tt_str, tt->rows, tt->cols, sizeof(struct str)) < 0)
         goto table_init_failed;
     for (r = 0; r != tt_str.rows; ++r)
         for (c = 0; c != tt_str.cols; ++c)
@@ -328,13 +328,13 @@ fopen_failed:
 #endif
 
 static int
-dfa_state_is_accept(const struct dfa_table* dfa, int state)
+dfa_state_is_accept(const struct table* dfa_tt, int state)
 {
     int r, c;
-    for (r = 0; r != dfa->tt.rows; ++r)
-        for (c = 0; c != dfa->tt.cols; ++c)
+    for (r = 0; r != dfa_tt->rows; ++r)
+        for (c = 0; c != dfa_tt->cols; ++c)
         {
-            const int* next = table_get(&dfa->tt, r, c);
+            const int* next = table_get(dfa_tt, r, c);
             if (*next < 0 && -*next == state)
                 return 1;
         }
@@ -342,16 +342,16 @@ dfa_state_is_accept(const struct dfa_table* dfa, int state)
 }
 
 static void
-dfa_remove_duplicates(struct dfa_table* dfa)
+dfa_remove_duplicates(struct table* dfa_tt, struct vec* tf)
 {
     int r1, r2, c, r;
-    for (r1 = 0; r1 < dfa->tt.rows; ++r1)
-        for (r2 = r1 + 1; r2 < dfa->tt.rows; ++r2)
+    for (r1 = 0; r1 < dfa_tt->rows; ++r1)
+        for (r2 = r1 + 1; r2 < dfa_tt->rows; ++r2)
         {
-            for (c = 0; c != dfa->tt.cols; ++c)
+            for (c = 0; c != dfa_tt->cols; ++c)
             {
-                int* cell1 = table_get(&dfa->tt, r1, c);
-                int* cell2 = table_get(&dfa->tt, r2, c);
+                int* cell1 = table_get(dfa_tt, r1, c);
+                int* cell2 = table_get(dfa_tt, r2, c);
                 if (*cell1 != *cell2)
                     goto skip_row;
             }
@@ -361,15 +361,15 @@ dfa_remove_duplicates(struct dfa_table* dfa)
              * accept conditions, or neither. It is invalid to merge states
              * only one of them is an accept condition.
              */
-            if (dfa_state_is_accept(dfa, r1) != dfa_state_is_accept(dfa, r2))
+            if (dfa_state_is_accept(dfa_tt, r1) != dfa_state_is_accept(dfa_tt, r2))
                 goto skip_row;
 
             /* Replace all references to r2 with r1, and decrement all references
              * above r2, since r2 is removed. */
-            for (r = 0; r != dfa->tt.rows; ++r)
-                for (c = 0; c != dfa->tt.cols; ++c)
+            for (r = 0; r != dfa_tt->rows; ++r)
+                for (c = 0; c != dfa_tt->cols; ++c)
                 {
-                    int* cell = table_get(&dfa->tt, r, c);
+                    int* cell = table_get(dfa_tt, r, c);
                     if (*cell == r2)
                         *cell = r1;
                     if (*cell == -r2)
@@ -387,22 +387,33 @@ dfa_remove_duplicates(struct dfa_table* dfa)
                     }
                 }
 
-            table_remove_row(&dfa->tt, r2);
+            table_remove_row(dfa_tt, r2);
             r2--;
         skip_row:;
         }
 }
 
 int
-dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
+dfa_from_nfa(struct dfa_table* dfa, struct nfa_graph* nfa)
 {
     struct hm nfa_unique_tf;
     struct hm dfa_unique_states;
     struct table nfa_tt;
     struct table dfa_tt_intermediate;
+    struct table dfa_tt;
+    struct vec dfa_tf;
     int n, r, c;
     int has_wildcard = 0;
-    int success = -1;
+    int return_code = -1;
+
+    /* 
+     * In an error case, the table and transition functions should be empty to
+     * prevent dfa_find_* to execute anything. The data will then be freed.
+     */
+    dfa_tt = dfa->tt;
+    dfa_tf = dfa->tf;
+    table_init(&dfa->tf, dfa->tf.element_size);
+    table_init(&dfa->tt, dfa->tt.element_size);
 
     /*
      * Purpose of this hashmap is to create a set of unique transition functions,
@@ -428,7 +439,7 @@ dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
     }
 
     /* Skip node 0, as it merely acts as a container for all start states */
-    vec_init(&dfa->tf, sizeof(struct matcher));
+    vec_clear(&dfa_tf);
     for (n = 1; n != nfa->node_count; ++n)
     {
         int* hm_value;
@@ -436,7 +447,7 @@ dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
         {
             case 1:
                 *hm_value = hm_count(&nfa_unique_tf) - 1;
-                if (vec_push(&dfa->tf, &nfa->nodes[n].matcher) < 0)
+                if (vec_push(&dfa_tf, &nfa->nodes[n].matcher) < 0)
                     goto build_tfs_failed;
                 break;
             case 0 : break;
@@ -461,8 +472,8 @@ dfa_compile(struct dfa_table* dfa, struct nfa_graph* nfa)
                     *col2 = tmp;
 
                     /* swap entries in transition function vector */
-                    matcher1 = vec_get(&dfa->tf, *col1);
-                    matcher2 = vec_get(&dfa->tf, *col2);
+                    matcher1 = vec_get(&dfa_tf, *col1);
+                    matcher2 = vec_get(&dfa_tf, *col2);
                     tmp_matcher = *matcher1;
                     *matcher1 = *matcher2;
                     *matcher2 = tmp_matcher;
@@ -479,7 +490,7 @@ wildcard_swapped_to_end:;
      * each state is identified by an integer, which is an index into nfa->nodes,
      * or equivalently, a row index of the table.
      */
-    if (table_init(&nfa_tt, nfa->node_count, hm_count(&nfa_unique_tf), sizeof(struct vec)) < 0)
+    if (table_init_with_size(&nfa_tt, nfa->node_count, hm_count(&nfa_unique_tf), sizeof(struct vec)) < 0)
         goto init_nfa_table_failed;
     for (r = 0; r != nfa_tt.rows; ++r)
         for (c = 0; c != nfa_tt.cols; ++c)
@@ -499,7 +510,7 @@ wildcard_swapped_to_end:;
                 goto build_nfa_table_failed;
         VEC_END_EACH
 
-    nfa_export_table(&nfa_tt, &dfa->tf, "nfa.txt");
+    nfa_export_table(&nfa_tt, &dfa_tf, "nfa.txt");
 
     /*
      * DFA cannot handle wildcards as-is, because it would require generating
@@ -529,7 +540,7 @@ wildcard_swapped_to_end:;
                 VEC_END_EACH
             }
         }
-    nfa_export_table(&nfa_tt, &dfa->tf, "nfa_wc.txt");
+    nfa_export_table(&nfa_tt, &dfa_tf, "nfa_wc.txt");
 
     /*
      * Unlike the NFA transition table, the DFA table's states are sets of
@@ -544,7 +555,7 @@ wildcard_swapped_to_end:;
     {
         goto init_dfa_unique_states_failed;
     }
-    if (table_init(&dfa_tt_intermediate, 1, nfa_tt.cols, sizeof(struct vec)) < 0)
+    if (table_init_with_size(&dfa_tt_intermediate, 1, nfa_tt.cols, sizeof(struct vec)) < 0)
         goto init_dfa_table_failed;
     for (c = 0; c != dfa_tt_intermediate.cols; ++c)
         vec_init(table_get(&dfa_tt_intermediate, 0, c), sizeof(int));
@@ -598,12 +609,12 @@ wildcard_swapped_to_end:;
             }
         }
 
-    if (table_init(&dfa->tt, dfa_tt_intermediate.rows, dfa_tt_intermediate.cols, sizeof(int)) < 0)
+    if (table_resize(&dfa_tt, dfa_tt_intermediate.rows, dfa_tt_intermediate.cols) < 0)
         goto init_final_dfa_table_failed;
     for (r = 0; r != dfa_tt_intermediate.rows; ++r)
         for (c = 0; c != dfa_tt_intermediate.cols; ++c)
         {
-            int* dfa_final_state = table_get(&dfa->tt, r, c);
+            int* dfa_final_state = table_get(&dfa_tt, r, c);
             struct vec* dfa_state = table_get(&dfa_tt_intermediate, r, c);
             if (vec_count(dfa_state) == 0)
             {
@@ -638,13 +649,16 @@ wildcard_swapped_to_end:;
             VEC_END_EACH
         }
 
-    dfa_export_table(&dfa->tt, &dfa->tf, "dfa_dups.txt");
-    dfa_remove_duplicates(dfa);
-    dfa_export_table(&dfa->tt, &dfa->tf, "dfa.txt");
+    dfa_export_table(&dfa_tt, &dfa_tf, "dfa_dups.txt");
+    dfa_remove_duplicates(&dfa_tt, &dfa_tf);
+    dfa_export_table(&dfa_tt, &dfa_tf, "dfa.txt");
 
-    /* Success - This causes dfa->tf to not be freed */
-    success = 0;
+    /* Success! */
+    return_code = 0;
+    vec_steal_vector(&dfa->tf, &dfa_tf);
+    table_steal_table(&dfa->tt, &dfa_tt);
 
+    table_deinit(&dfa_tt);
 init_final_dfa_table_failed:
 build_dfa_table_failed:
     for (r = 0; r != dfa_tt_intermediate.rows; ++r)
@@ -661,11 +675,17 @@ build_nfa_table_failed:
     table_deinit(&nfa_tt);
 init_nfa_table_failed:
 build_tfs_failed:
-    if (success < 0)  /* If function succeeds, ownership of tf is transferred out of the function*/
-        vec_deinit(&dfa->tf);
+    vec_deinit(&dfa_tf);
     hm_deinit(&nfa_unique_tf);
 init_nfa_unique_tf_failed:
-    return success;
+    return return_code;
+}
+
+void
+dfa_init(struct dfa_table* dfa)
+{
+    vec_init(&dfa->tf, sizeof(struct matcher));
+    table_init(&dfa->tt, sizeof(int));
 }
 
 void
@@ -690,7 +710,7 @@ dfa_export_dot(const struct dfa_table* dfa, const char* file_name)
     for (r = 1; r < dfa->tt.rows; ++r)
     {
         fprintf(fp, "n%d [label=\"%d\"", r, r);
-        if (dfa_state_is_accept(dfa, r))
+        if (dfa_state_is_accept(&dfa->tt, r))
             fprintf(fp, ", shape=\"doublecircle\"");
         fprintf(fp, "];\n");
     }
