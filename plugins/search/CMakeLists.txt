@@ -110,7 +110,8 @@ if (VODHOUND_${PLUGIN_NAME})
                 $<BUILD_INTERFACE:$<$<AND:$<PLATFORM_ID:Windows>,$<NOT:$<BOOL:${HAVE_UNISTD_H}>>>:${PROJECT_SOURCE_DIR}/include/win32_unistd>>)
         target_compile_definitions (${PROJECT_NAME}-tests
             PRIVATE
-                $<$<BOOL:${PLUGIN_NAME}_EXPORT_DOT>:EXPORT_DOT>)
+                $<$<BOOL:${PLUGIN_NAME}_EXPORT_DOT>:EXPORT_DOT>
+                $<$<CXX_COMPILER_ID:MSVC>:_CRT_SECURE_NO_WARNINGS>)
     endif ()
 
     ###########################################################################

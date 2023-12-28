@@ -412,7 +412,7 @@ dfa_from_nfa(struct dfa_table* dfa, struct nfa_graph* nfa)
      */
     dfa_tt = dfa->tt;
     dfa_tf = dfa->tf;
-    table_init(&dfa->tf, dfa->tf.element_size);
+    vec_init(&dfa->tf, dfa->tf.element_size);
     table_init(&dfa->tt, dfa->tt.element_size);
 
     /*

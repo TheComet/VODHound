@@ -34,9 +34,11 @@ protected:
         ast_post_hash40_remaining_labels(&ast);
         parser_deinit(&parser);
 
+        nfa_init(&nfa);
         ASSERT_THAT(nfa_compile(&nfa, &ast), Eq(0));
         ast_deinit(&ast);
 
+        dfa_init(&dfa);
         ASSERT_THAT(dfa_from_nfa(&dfa, &nfa), Eq(0));
         nfa_deinit(&nfa);
 

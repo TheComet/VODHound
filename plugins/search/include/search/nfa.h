@@ -21,11 +21,15 @@ struct nfa_graph
     int node_count;
 };
 
-int
-nfa_compile(struct nfa_graph* nfa, const struct ast* ast);
+static inline void
+nfa_init(struct nfa_graph* nfa)
+    { nfa->nodes = NULL; nfa->node_count = 0; }
 
 void
 nfa_deinit(struct nfa_graph* nfa);
+
+int
+nfa_compile(struct nfa_graph* nfa, const struct ast* ast);
 
 #if defined(EXPORT_DOT)
 int

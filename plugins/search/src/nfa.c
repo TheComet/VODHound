@@ -12,6 +12,17 @@
 
 #define max(a, b) ((a) < (b) ? (b) : (a))
 
+void
+nfa_deinit(struct nfa_graph* nfa)
+{
+    int n;
+    for (n = 0; n != nfa->node_count; ++n)
+        vec_deinit(&nfa->nodes[n].next);
+
+    if (nfa->nodes)
+        mem_free(nfa->nodes);
+}
+
 /*
  * Represents a subset of the final NFA.
  *
@@ -515,6 +526,7 @@ nfa_compile(struct nfa_graph* nfa, const struct ast* ast)
         node->matcher.is_accept = 1;
     VEC_END_EACH
 
+    nfa_deinit(nfa);
     nfa->node_count = vec_count(&nodes);
     nfa->nodes = vec_steal_data(&nodes);
     ret = 0;
@@ -530,15 +542,6 @@ out:
     VEC_END_EACH
     vec_deinit(&nodes);
     return ret;
-}
-
-void
-nfa_deinit(struct nfa_graph* nfa)
-{
-    int n;
-    for (n = 0; n != nfa->node_count; ++n)
-        vec_deinit(&nfa->nodes[n].next);
-    mem_free(nfa->nodes);
 }
 
 #if defined(EXPORT_DOT)

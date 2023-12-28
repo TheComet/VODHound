@@ -99,7 +99,6 @@ try_patch_existing_hash40(
 int
 ast_post_labels_to_motions(struct ast* ast, struct db_interface* dbi, struct db* db, int fighter_id)
 {
-    struct vec motions;
     int n;
 
     for (n = 0; n != ast->node_count; ++n)

@@ -40,6 +40,36 @@ sequence_clear(struct sequence* seq)
 {
     vec_clear(&seq->idxs);
 }
+
+int
+sequence_from_search_result(struct sequence* seq, const union symbol* symbols, struct range range, const struct ast* ast)
+{
+    int s1, s2;
+    for (s1 = range.start; s1 < range.end; ++s1)
+    {
+        uint64_t motion1 = ((uint64_t)symbols[s1].motionh << 32) | symbols[s1].motionl;
+        struct strlist_str* label1 = hm_find(&ast->merged_labels, &motion1);
+
+        if (vec_push(&seq->idxs, &s1) < 0)
+            return -1;
+
+        if (label1)
+            for (s2 = s1 + 1; s2 < range.end; ++s2)
+            {
+                uint64_t motion2 = ((uint64_t)symbols[s2].motionh << 32) | symbols[s2].motionl;
+                struct strlist_str* label2 = hm_find(&ast->merged_labels, &motion2);
+                if (label2 && str_equal(
+                    strlist_to_view(&ast->labels, *label1),
+                    strlist_to_view(&ast->labels, *label2)))
+                    s1++;
+                else
+                    break;
+            }
+    }
+
+    return 0;
+}
+
 #define seq_first(s) (*(int*)vec_front(&(s)->idxs))
 #define SEQ_FOR_EACH(s, var) VEC_FOR_EACH(&(s)->idxs, int, seq_##var) int var = *seq_##var;
 #define SEQ_END_EACH VEC_END_EACH
@@ -96,6 +126,7 @@ search_compile(struct search* search, const char* text, struct db_interface* dbi
         goto patch_motions_failed;
     ast_export_dot(&search->ast, "ast.dot");
 
+    nfa_init(&nfa);
     if (nfa_compile(&nfa, &search->ast))
         goto nfa_compile_failed;
     nfa_export_dot(&nfa, "nfa.dot");
@@ -218,35 +249,6 @@ destroy(GTypeModule* type_module, struct plugin_ctx* ctx)
     mem_free(ctx);
 }
 
-int
-sequence_from_search_result(struct sequence* seq, const union symbol* symbols, struct range range, const struct ast* ast)
-{
-    int s1, s2;
-    for (s1 = range.start; s1 < range.end; ++s1)
-    {
-        uint64_t motion1 = ((uint64_t)symbols[s1].motionh << 32) | symbols[s1].motionl;
-        struct strlist_str* label1 = hm_find(&ast->merged_labels, &motion1);
-
-        if (vec_push(&seq->idxs, &s1) < 0)
-            return -1;
-
-        if (label1)
-            for (s2 = s1 + 1; s2 < range.end; ++s2)
-            {
-                uint64_t motion2 = ((uint64_t)symbols[s2].motionh << 32) | symbols[s2].motionl;
-                struct strlist_str* label2 = hm_find(&ast->merged_labels, &motion2);
-                if (label2 && str_equal(
-                        strlist_to_view(&ast->labels, *label1),
-                        strlist_to_view(&ast->labels, *label2)))
-                    s1++;
-                else
-                    break;
-            }
-    }
-
-    return 0;
-}
-
 static int
 on_search_text_changed(GtkEntry* self, struct plugin_ctx* ctx)
 {
@@ -301,7 +303,8 @@ static void select_replays(struct plugin_ctx* ctx, const int* game_ids, int coun
 
 static void clear_replays(struct plugin_ctx* ctx)
 {
-
+    search_index_clear(&ctx->search.index);
+    frame_data_clear(&ctx->search.fdata);
 }
 
 static struct replay_interface replays = {
