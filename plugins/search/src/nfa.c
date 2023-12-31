@@ -28,8 +28,8 @@ nfa_deinit(struct nfa_graph* nfa)
  *
  * Each fragment holds a list of unresolved incoming and outgoing transitions.
  * As the AST is compiled, fragments are assembled together by connecting these
- * transitions to each other in order to form larger and larger fragments, until
- * the final NFA is completed.
+ * transitions to each other, forming larger and larger fragments, until the
+ * final NFA is completed.
  *
  * The "in" and "out" lists are indices into the vector of states/matchers.
  * The "bridge" flag handles a special case where a fragment can have a direct
@@ -94,7 +94,8 @@ fragment_duplicate(struct fragment* dst, const struct fragment* src, struct vec*
     if (hm_init(&index_map, sizeof(int), sizeof(int)) < 0)
         return -1;
     VEC_FOR_EACH(&src->in, int, conn)
-        node_duplicate(*conn, nodes, &index_map);
+        if (node_duplicate(*conn, nodes, &index_map) < 0)
+            goto fail;
     VEC_END_EACH
 
     /* Fix transitions of all new nodes */
@@ -129,7 +130,8 @@ nfa_compile_recurse(
     int n,
     struct vec* nodes,
     struct vec* fstack,
-    struct vec* qstack)
+    struct vec* qstack,
+    char is_inverted)
 {
     switch (ast->nodes[n].info.type)
     {
@@ -137,8 +139,8 @@ nfa_compile_recurse(
             struct fragment* right;
             struct fragment* left;
 
-            if (nfa_compile_recurse(ast, ast->nodes[n].statement.child, nodes, fstack, qstack) < 0) return -1;
-            if (nfa_compile_recurse(ast, ast->nodes[n].statement.next, nodes, fstack, qstack) < 0) return -1;
+            if (nfa_compile_recurse(ast, ast->nodes[n].statement.child, nodes, fstack, qstack, is_inverted) < 0) return -1;
+            if (nfa_compile_recurse(ast, ast->nodes[n].statement.next, nodes, fstack, qstack, is_inverted) < 0) return -1;
             if (vec_count(fstack) < 2)
             {
                 log_err("Failed to compile AST: Incomplete statement\n");
@@ -201,7 +203,7 @@ nfa_compile_recurse(
         case AST_REPETITION: {
             struct fragment* f;
             int min_reps, max_reps;
-            if (nfa_compile_recurse(ast, ast->nodes[n].repetition.child, nodes, fstack, qstack) < 0) return -1;
+            if (nfa_compile_recurse(ast, ast->nodes[n].repetition.child, nodes, fstack, qstack, is_inverted) < 0) return -1;
             if (vec_count(fstack) < 1)
             {
                 log_err("Failed to compile AST: Incomplete repetition\n");
@@ -219,7 +221,7 @@ nfa_compile_recurse(
             if (min_reps == 0 || max_reps == 0)
                 f->direct = 1;
 
-            /* No upper bound, e.g. ".*" */
+            /* No upper bound, e.g. "*" or "+" */
             if (max_reps == -1)
             {
                 int n;
@@ -383,8 +385,8 @@ nfa_compile_recurse(
             struct fragment* right;
             struct fragment* left;
 
-            if (nfa_compile_recurse(ast, ast->nodes[n].union_.child, nodes, fstack, qstack) < 0) return -1;
-            if (nfa_compile_recurse(ast, ast->nodes[n].union_.next, nodes, fstack, qstack) < 0) return -1;
+            if (nfa_compile_recurse(ast, ast->nodes[n].union_.child, nodes, fstack, qstack, is_inverted) < 0) return -1;
+            if (nfa_compile_recurse(ast, ast->nodes[n].union_.next, nodes, fstack, qstack, is_inverted) < 0) return -1;
             if (vec_count(fstack) < 2)
             {
                 log_err("Failed to compile AST: Incomplete union\n");
@@ -403,7 +405,29 @@ nfa_compile_recurse(
         } break;
 
         case AST_INVERSION: {
-            if (nfa_compile_recurse(ast, ast->nodes[n].inversion.child, nodes, fstack, qstack) < 0) return -1;
+            if (nfa_compile_recurse(ast, ast->nodes[n].inversion.child, nodes, fstack, qstack, !is_inverted) < 0) return -1;
+            if (vec_count(fstack) < 1)
+            {
+                log_err("Failed to compile AST: Incomplete inversion\n");
+                return -1;
+            }
+
+            if (!is_inverted)
+            {
+                int in, out;
+                struct nfa_node* node;
+                struct fragment* f = vec_back(fstack);
+                
+                vec_clear(&f->out);
+                in = vec_count(nodes);
+                out = vec_count(nodes);
+                if (vec_push(&f->in, &in) < 0) return -1;
+                if (vec_push(&f->out, &out) < 0) return -1;
+
+                if ((node = vec_emplace(nodes)) == NULL) return -1;
+                vec_init(&node->next, sizeof(int));
+                node->matcher = match_wildcard(is_inverted);
+            }
         } break;
 
         case AST_WILDCARD: {
@@ -421,7 +445,7 @@ nfa_compile_recurse(
 
             if ((node = vec_emplace(nodes)) == NULL) return -1;
             vec_init(&node->next, sizeof(int));
-            node->matcher = match_wildcard();
+            node->matcher = match_wildcard(is_inverted);
         } break;
 
         case AST_LABEL: {
@@ -446,15 +470,15 @@ nfa_compile_recurse(
 
             if ((node = vec_emplace(nodes)) == NULL) return -1;
             vec_init(&node->next, sizeof(int));
-            node->matcher = match_motion(ast->nodes[n].motion.motion);
+            node->matcher = match_motion(ast->nodes[n].motion.motion, is_inverted);
         } break;
 
         case AST_CONTEXT: {
-            if (nfa_compile_recurse(ast, ast->nodes[n].context.child, nodes, fstack, qstack) < 0) return -1;
+            if (nfa_compile_recurse(ast, ast->nodes[n].context.child, nodes, fstack, qstack, is_inverted) < 0) return -1;
         } break;
 
         case AST_TIMING: {
-            if (nfa_compile_recurse(ast, ast->nodes[n].timing.child, nodes, fstack, qstack) < 0) return -1;
+            if (nfa_compile_recurse(ast, ast->nodes[n].timing.child, nodes, fstack, qstack, is_inverted) < 0) return -1;
         } break;
     }
 
@@ -487,7 +511,7 @@ nfa_compile(struct nfa_graph* nfa, const struct ast* ast)
     vec_init(&entry_node->next, sizeof(int));
     entry_node->matcher = match_none();
 
-    if (nfa_compile_recurse(ast, 0, &nodes, &fragment_stack, &qualifier_stack) != 0)
+    if (nfa_compile_recurse(ast, 0, &nodes, &fragment_stack, &qualifier_stack, 0) != 0)
         goto out;
 
     /*
@@ -574,6 +598,8 @@ nfa_export_dot(const struct nfa_graph* nfa, const char* file_name)
                 fprintf(fp, "n%d -> n%d [", n, *e);
 
             fprintf(fp, "label=\"");
+            if (m->is_inverted)
+                fprintf(fp, "!");
             if (matches_motion(m))
                 fprintf(fp, "0x%" PRIx64, ((uint64_t)m->symbol.motionh << 32) | ((uint64_t)m->symbol.motionl));
             else if (matches_wildcard(m))

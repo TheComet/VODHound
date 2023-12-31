@@ -1,5 +1,6 @@
 #include "search/dfa.h"
 #include "search/nfa.h"
+#include "search/state.h"
 
 #include "vh/str.h"
 #include "vh/hm.h"
@@ -13,6 +14,7 @@ match_hm_hash(const void* data, int len)
     const struct matcher* m = data;
     hash32 a = (hash32)((m->symbol.u64 & m->mask.u64) >> 32UL);
     hash32 b = (hash32)((m->symbol.u64 & m->mask.u64) & 0xFFFFFFFF);
+    hash32 c = m->is_inverted;
     return hash32_combine(a, b);
 }
 
@@ -20,20 +22,22 @@ static int
 match_hm_compare(const void* adata, const void* bdata, int size)
 {
     (void)size;
-    /* Inversion, because hashmap expects this to behavle like memcmp() */
     const struct matcher* a = adata;
     const struct matcher* b = bdata;
-    return !((a->symbol.u64 & a->mask.u64) == (b->symbol.u64 & b->mask.u64));
+    /* hashmap expects this to behave like memcmp() */
+    return !(
+        (a->symbol.u64 & a->mask.u64) == (b->symbol.u64 & b->mask.u64) &&
+        a->is_inverted == b->is_inverted);
 }
 
 static hash32
 states_hm_hash(const void* data, int len)
 {
     const struct vec* states = data;
-    hash32 h = (hash32)*(int*)vec_back(states);
+    hash32 h = (hash32)((union state*)vec_back(states))->data;
     int i = vec_count(states) - 1;
     while (i--)
-        h = hash32_combine(h, (hash32)*(int*)vec_get(states, i));
+        h = hash32_combine(h, (hash32)((union state*)vec_get(states, i))->data);
     return h;
 }
 
@@ -46,7 +50,7 @@ states_hm_compare(const void* a, const void* b, int size)
     if (vec_count(states_a) != vec_count(states_b))
         return 1;
     while (i--)
-        if (*(int*)vec_get(states_a, i) != *(int*)vec_get(states_b, i))
+        if (((union state*)vec_get(states_a, i))->data != ((union state*)vec_get(states_b, i))->data)
             return 1;
     return 0;
 }
@@ -75,7 +79,7 @@ nfa_export_table(const struct table* tt, const struct vec* tf, const char* file_
 
     vec_init(&col_titles, sizeof(struct str));
     vec_init(&col_widths, sizeof(int));
-    vec_init(&row_indices, sizeof(int));
+    vec_init(&row_indices, sizeof(union state));
 
     for (c = 0; c != tt->cols; ++c)
     {
@@ -93,7 +97,9 @@ nfa_export_table(const struct table* tt, const struct vec* tf, const char* file_
         }
         else
         {
-            if (str_fmt(title, "0x%" PRIx64, ((uint64_t)m->symbol.motionh << 32) | ((uint64_t)m->symbol.motionl)) < 0)
+            if (str_fmt(title, "%s0x%" PRIx64,
+                    m->is_inverted ? "!" : "",
+                    ((uint64_t)m->symbol.motionh << 32) | ((uint64_t)m->symbol.motionl)) < 0)
                 goto calc_text_failed;
         }
 
@@ -107,8 +113,8 @@ nfa_export_table(const struct table* tt, const struct vec* tf, const char* file_
             struct str* s = table_get(&tt_str, r, c);
             str_init(s);
 
-            VEC_FOR_EACH(cell, int, next)
-                sprintf(buf, "%d", *next < 0 ? -*next : *next);
+            VEC_FOR_EACH(cell, union state, next)
+                sprintf(buf, "%d", next->idx);
                 if (cstr_join(s, ",", buf) < 0)
                     goto calc_text_failed;
             VEC_END_EACH
@@ -119,19 +125,18 @@ nfa_export_table(const struct table* tt, const struct vec* tf, const char* file_
     }
 
     for (r = 0; r != tt->rows; ++r)
-        if (vec_push(&row_indices, &r) < 0)
+    {
+        union state row_idx = make_state(r, 0, 0);
+        if (vec_push(&row_indices, &row_idx) < 0)
             goto calc_text_failed;
+    }
     for (r = 0; r != tt->rows; ++r)
         for (c = 0; c != tt->cols; ++c)
         {
             struct vec* cell = table_get(tt, r, c);
-            VEC_FOR_EACH(cell, int, next)
-                if (*next < 0)
-                {
-                    int* row_idx = vec_get(&row_indices, -*next);
-                    if (*row_idx > 0)
-                        *row_idx = -*row_idx;
-                }
+            VEC_FOR_EACH(cell, union state, next)
+                if (next->is_accept)
+                    ((union state*)vec_get(&row_indices, next->idx))->is_accept = 1;
             VEC_END_EACH
         }
 
@@ -155,14 +160,14 @@ nfa_export_table(const struct table* tt, const struct vec* tf, const char* file_
     fprintf(fp, "\n");
     for (r = 0; r != tt_str.rows; ++r)
     {
-        int* row_idx = vec_get(&row_indices, r);
-        if (*row_idx < 0)
+        union state* row_idx = vec_get(&row_indices, r);
+        if (row_idx->is_accept)
         {
-            sprintf(buf, "%d", -*row_idx);
+            sprintf(buf, "%d", row_idx->idx);
             fprintf(fp, " %*s*%s ", (int)(4 - strlen(buf)), "", buf);
         }
         else
-            fprintf(fp, " %*d ", 5, *row_idx);
+            fprintf(fp, " %*d ", 5, row_idx->idx);
 
         for (c = 0; c != tt_str.cols; ++c)
         {
@@ -214,7 +219,7 @@ dfa_export_table(const struct table* tt, const struct vec* tf, const char* file_
 
     vec_init(&col_titles, sizeof(struct str));
     vec_init(&col_widths, sizeof(int));
-    vec_init(&row_indices, sizeof(int));
+    vec_init(&row_indices, sizeof(union state));
 
     for (c = 0; c != tt->cols; ++c)
     {
@@ -232,7 +237,9 @@ dfa_export_table(const struct table* tt, const struct vec* tf, const char* file_
         }
         else
         {
-            if (str_fmt(title, "0x%" PRIx64, ((uint64_t)m->symbol.motionh << 32) | ((uint64_t)m->symbol.motionl)) < 0)
+            if (str_fmt(title, "%s0x%" PRIx64,
+                    m->is_inverted ? "!" : "",
+                    ((uint64_t)m->symbol.motionh << 32) | ((uint64_t)m->symbol.motionl)) < 0)
                 goto calc_text_failed;
         }
 
@@ -242,12 +249,12 @@ dfa_export_table(const struct table* tt, const struct vec* tf, const char* file_
 
         for (r = 0; r != tt->rows; ++r)
         {
-            int* cell = table_get(tt, r, c);
+            union state* cell = table_get(tt, r, c);
             struct str* s = table_get(&tt_str, r, c);
             str_init(s);
 
-            if (*cell != 0)
-                if (str_fmt(s, "%d", *cell < 0 ? -*cell : *cell) < 0)
+            if (!state_is_trap(*cell))
+                if (str_fmt(s, "%d", cell->idx) < 0)
                     goto calc_text_failed;
 
             if (*col_width < s->len)
@@ -256,18 +263,17 @@ dfa_export_table(const struct table* tt, const struct vec* tf, const char* file_
     }
 
     for (r = 0; r != tt->rows; ++r)
-        if (vec_push(&row_indices, &r) < 0)
+    {
+        union state row_idx = make_state(r, 0, 0);
+        if (vec_push(&row_indices, &row_idx) < 0)
             goto calc_text_failed;
+    }
     for (r = 0; r != tt->rows; ++r)
         for (c = 0; c != tt->cols; ++c)
         {
-            int* next= table_get(tt, r, c);
-            if (*next < 0)
-            {
-                int* row_idx = vec_get(&row_indices, -*next);
-                if (*row_idx > 0)
-                    *row_idx = -*row_idx;
-            }
+            union state* next = table_get(tt, r, c);
+            if (next->is_accept)
+                ((union state*)vec_get(&row_indices, next->idx))->is_accept = 1;
         }
 
     fprintf(fp, " State ");
@@ -290,14 +296,14 @@ dfa_export_table(const struct table* tt, const struct vec* tf, const char* file_
     fprintf(fp, "\n");
     for (r = 0; r != tt_str.rows; ++r)
     {
-        int* row_idx = vec_get(&row_indices, r);
-        if (*row_idx < 0)
+        union state* row_idx = vec_get(&row_indices, r);
+        if (row_idx->is_accept)
         {
-            sprintf(buf, "%d", -*row_idx);
+            sprintf(buf, "%d", row_idx->idx);
             fprintf(fp, " %*s*%s ", (int)(4 - strlen(buf)), "", buf);
         }
         else
-            fprintf(fp, " %*d ", 5, *row_idx);
+            fprintf(fp, " %*d ", 5, row_idx->idx);
 
         for (c = 0; c != tt_str.cols; ++c)
         {
@@ -328,14 +334,14 @@ fopen_failed:
 #endif
 
 static int
-dfa_state_is_accept(const struct table* dfa_tt, int state)
+dfa_state_idx_is_accept(const struct table* dfa_tt, int idx)
 {
     int r, c;
     for (r = 0; r != dfa_tt->rows; ++r)
         for (c = 0; c != dfa_tt->cols; ++c)
         {
-            const int* next = table_get(dfa_tt, r, c);
-            if (*next < 0 && -*next == state)
+            const union state* next = table_get(dfa_tt, r, c);
+            if (next->is_accept && next->idx == idx)
                 return 1;
         }
     return 0;
@@ -350,18 +356,18 @@ dfa_remove_duplicates(struct table* dfa_tt, struct vec* tf)
         {
             for (c = 0; c != dfa_tt->cols; ++c)
             {
-                int* cell1 = table_get(dfa_tt, r1, c);
-                int* cell2 = table_get(dfa_tt, r2, c);
-                if (*cell1 != *cell2)
+                const union state* cell1 = table_get(dfa_tt, r1, c);
+                const union state* cell2 = table_get(dfa_tt, r2, c);
+                if (cell1->data != cell2->data)
                     goto skip_row;
             }
 
             /*
              * Have to additionally make sure that r1 and r2 are either both
              * accept conditions, or neither. It is invalid to merge states
-             * only one of them is an accept condition.
+             * where only one of them is an accept condition.
              */
-            if (dfa_state_is_accept(dfa_tt, r1) != dfa_state_is_accept(dfa_tt, r2))
+            if (dfa_state_idx_is_accept(dfa_tt, r1) != dfa_state_idx_is_accept(dfa_tt, r2))
                 goto skip_row;
 
             /* Replace all references to r2 with r1, and decrement all references
@@ -369,22 +375,12 @@ dfa_remove_duplicates(struct table* dfa_tt, struct vec* tf)
             for (r = 0; r != dfa_tt->rows; ++r)
                 for (c = 0; c != dfa_tt->cols; ++c)
                 {
-                    int* cell = table_get(dfa_tt, r, c);
-                    if (*cell == r2)
-                        *cell = r1;
-                    if (*cell == -r2)
-                        *cell = -r1;
+                    union state* cell = table_get(dfa_tt, r, c);
+                    if (cell->idx == r2)
+                        cell->idx = r1;
 
-                    if (*cell < 0)
-                    {
-                        if (*cell < -r2)
-                            (*cell)++;
-                    }
-                    else
-                    {
-                        if (*cell > r2)
-                            (*cell)--;
-                    }
+                    if ((int)cell->idx > r2)
+                        cell->idx--;
                 }
 
             table_remove_row(dfa_tt, r2);
@@ -403,7 +399,7 @@ dfa_from_nfa(struct dfa_table* dfa, struct nfa_graph* nfa)
     struct table dfa_tt;
     struct vec dfa_tf;
     int n, r, c;
-    int has_wildcard = 0;
+    int has_wildcards = 0;
     int return_code = -1;
 
     /* 
@@ -429,8 +425,8 @@ dfa_from_nfa(struct dfa_table* dfa, struct nfa_graph* nfa)
      * transitions as negative indices.
      */
     if (hm_init_with_options(&nfa_unique_tf,
-         sizeof(struct matcher),
-         sizeof(int),
+         sizeof(struct matcher),  /* transition function */
+         sizeof(int),             /* index into the "nfa->nodes[]" array as well as index into the "nfa_tt", "dfa_tt" columns and "dfa_tf" vector */
          VH_HM_MIN_CAPACITY,
          match_hm_hash,
          match_hm_compare) < 0)
@@ -438,15 +434,14 @@ dfa_from_nfa(struct dfa_table* dfa, struct nfa_graph* nfa)
         goto init_nfa_unique_tf_failed;
     }
 
-    /* Skip node 0, as it merely acts as a container for all start states */
     vec_clear(&dfa_tf);
-    for (n = 1; n != nfa->node_count; ++n)
-    {
-        int* hm_value;
-        switch (hm_insert(&nfa_unique_tf, &nfa->nodes[n].matcher, (void**)&hm_value))
+    for (n = 1; n != nfa->node_count; ++n)  /* Skip node 0, as it merely acts */
+    {                                       /* a container for all start states */
+        int* nfa_tf_idx;
+        switch (hm_insert(&nfa_unique_tf, &nfa->nodes[n].matcher, (void**)&nfa_tf_idx))
         {
             case 1:
-                *hm_value = hm_count(&nfa_unique_tf) - 1;
+                *nfa_tf_idx = hm_count(&nfa_unique_tf) - 1;
                 if (vec_push(&dfa_tf, &nfa->nodes[n].matcher) < 0)
                     goto build_tfs_failed;
                 break;
@@ -456,7 +451,7 @@ dfa_from_nfa(struct dfa_table* dfa, struct nfa_graph* nfa)
     }
 
     /*
-     * Put the wildcard matcher (if it exists) at the end of the table. This
+     * Put the wildcard matcher (if it exists) as the last column. This
      * will cause the wildcard to be evaluated/executed last.
      */
     HM_FOR_EACH(&nfa_unique_tf, struct matcher, int, matcher1, col1)
@@ -478,7 +473,7 @@ dfa_from_nfa(struct dfa_table* dfa, struct nfa_graph* nfa)
                     *matcher1 = *matcher2;
                     *matcher2 = tmp_matcher;
 
-                    has_wildcard = 1;
+                    has_wildcards = 1;
                     goto wildcard_swapped_to_end;
                 }
             HM_END_EACH
@@ -486,25 +481,24 @@ dfa_from_nfa(struct dfa_table* dfa, struct nfa_graph* nfa)
 wildcard_swapped_to_end:;
 
     /*
-     * The transition table stores a list of states per cell. In this case,
-     * each state is identified by an integer, which is an index into nfa->nodes,
-     * or equivalently, a row index of the table.
+     * The transition table stores a list of states per cell. A "state" encodes
+     * whether it is an accept/deny condition and it encodes an index into the
+     * nfa->nodes array, or equivalently, a row index of the table. See "union states"
+     * for details.
      */
     if (table_init_with_size(&nfa_tt, nfa->node_count, hm_count(&nfa_unique_tf), sizeof(struct vec)) < 0)
         goto init_nfa_table_failed;
     for (r = 0; r != nfa_tt.rows; ++r)
         for (c = 0; c != nfa_tt.cols; ++c)
-            vec_init(table_get(&nfa_tt, r, c), sizeof(int));
+            vec_init(table_get(&nfa_tt, r, c), sizeof(union state));
 
-    /*
-     * Insert transitions. It is necessary to somehow keep track of which states
-     * are accept conditions. This is achieved by making the target state a
-     * negative integer.
-     */
     for (r = 0; r != nfa->node_count; ++r)
         VEC_FOR_EACH(&nfa->nodes[r].next, int, next)
             int* col = hm_find(&nfa_unique_tf, &nfa->nodes[*next].matcher);
-            int next_state = nfa->nodes[*next].matcher.is_accept ? -*next : *next;
+            union state next_state = make_state(
+                *next,
+                nfa->nodes[*next].matcher.is_accept,
+                nfa->nodes[*next].matcher.is_inverted);
             struct vec* cell = table_get(&nfa_tt, r, *col);
             if (vec_push(cell, &next_state) < 0)
                 goto build_nfa_table_failed;
@@ -514,7 +508,7 @@ wildcard_swapped_to_end:;
 
     /*
      * DFA cannot handle wildcards as-is, because it would require generating
-     * states for all possible negative matches. Consider: "a->.?->c", rewritten
+     * states for all possible negated matches. Consider: "a->.?->c", rewritten
      * "(a->c) | (a->.->c)". If the input sequence is "acc", then depending on
      * the order, this could either match "ac" or "acc".
      *
@@ -526,17 +520,20 @@ wildcard_swapped_to_end:;
      * last, it will prefer transitioning through known symbols before it falls
      * back to matching the wildcard on an unknown symbol.
      */
-    if (has_wildcard)
+    if (has_wildcards)
         for (r = 0; r != nfa_tt.rows; ++r)
         {
             struct vec* wildcard_next_states = table_get(&nfa_tt, r, nfa_tt.cols - 1);
             for (c = 0; c < nfa_tt.cols - 1; ++c)
             {
                 struct vec* next_states = table_get(&nfa_tt, r, c);
-                VEC_FOR_EACH(wildcard_next_states, int, wildcard_next_state)
-                    if (vec_find(next_states, wildcard_next_state) == vec_count(next_states))
+                VEC_FOR_EACH(wildcard_next_states, union state, wildcard_next_state)
+                    if (vec_find(next_states, wildcard_next_state) == vec_count(next_states) &&
+                        !((struct matcher*)vec_get(&dfa_tf, c))->is_inverted)
+                    {
                         if (vec_push(next_states, wildcard_next_state) < 0)
                             goto build_nfa_table_failed;
+                    }
                 VEC_END_EACH
             }
         }
@@ -547,8 +544,8 @@ wildcard_swapped_to_end:;
      * NFA states. These are tracked in this hashmap.
      */
     if (hm_init_with_options(&dfa_unique_states,
-        sizeof(struct vec),
-        sizeof(int),
+        sizeof(struct vec),  /* DFA state == set of NFA states */
+        sizeof(int),         /* index into the "dfa_tf" vector as well as index into the "dfa_tt" column */
         VH_HM_MIN_CAPACITY,
         states_hm_hash,
         states_hm_compare) < 0)
@@ -558,7 +555,7 @@ wildcard_swapped_to_end:;
     if (table_init_with_size(&dfa_tt_intermediate, 1, nfa_tt.cols, sizeof(struct vec)) < 0)
         goto init_dfa_table_failed;
     for (c = 0; c != dfa_tt_intermediate.cols; ++c)
-        vec_init(table_get(&dfa_tt_intermediate, 0, c), sizeof(int));
+        vec_init(table_get(&dfa_tt_intermediate, 0, c), sizeof(union state));
 
     /* Initial row in DFA is simply the first row from the NFA table */
     for (c = 0; c != nfa_tt.cols; ++c)
@@ -572,30 +569,30 @@ wildcard_swapped_to_end:;
     for (r = 0; r != dfa_tt_intermediate.rows; ++r)
         for (c = 0; c != dfa_tt_intermediate.cols; ++c)
         {
-            int* hm_value;
+            int* dfa_tf_idx;
             /* Go through current row and see if any sets of NFA states form
              * a new DFA state. If yes, we append a new row to the table with
              * that new state and initialize all cells. */
             struct vec* dfa_state = table_get(&dfa_tt_intermediate, r, c);
             if (vec_count(dfa_state) == 0)
                 continue;
-            switch (hm_insert(&dfa_unique_states, dfa_state, (void**)&hm_value))
+            switch (hm_insert(&dfa_unique_states, dfa_state, (void**)&dfa_tf_idx))
             {
                 case 1: {
-                    *hm_value = dfa_tt_intermediate.rows;
+                    *dfa_tf_idx = dfa_tt_intermediate.rows;
                     if (table_add_row(&dfa_tt_intermediate) < 0)
                         goto build_dfa_table_failed;
                     for (n = 0; n != dfa_tt_intermediate.cols; ++n)
-                        vec_init(table_get(&dfa_tt_intermediate, dfa_tt_intermediate.rows - 1, n), sizeof(int));
+                        vec_init(table_get(&dfa_tt_intermediate, dfa_tt_intermediate.rows - 1, n), sizeof(union state));
 
                     /* For each cell in the new row, calculate transitions using data from NFA */
                     dfa_state = table_get(&dfa_tt_intermediate, r, c);  /* Adding a row may invalidate the pointer, get it again */
                     for (n = 0; n != dfa_tt_intermediate.cols; ++n)
                     {
-                        VEC_FOR_EACH(dfa_state, int, nfa_state)
-                            struct vec* nfa_cell = table_get(&nfa_tt, *nfa_state < 0 ? -*nfa_state : *nfa_state, n);
+                        VEC_FOR_EACH(dfa_state, union state, nfa_state)
+                            struct vec* nfa_cell = table_get(&nfa_tt, nfa_state->idx, n);
                             struct vec* dfa_cell = table_get(&dfa_tt_intermediate, dfa_tt_intermediate.rows - 1, n);
-                            VEC_FOR_EACH(nfa_cell, int, target_nfa_state)
+                            VEC_FOR_EACH(nfa_cell, union state, target_nfa_state)
                                 if (vec_find(dfa_cell, target_nfa_state) == vec_count(dfa_cell))
                                     if (vec_push(dfa_cell, target_nfa_state) < 0)
                                         goto build_dfa_table_failed;
@@ -614,8 +611,8 @@ wildcard_swapped_to_end:;
     for (r = 0; r != dfa_tt_intermediate.rows; ++r)
         for (c = 0; c != dfa_tt_intermediate.cols; ++c)
         {
-            int* dfa_final_state = table_get(&dfa_tt, r, c);
-            struct vec* dfa_state = table_get(&dfa_tt_intermediate, r, c);
+            union state* dfa_final_state = table_get(&dfa_tt, r, c);
+            const struct vec* dfa_state = table_get(&dfa_tt_intermediate, r, c);
             if (vec_count(dfa_state) == 0)
             {
                 /*
@@ -624,27 +621,26 @@ wildcard_swapped_to_end:;
                  * stop execution when this happens. Since state 0 cannot be
                  * re-visited under normal operation, transitioning back to
                  * state 0 can be interpreted as halting the machine.
-                 *
-                 * The reason we cannot use negative numbers is because
-                 * those are already used to indicate an accept state.
                  */
-                *dfa_final_state = 0;
+                *dfa_final_state = make_trap_state();
                 continue;
             }
-            int* dfa_row = hm_find(&dfa_unique_states, dfa_state);
+            const int* dfa_row = hm_find(&dfa_unique_states, dfa_state);
             assert(dfa_row != NULL);
+
+            *dfa_final_state = make_state(*dfa_row, 0, 0);
 
             /*
              * If any of the NFA states in this DFA state are marked as an
              * accept condition, then mark the DFA state as an accept condition
              * as well.
              */
-            *dfa_final_state = *dfa_row;
-            VEC_FOR_EACH(dfa_state, int, nfa_state)
-                if (*nfa_state < 0)
+            VEC_FOR_EACH(dfa_state, union state, nfa_state)
+                if (nfa_state->is_accept)
                 {
-                    *dfa_final_state = -*dfa_row;
-                    break;
+                    dfa_final_state->is_accept = 1;
+                    if (nfa_state->is_inverted)
+                        dfa_final_state->is_inverted = 1;
                 }
             VEC_END_EACH
         }
@@ -685,7 +681,7 @@ void
 dfa_init(struct dfa_table* dfa)
 {
     vec_init(&dfa->tf, sizeof(struct matcher));
-    table_init(&dfa->tt, sizeof(int));
+    table_init(&dfa->tt, sizeof(union state));
 }
 
 void
@@ -710,7 +706,7 @@ dfa_export_dot(const struct dfa_table* dfa, const char* file_name)
     for (r = 1; r < dfa->tt.rows; ++r)
     {
         fprintf(fp, "n%d [label=\"%d\"", r, r);
-        if (dfa_state_is_accept(&dfa->tt, r))
+        if (dfa_state_idx_is_accept(&dfa->tt, r))
             fprintf(fp, ", shape=\"doublecircle\"");
         fprintf(fp, "];\n");
     }
@@ -718,18 +714,20 @@ dfa_export_dot(const struct dfa_table* dfa, const char* file_name)
     for (r = 0; r != dfa->tt.rows; ++r)
         for (c = 0; c != dfa->tt.cols; ++c)
         {
-            const int* next = table_get(&dfa->tt, r, c);
+            const union state* next = table_get(&dfa->tt, r, c);
             const struct matcher* m = vec_get(&dfa->tf, c);
 
-            if (*next == 0)
+            if (state_is_trap(*next))
                 continue;
 
             if (r == 0)
-                fprintf(fp, "start -> n%d [", *next < 0 ? -*next : *next);
+                fprintf(fp, "start -> n%d [", next->idx);
             else
-                fprintf(fp, "n%d -> n%d [", r, *next < 0 ? -*next : *next);
+                fprintf(fp, "n%d -> n%d [", r, next->idx);
 
             fprintf(fp, "label=\"");
+            if (m->is_inverted)
+                fprintf(fp, "!");
             if (matches_motion(m))
                 fprintf(fp, "0x%" PRIx64, ((uint64_t)m->symbol.motionh << 32) | ((uint64_t)m->symbol.motionl));
             else if (matches_wildcard(m))
@@ -752,45 +750,45 @@ do_match(const struct matcher* m, union symbol s)
     return (m->symbol.u64 & m->mask.u64) == (s.u64 & m->mask.u64);
 }
 
-static int
-lookup_next_state(const struct dfa_table* dfa, union symbol s, int state)
+static union state
+lookup_next_state(const struct dfa_table* dfa, union symbol s, union state state)
 {
     int c;
     for (c = 0; c != dfa->tt.cols; ++c)
     {
         struct matcher* m = vec_get(&dfa->tf, c);
         if (do_match(m, s))
-            return *(int*)table_get(&dfa->tt, state, c);
+            return *(union state*)table_get(&dfa->tt, state.idx, c);
     }
-    return 0;
+
+    return make_trap_state();
 }
 
 static int
 dfa_run(const struct dfa_table* dfa, const union symbol* symbols, struct range r)
 {
-    int state;
     int idx;
     int last_accept_idx = r.start;
+    union state state = make_trap_state();
 
-    state = 0;
     for (idx = r.start; idx != r.end; idx++)
     {
-        state = lookup_next_state(dfa, symbols[idx], state < 0 ? -state : state);
+        state = lookup_next_state(dfa, symbols[idx], state);
 
         /*
          * Transitioning to state 0 indicates the state machine has entered the
          * "trap state", i.e. no match was found for the current symbol. Stop
          * execution.
          */
-        if (state == 0)
+        if (state_is_trap(state))
             break;
 
         /*
-         * Negative states indicate an accept condition.
+         * Accept condition.
          * We want to match as much as possible, so instead of returning
          * immediately here, save this index as the last known accept condition.
          */
-        if (state < 0)
+        if (state.is_accept)
             last_accept_idx = idx + 1;
     }
 

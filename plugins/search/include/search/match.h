@@ -2,23 +2,12 @@
 
 #include "search/symbol.h"
 
-enum match_flags
-{
-    MATCH_ACCEPT       = 0x01,
-    MATCH_MOTION       = 0x02,
-
-    MATCH_CTX_HIT      = 0x04,
-    MATCH_CTX_WHIFF    = 0x08,
-    MATCH_CTX_SHIELD   = 0x10,
-    MATCH_CTX_RISING   = 0x20,
-    MATCH_CTX_FALLING  = 0x40
-};
-
 struct matcher
 {
     union symbol symbol;
     union symbol mask;
-    char is_accept;
+    unsigned is_accept   : 1;
+    unsigned is_inverted : 1;
 };
 
 static inline int
@@ -39,11 +28,12 @@ match_none(void)
     m.mask.u64 = 0;
     m.symbol.u64 = 0;
     m.is_accept = 0;
+    m.is_inverted = 0;
     return m;
 }
 
 static inline struct matcher
-match_motion(uint64_t motion)
+match_motion(uint64_t motion, char is_inverted)
 {
     struct matcher m;
     m.mask.u64 = 0;
@@ -53,15 +43,17 @@ match_motion(uint64_t motion)
     m.symbol.motionl = motion & 0xFFFFFFFF;
     m.symbol.motionh = motion >> 32;
     m.is_accept = 0;
+    m.is_inverted = is_inverted;
     return m;
 }
 
 static inline struct matcher
-match_wildcard(void)
+match_wildcard(char is_inverted)
 {
     struct matcher m;
     m.mask.u64 = 0;
     m.symbol.u64 = 0;
     m.is_accept = 0;
+    m.is_inverted = is_inverted;
     return m;
 }

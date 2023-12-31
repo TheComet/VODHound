@@ -1,6 +1,7 @@
 #include "search/asm.h"
 #include "search/dfa.h"
 #include "search/match.h"
+#include "search/state.h"
 
 #include "vh/vec.h"
 
@@ -206,17 +207,22 @@ static int PUSH_r64(struct vec* code, uint8_t reg)
     { return write_asm(code, 1, 0x50 | reg); }
 static int POP_r64(struct vec* code, uint8_t reg)
     { return write_asm(code, 1, 0x58 | reg); }
+static int SHR_r32(struct vec* code, uint8_t reg, uint8_t shift)
+    { return write_asm(code, 3, 0xC1, 0xE8 | reg, shift); }
+
+#define TT_ROWS_8BIT_THRESHOLD  (1<<(8-2))
+#define TT_ROWS_16BIT_THRESHOLD (1<<(16-2))
 
 static int
 assemble_transition_lookup_table(struct vec* code, const struct dfa_table* dfa, int column)
 {
     int r;
-    uint8_t arg0_reg;
+    uint8_t current_state_reg;
 
 #if defined(_MSC_VER)
-    arg0_reg = RCX();
+    current_state_reg = RCX();
 #else
-    arg0_reg = RDI();
+    current_state_reg = RDI();
 #endif
 
     /*
@@ -228,20 +234,20 @@ assemble_transition_lookup_table(struct vec* code, const struct dfa_table* dfa, 
     POP_r64(code, RBX());
 #endif
 
-    if (dfa->tt.rows < 128)
+    if (dfa->tt.rows < TT_ROWS_8BIT_THRESHOLD)
     {
         LEA_r64_RSP_plus_i32(code, RAX(), 5);  /* MOVSX (4) + RET (1) */
-        MOVSX_r32_byte_ptr_base_offset_scale(code, EAX(), RAX(), arg0_reg, SCALE1());
+        MOVSX_r32_byte_ptr_base_offset_scale(code, EAX(), RAX(), current_state_reg, SCALE1());
     }
-    else if (dfa->tt.rows < 32768)
+    else if (dfa->tt.rows < TT_ROWS_16BIT_THRESHOLD)
     {
         LEA_r64_RSP_plus_i32(code, RAX(), 5);  /* MOVSX (4) + RET (1) */
-        MOVSX_r32_word_ptr_base_offset_scale(code, EAX(), RAX(), arg0_reg, SCALE2());
+        MOVSX_r32_word_ptr_base_offset_scale(code, EAX(), RAX(), current_state_reg, SCALE2());
     }
     else
     {
         LEA_r64_RSP_plus_i32(code, RAX(), 4);  /* MOVSX (3) + RET (1) */
-        MOVSX_r32_dword_ptr_base_offset_scale(code, EAX(), RAX(), arg0_reg, SCALE4());
+        MOVSX_r32_dword_ptr_base_offset_scale(code, EAX(), RAX(), current_state_reg, SCALE4());
     }
 
     RET(code);
@@ -249,12 +255,13 @@ assemble_transition_lookup_table(struct vec* code, const struct dfa_table* dfa, 
     /* Lookup table data */
     for (r = 0; r != dfa->tt.rows; ++r)
     {
-        if (dfa->tt.rows < 128)
-            write_asm_u8(code, (uint8_t)*(int*)table_get(&dfa->tt, r, column));
-        else if (dfa->tt.rows < 32768)
-            write_asm_u16(code, (uint16_t)*(int*)table_get(&dfa->tt, r, column));
+        union state* state = table_get(&dfa->tt, r, column);
+        if (dfa->tt.rows < TT_ROWS_8BIT_THRESHOLD)
+            write_asm_u8(code, (uint8_t)state->data);
+        else if (dfa->tt.rows < TT_ROWS_16BIT_THRESHOLD)
+            write_asm_u16(code, (uint16_t)state->data);
         else
-            write_asm_u32(code, (uint32_t)*(int*)table_get(&dfa->tt, r, column));
+            write_asm_u32(code, (uint32_t)state->data);
     }
 
     return 0;
@@ -288,6 +295,13 @@ asm_compile(struct asm_dfa* assembly, const struct dfa_table* dfa)
     /* RBX is not volatile on Windows, but we need 2 working registers. */
 #if defined(_MSC_VER)
     PUSH_r64(&code, RBX());
+#endif
+
+    /* Convert passed in state into an index */
+#if defined(_MSC_VER)
+    SHR_r32(&code, ECX(), 2);
+#else
+    SHR_r32(&code, EDI(), 2);
 #endif
 
     for (c = 0; c != dfa->tt.cols; ++c)
@@ -382,21 +396,20 @@ push_failed:
 static int
 asm_run(const struct asm_dfa* assembly, const union symbol* symbols, struct range r)
 {
-    int state;
     int idx;
     int last_accept_idx = r.start;
+    union state state = make_trap_state();
 
-    state = 0;
     for (idx = r.start; idx != r.end; idx++)
     {
-        state = assembly->next_state(state < 0 ? -state : state, symbols[idx].u64);
+        state = assembly->next_state(state, symbols[idx].u64);
 
         /*
          * Transitioning to state 0 indicates the state machine has entered the
          * "trap state", i.e. no match was found for the current symbol. Stop
          * execution.
          */
-        if (state == 0)
+        if (state_is_trap(state))
             break;
 
         /*
@@ -404,7 +417,7 @@ asm_run(const struct asm_dfa* assembly, const union symbol* symbols, struct rang
          * We want to match as much as possible, so instead of returning
          * immediately here, save this index as the last known accept condition.
          */
-        if (state < 0)
+        if (state.is_accept)
             last_accept_idx = idx + 1;
     }
 

@@ -36,10 +36,12 @@ protected:
 
         nfa_init(&nfa);
         ASSERT_THAT(nfa_compile(&nfa, &ast), Eq(0));
+        nfa_export_dot(&nfa, "nfa.dot");
         ast_deinit(&ast);
 
         dfa_init(&dfa);
         ASSERT_THAT(dfa_from_nfa(&dfa, &nfa), Eq(0));
+        dfa_export_dot(&dfa, "dfa.dot");
         nfa_deinit(&nfa);
 
         ASSERT_THAT(asm_compile(&asm_dfa, &dfa), Eq(0));
@@ -50,9 +52,9 @@ protected:
         dfa_deinit(&dfa);
         asm_deinit(&asm_dfa);
 
-        ASSERT_THAT(dfa_res.start, Eq(asm_res.start));
-        ASSERT_THAT(dfa_res.end, Eq(asm_res.end));
-        result = dfa_res;
+        EXPECT_THAT(dfa_res.start, Eq(asm_res.start));
+        EXPECT_THAT(dfa_res.end, Eq(asm_res.end));
+        result = asm_res;
     }
 
     struct range result;
@@ -215,4 +217,30 @@ TEST_F(NAME, return_to_last_accept_condition_if_continue_fails_to_match)
     run("(grab->.0,2->nair)+", symbols);
     EXPECT_THAT(result.start, Eq(2));
     EXPECT_THAT(result.end, Eq(6));
+}
+
+TEST_F(NAME, single_inversion_1)
+{
+    std::vector<union symbol> symbols;
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xb));
+    symbols.push_back(h40_to_symbol(0xb));
+
+    run("!0xa", symbols);
+    EXPECT_THAT(result.start, Eq(2));
+    EXPECT_THAT(result.end, Eq(3));
+}
+
+TEST_F(NAME, single_inversion_2)
+{
+    std::vector<union symbol> symbols;
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xb));
+    symbols.push_back(h40_to_symbol(0xb));
+
+    run("0xa->!0xa", symbols);
+    EXPECT_THAT(result.start, Eq(1));
+    EXPECT_THAT(result.end, Eq(4));
 }

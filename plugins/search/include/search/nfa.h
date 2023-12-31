@@ -12,7 +12,7 @@ struct ast;
 struct nfa_node
 {
     struct matcher matcher;
-    struct vec next;
+    struct vec next;  /* int - indices into nfa_graph->nodes[] */
 };
 
 struct nfa_graph

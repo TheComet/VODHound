@@ -33,6 +33,7 @@ vodhound_add_plugin (${PROJECT_NAME}
         "include/${PROJECT_NAME}/nfa.h"
         "include/${PROJECT_NAME}/range.h"
         "include/${PROJECT_NAME}/parser.h"
+        "include/${PROJECT_NAME}/state.h"
         "include/${PROJECT_NAME}/symbol.h"
     INCLUDES
         "include"

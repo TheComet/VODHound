@@ -1,6 +1,7 @@
 #pragma once
 
 #include "search/range.h"
+#include "search/state.h"
 #include <stdint.h>
 
 #if defined(__cplusplus)
@@ -11,7 +12,7 @@ struct dfa_table;
 union symbol;
 struct vec;
 
-typedef int (*asm_func)(int state, uint64_t symbol);
+typedef union state (*asm_func)(union state state, uint64_t symbol);
 
 struct asm_dfa
 {
