@@ -200,7 +200,7 @@ void
 dfa_export_table(const struct table* tt, const struct vec* tf, const char* file_name)
 {
     FILE* fp;
-    char buf[12];  /* -2147483648 */
+    char int_str[12];  /* -2147483648 */
     struct table tt_str;
     struct vec col_titles;
     struct vec col_widths;
@@ -299,8 +299,8 @@ dfa_export_table(const struct table* tt, const struct vec* tf, const char* file_
         union state* row_idx = vec_get(&row_indices, r);
         if (row_idx->is_accept)
         {
-            sprintf(buf, "%d", row_idx->idx);
-            fprintf(fp, " %*s*%s ", (int)(4 - strlen(buf)), "", buf);
+            sprintf(int_str, "%d", row_idx->idx);
+            fprintf(fp, " %*s*%s ", (int)(4 - strlen(int_str)), "", int_str);
         }
         else
             fprintf(fp, " %*d ", 5, row_idx->idx);
@@ -341,7 +341,21 @@ dfa_state_idx_is_accept(const struct table* dfa_tt, int idx)
         for (c = 0; c != dfa_tt->cols; ++c)
         {
             const union state* next = table_get(dfa_tt, r, c);
-            if (next->is_accept && next->idx == idx)
+            if (next->idx == idx && next->is_accept)
+                return 1;
+        }
+    return 0;
+}
+
+static int
+dfa_state_idx_is_inverted(const struct table* dfa_tt, int idx)
+{
+    int r, c;
+    for (r = 0; r != dfa_tt->rows; ++r)
+        for (c = 0; c != dfa_tt->cols; ++c)
+        {
+            const union state* next = table_get(dfa_tt, r, c);
+            if (next->idx == idx && next->is_inverted)
                 return 1;
         }
     return 0;
@@ -358,7 +372,7 @@ dfa_remove_duplicates(struct table* dfa_tt, struct vec* tf)
             {
                 const union state* cell1 = table_get(dfa_tt, r1, c);
                 const union state* cell2 = table_get(dfa_tt, r2, c);
-                if (cell1->data != cell2->data)
+                if (cell1->idx != cell2->idx)
                     goto skip_row;
             }
 
@@ -402,7 +416,7 @@ dfa_from_nfa(struct dfa_table* dfa, struct nfa_graph* nfa)
     int has_wildcards = 0;
     int return_code = -1;
 
-    /* 
+    /*
      * In an error case, the table and transition functions should be empty to
      * prevent dfa_find_* to execute anything. The data will then be freed.
      */
@@ -523,18 +537,40 @@ wildcard_swapped_to_end:;
     if (has_wildcards)
         for (r = 0; r != nfa_tt.rows; ++r)
         {
-            struct vec* wildcard_next_states = table_get(&nfa_tt, r, nfa_tt.cols - 1);
+            const struct vec* wildcard_next_states = table_get(&nfa_tt, r, nfa_tt.cols - 1);
             for (c = 0; c < nfa_tt.cols - 1; ++c)
             {
+                int c2;
                 struct vec* next_states = table_get(&nfa_tt, r, c);
-                VEC_FOR_EACH(wildcard_next_states, union state, wildcard_next_state)
-                    if (vec_find(next_states, wildcard_next_state) == vec_count(next_states) &&
-                        !((struct matcher*)vec_get(&dfa_tf, c))->is_inverted)
+                const struct matcher* m = vec_get(&dfa_tf, c);
+
+                if (vec_count(next_states) == 0)
+                    continue;
+
+                if (m->is_inverted)
+                    continue;
+
+
+                /*for (c2 = 0; c2 < nfa_tt.cols - 1; ++c2)
+                {
+                    const struct matcher* m1 = vec_get(&dfa_tf, c);
+                    const struct matcher* m2 = vec_get(&dfa_tf, c2);
+                    if (c != c2 &&
+                        m1->is_inverted != m2->is_inverted &&
+                        m1->mask.u64 == m2->mask.u64 &&
+                        m1->symbol.u64 == m2->symbol.u64)
                     {
+                        goto matcher_is_negated;
+                    }
+                }*/
+
+                VEC_FOR_EACH(wildcard_next_states, union state, wildcard_next_state)
+                    if (vec_find(next_states, wildcard_next_state) == vec_count(next_states))
                         if (vec_push(next_states, wildcard_next_state) < 0)
                             goto build_nfa_table_failed;
-                    }
                 VEC_END_EACH
+
+                matcher_is_negated: continue;
             }
         }
     nfa_export_table(&nfa_tt, &dfa_tf, "nfa_wc.txt");
@@ -636,11 +672,10 @@ wildcard_swapped_to_end:;
              * as well.
              */
             VEC_FOR_EACH(dfa_state, union state, nfa_state)
-                if (nfa_state->is_accept)
+                if (nfa_state->is_accept && !nfa_state->is_inverted)
                 {
                     dfa_final_state->is_accept = 1;
-                    if (nfa_state->is_inverted)
-                        dfa_final_state->is_inverted = 1;
+                    break;
                 }
             VEC_END_EACH
         }

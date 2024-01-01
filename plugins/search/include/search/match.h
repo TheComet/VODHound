@@ -48,12 +48,12 @@ match_motion(uint64_t motion, char is_inverted)
 }
 
 static inline struct matcher
-match_wildcard(char is_inverted)
+match_wildcard(void)
 {
     struct matcher m;
     m.mask.u64 = 0;
     m.symbol.u64 = 0;
     m.is_accept = 0;
-    m.is_inverted = is_inverted;
+    m.is_inverted = 0;
     return m;
 }

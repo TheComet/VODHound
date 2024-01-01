@@ -185,14 +185,20 @@ fs_dir_exists(const char* file_path)
     return S_ISDIR(st.st_mode);
 }
 
+struct str_view
+fs_appdata_dir(void)
+{
+    return path_view(appdata_dir);
+}
+
 int
 fs_make_dir(const char* path)
 {
     return mkdir(path, 0755) == 0;
 }
 
-struct str_view
-fs_appdata_dir(void)
+int
+fs_remove_file(const char* path)
 {
-    return path_view(appdata_dir);
+    return unlink(path);
 }

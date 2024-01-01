@@ -222,7 +222,5 @@ fs_make_dir(const char* path)
 int
 fs_remove_file(const char* path)
 {
-    if (DeleteFile(path))
-        return 0;
-    return -1;
+    return unlink(path);
 }

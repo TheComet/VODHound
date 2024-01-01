@@ -6,7 +6,7 @@
 
 #include <string.h>
 
-static mem_size frame_size =
+static int frame_size =
     sizeof(uint64_t) +
     sizeof(uint64_t) +
     sizeof(uint32_t) +
@@ -51,12 +51,12 @@ int
 frame_data_alloc_structure(struct frame_data* fdata, int fighter_count, int frame_count)
 {
     int f;
-    mem_size fighter_size = frame_size * (mem_size)frame_count;
-    mem_size data_size = frame_size * (mem_size)fighter_count * (mem_size)frame_count;
-    mem_size ptr_size = sizeof(void*) * 12 * (mem_size)fighter_count;
-    mem_size align_padding = 0x10U * (mem_size)fighter_count;
+    int fighter_size = frame_size * frame_count;
+    int data_size = frame_size * fighter_count * frame_count;
+    int ptr_size = (int)sizeof(void*) * 12 * fighter_count;
+    int align_padding = 0x10 * fighter_count;
 
-    void* mem = mem_alloc(data_size + ptr_size + align_padding);
+    void* mem = mem_alloc((mem_size)(data_size + ptr_size + align_padding));
     if (mem == NULL)
         return -1;
 
@@ -64,18 +64,18 @@ frame_data_alloc_structure(struct frame_data* fdata, int fighter_count, int fram
 
     for (f = 0; f != fighter_count; ++f)
     {
-        fdata->timestamp[f]   = (uint64_t*)align_64((char*)mem + ptr_size + (mem_size)f * fighter_size);
-        fdata->motion[f]      = (uint64_t*)(fdata->timestamp[f]    + (mem_size)frame_count);
-        fdata->frames_left[f] = (uint32_t*)(fdata->motion[f]       + (mem_size)frame_count);
-        fdata->posx[f]        = (float*)   (fdata->frames_left[f]  + (mem_size)frame_count);
-        fdata->posy[f]        = (float*)   (fdata->posx[f]         + (mem_size)frame_count);
-        fdata->damage[f]      = (float*)   (fdata->posy[f]         + (mem_size)frame_count);
-        fdata->hitstun[f]     = (float*)   (fdata->damage[f]       + (mem_size)frame_count);
-        fdata->shield[f]      = (float*)   (fdata->hitstun[f]      + (mem_size)frame_count);
-        fdata->status[f]      = (uint16_t*)(fdata->shield[f]       + (mem_size)frame_count);
-        fdata->hit_status[f]  = (uint8_t*) (fdata->status[f]       + (mem_size)frame_count);
-        fdata->stocks[f]      = (uint8_t*) (fdata->hit_status[f]   + (mem_size)frame_count);
-        fdata->flags[f]       = (uint8_t*) (fdata->stocks[f]       + (mem_size)frame_count);
+        fdata->timestamp[f]   = (uint64_t*)align_64((char*)mem + ptr_size + f * fighter_size);
+        fdata->motion[f]      = (uint64_t*)(fdata->timestamp[f]    + frame_count);
+        fdata->frames_left[f] = (uint32_t*)(fdata->motion[f]       + frame_count);
+        fdata->posx[f]        = (float*)   (fdata->frames_left[f]  + frame_count);
+        fdata->posy[f]        = (float*)   (fdata->posx[f]         + frame_count);
+        fdata->damage[f]      = (float*)   (fdata->posy[f]         + frame_count);
+        fdata->hitstun[f]     = (float*)   (fdata->damage[f]       + frame_count);
+        fdata->shield[f]      = (float*)   (fdata->hitstun[f]      + frame_count);
+        fdata->status[f]      = (uint16_t*)(fdata->shield[f]       + frame_count);
+        fdata->hit_status[f]  = (uint8_t*) (fdata->status[f]       + frame_count);
+        fdata->stocks[f]      = (uint8_t*) (fdata->hit_status[f]   + frame_count);
+        fdata->flags[f]       = (uint8_t*) (fdata->stocks[f]       + frame_count);
     }
 
     fdata->frame_count = frame_count;
@@ -105,7 +105,7 @@ frame_data_load(struct frame_data* fdata, int game_id)
     char file_name[64];
     void* mem;
     uint8_t major, minor;
-    mem_size ptr_table_size, fighter_size;
+    int ptr_table_size, fighter_size;
 
     frame_data_deinit(fdata);
 
@@ -128,25 +128,25 @@ frame_data_load(struct frame_data* fdata, int game_id)
     fdata->frame_count = (int)mstream_read_lu32(&ms);
     mstream_read_lu32(&ms);  /* padding to 8-byte boundary */
 
-    ptr_table_size = 8 * 12 * (mem_size)fdata->fighter_count;
+    ptr_table_size = 8 * 12 * fdata->fighter_count;
     mem = mstream_read(&ms, ptr_table_size);
     init_pointers(mem, fdata, fdata->fighter_count);
 
-    fighter_size = frame_size * (mem_size)fdata->frame_count;
+    fighter_size = frame_size * (int)fdata->frame_count;
     for (f = 0; f != fdata->fighter_count; ++f)
     {
-        fdata->timestamp[f]   = (uint64_t*)align_64((char*)mstream_ptr(&ms) + (mem_size)f * fighter_size);
-        fdata->motion[f]      = (uint64_t*)(fdata->timestamp[f] + (mem_size)fdata->frame_count);
-        fdata->frames_left[f] = (uint32_t*)(fdata->motion[f]    + (mem_size)fdata->frame_count);
-        fdata->posx[f]        = (float*)(fdata->frames_left[f]  + (mem_size)fdata->frame_count);
-        fdata->posy[f]        = (float*)(fdata->posx[f]         + (mem_size)fdata->frame_count);
-        fdata->damage[f]      = (float*)(fdata->posy[f]         + (mem_size)fdata->frame_count);
-        fdata->hitstun[f]     = (float*)(fdata->damage[f]       + (mem_size)fdata->frame_count);
-        fdata->shield[f]      = (float*)(fdata->hitstun[f]      + (mem_size)fdata->frame_count);
-        fdata->status[f]      = (uint16_t*)(fdata->shield[f]    + (mem_size)fdata->frame_count);
-        fdata->hit_status[f]  = (uint8_t*)(fdata->status[f]     + (mem_size)fdata->frame_count);
-        fdata->stocks[f]      = (uint8_t*)(fdata->hit_status[f] + (mem_size)fdata->frame_count);
-        fdata->flags[f]       = (uint8_t*)(fdata->stocks[f]     + (mem_size)fdata->frame_count);
+        fdata->timestamp[f]   = (uint64_t*)align_64((char*)mstream_ptr(&ms) + f * fighter_size);
+        fdata->motion[f]      = (uint64_t*)(fdata->timestamp[f] + fdata->frame_count);
+        fdata->frames_left[f] = (uint32_t*)(fdata->motion[f]    + fdata->frame_count);
+        fdata->posx[f]        = (float*)(fdata->frames_left[f]  + fdata->frame_count);
+        fdata->posy[f]        = (float*)(fdata->posx[f]         + fdata->frame_count);
+        fdata->damage[f]      = (float*)(fdata->posy[f]         + fdata->frame_count);
+        fdata->hitstun[f]     = (float*)(fdata->damage[f]       + fdata->frame_count);
+        fdata->shield[f]      = (float*)(fdata->hitstun[f]      + fdata->frame_count);
+        fdata->status[f]      = (uint16_t*)(fdata->shield[f]    + fdata->frame_count);
+        fdata->hit_status[f]  = (uint8_t*)(fdata->status[f]     + fdata->frame_count);
+        fdata->stocks[f]      = (uint8_t*)(fdata->hit_status[f] + fdata->frame_count);
+        fdata->flags[f]       = (uint8_t*)(fdata->stocks[f]     + fdata->frame_count);
     }
 
     return 0;

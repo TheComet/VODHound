@@ -43,7 +43,7 @@ TEST(NAME, alloc_structure_works)
             EXPECT_THAT(fd.flags      [fighter][frame], Eq(0x10 * fighter + 0x1 * frame + 0xC));
         }
 
-    frame_data_free(&fd);
+    frame_data_deinit(&fd);
 }
 
 TEST(NAME, save_and_load_works)
@@ -67,7 +67,7 @@ TEST(NAME, save_and_load_works)
             fd.flags      [fighter][frame] = 0x10 * fighter + 0x1 * frame + 0xC;
         }
     ASSERT_THAT(frame_data_save(&fd, 0), Eq(0));
-    frame_data_free(&fd);
+    frame_data_deinit(&fd);
 
     ASSERT_THAT(frame_data_load(&fd, 0), Eq(0));
     for (int fighter = 0; fighter != 2; ++fighter)
@@ -87,5 +87,5 @@ TEST(NAME, save_and_load_works)
             EXPECT_THAT(fd.flags      [fighter][frame], Eq(0x10 * fighter + 0x1 * frame + 0xC));
         }
 
-    frame_data_free(&fd);
+    frame_data_deinit(&fd);
 }

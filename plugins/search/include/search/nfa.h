@@ -23,7 +23,7 @@ struct nfa_graph
 
 static inline void
 nfa_init(struct nfa_graph* nfa)
-    { nfa->nodes = NULL; nfa->node_count = 0; }
+    { nfa->nodes = (struct nfa_node*)0; nfa->node_count = 0; }
 
 void
 nfa_deinit(struct nfa_graph* nfa);

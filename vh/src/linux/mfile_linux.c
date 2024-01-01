@@ -6,7 +6,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
-int mfile_map(struct mfile* mf, const char* file_name)
+int mfile_map_read(struct mfile* mf, const char* file_name)
 {
     struct stat stbuf;
     int fd;

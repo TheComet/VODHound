@@ -417,7 +417,7 @@ nfa_compile_recurse(
                 int in, out;
                 struct nfa_node* node;
                 struct fragment* f = vec_back(fstack);
-                
+
                 vec_clear(&f->out);
                 in = vec_count(nodes);
                 out = vec_count(nodes);
@@ -426,7 +426,7 @@ nfa_compile_recurse(
 
                 if ((node = vec_emplace(nodes)) == NULL) return -1;
                 vec_init(&node->next, sizeof(int));
-                node->matcher = match_wildcard(is_inverted);
+                node->matcher = match_wildcard();
             }
         } break;
 
@@ -445,7 +445,7 @@ nfa_compile_recurse(
 
             if ((node = vec_emplace(nodes)) == NULL) return -1;
             vec_init(&node->next, sizeof(int));
-            node->matcher = match_wildcard(is_inverted);
+            node->matcher = match_wildcard();
         } break;
 
         case AST_LABEL: {

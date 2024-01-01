@@ -46,7 +46,7 @@ asm_compile(struct asm_dfa* assembly, const struct dfa_table* dfa);
 
 static inline int
 asm_is_compiled(struct asm_dfa* assembly)
-    { return assembly->next_state != NULL; }
+    { return assembly->next_state != (void*)0; }
 
 /*!
  * \brief Finds the first match using a compiled expression.
