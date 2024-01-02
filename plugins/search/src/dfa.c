@@ -544,25 +544,20 @@ wildcard_swapped_to_end:;
                 struct vec* next_states = table_get(&nfa_tt, r, c);
                 const struct matcher* m = vec_get(&dfa_tf, c);
 
-                if (vec_count(next_states) == 0)
-                    continue;
-
                 if (m->is_inverted)
                     continue;
 
-
-                /*for (c2 = 0; c2 < nfa_tt.cols - 1; ++c2)
+                for (c2 = 0; c2 < nfa_tt.cols - 1; ++c2)
                 {
-                    const struct matcher* m1 = vec_get(&dfa_tf, c);
                     const struct matcher* m2 = vec_get(&dfa_tf, c2);
                     if (c != c2 &&
-                        m1->is_inverted != m2->is_inverted &&
-                        m1->mask.u64 == m2->mask.u64 &&
-                        m1->symbol.u64 == m2->symbol.u64)
+                        m2->is_inverted &&
+                        m2->mask.u64 == m->mask.u64 &&
+                        m2->symbol.u64 == m->symbol.u64)
                     {
                         goto matcher_is_negated;
                     }
-                }*/
+                }
 
                 VEC_FOR_EACH(wildcard_next_states, union state, wildcard_next_state)
                     if (vec_find(next_states, wildcard_next_state) == vec_count(next_states))

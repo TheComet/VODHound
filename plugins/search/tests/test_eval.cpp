@@ -240,10 +240,87 @@ TEST_F(NAME, single_negation_2)
     symbols.push_back(h40_to_symbol(0xb));
     symbols.push_back(h40_to_symbol(0xb));
 
-    //run("0xa->!(0xa->0xb->0xa)->0xc", symbols);
     run("0xa->!0xa", symbols);
     EXPECT_THAT(result.start, Eq(1));
     EXPECT_THAT(result.end, Eq(3));
+}
+
+TEST_F(NAME, single_negation_3)
+{
+    std::vector<union symbol> symbols;
+    symbols.push_back(h40_to_symbol(0xb));
+    symbols.push_back(h40_to_symbol(0xb));
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xa));
+
+    run("!0xa->0xa", symbols);
+    EXPECT_THAT(result.start, Eq(1));
+    EXPECT_THAT(result.end, Eq(3));
+}
+
+TEST_F(NAME, negation_with_union_1)
+{
+    std::vector<union symbol> symbols;
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xb));
+    symbols.push_back(h40_to_symbol(0xb));
+
+    run("0xa->!0xa|0xb->0xb", symbols);
+    EXPECT_THAT(result.start, Eq(1));
+    EXPECT_THAT(result.end, Eq(4));
+}
+
+TEST_F(NAME, negation_with_conditional_wildcard_1)
+{
+    std::vector<union symbol> symbols;
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xb));
+    symbols.push_back(h40_to_symbol(0xb));
+
+    run("0xa->.?->!0xa", symbols);
+    EXPECT_THAT(result.start, Eq(0));
+    EXPECT_THAT(result.end, Eq(3));
+}
+
+TEST_F(NAME, negation_with_conditional_wildcard_2)
+{
+    std::vector<union symbol> symbols;
+    symbols.push_back(h40_to_symbol(0x9));
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xb));
+    symbols.push_back(h40_to_symbol(0xb));
+
+    run("0xa->.?->!0xa", symbols);
+    EXPECT_THAT(result.start, Eq(1));
+    EXPECT_THAT(result.end, Eq(4));
+}
+
+TEST_F(NAME, negation_with_conditional_wildcard_3)
+{
+    std::vector<union symbol> symbols;
+    symbols.push_back(h40_to_symbol(0x9));
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0xb));
+    symbols.push_back(h40_to_symbol(0xb));
+
+    run("!0xa->.?->0xb", symbols);
+    EXPECT_THAT(result.start, Eq(0));
+    EXPECT_THAT(result.end, Eq(3));
+}
+
+TEST_F(NAME, negation_with_conditional_wildcard_4)
+{
+    std::vector<union symbol> symbols;
+    symbols.push_back(h40_to_symbol(0xa));
+    symbols.push_back(h40_to_symbol(0x9));
+    symbols.push_back(h40_to_symbol(0xb));
+    symbols.push_back(h40_to_symbol(0xb));
+
+    run("!0xa->.?->0xb", symbols);
+    EXPECT_THAT(result.start, Eq(1));
+    EXPECT_THAT(result.end, Eq(4));
 }
 
 TEST_F(NAME, negation_eliminate_dead_nodes)
@@ -253,6 +330,8 @@ TEST_F(NAME, negation_eliminate_dead_nodes)
     symbols.push_back(h40_to_symbol(0xa));
     symbols.push_back(h40_to_symbol(0xb));
     symbols.push_back(h40_to_symbol(0xb));
+
+    // TODO
 
     run("0xa->!(0xa->0xb->0xa)->0xc", symbols);
     EXPECT_THAT(result.start, Eq(1));
@@ -268,8 +347,8 @@ TEST_F(NAME, negate_wildcard_expressions_1)
     symbols.push_back(h40_to_symbol(0xb));
 
     run("0xa->.0,2->!0xb", symbols);
-    EXPECT_THAT(result.start, Eq(1));
-    EXPECT_THAT(result.end, Eq(4));
+    EXPECT_THAT(result.start, Eq(0));
+    EXPECT_THAT(result.end, Eq(2));
 }
 
 TEST_F(NAME, negate_wildcard_expressions_2)
@@ -281,6 +360,6 @@ TEST_F(NAME, negate_wildcard_expressions_2)
     symbols.push_back(h40_to_symbol(0xb));
 
     run("0xa->!(.0,2->0xb)", symbols);
-    EXPECT_THAT(result.start, Eq(1));
-    EXPECT_THAT(result.end, Eq(4));
+    EXPECT_THAT(result.start, Eq(0));
+    EXPECT_THAT(result.end, Eq(2));
 }
