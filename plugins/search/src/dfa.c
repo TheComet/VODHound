@@ -9,28 +9,6 @@
 #include <inttypes.h>
 
 static hash32
-match_hm_hash(const void* data, int len)
-{
-    const struct matcher* m = data;
-    hash32 a = (hash32)((m->symbol.u64 & m->mask.u64) >> 32UL);
-    hash32 b = (hash32)((m->symbol.u64 & m->mask.u64) & 0xFFFFFFFF);
-    hash32 c = m->is_inverted;
-    return hash32_combine(a, b);
-}
-
-static int
-match_hm_compare(const void* adata, const void* bdata, int size)
-{
-    (void)size;
-    const struct matcher* a = adata;
-    const struct matcher* b = bdata;
-    /* hashmap expects this to behave like memcmp() */
-    return !(
-        (a->symbol.u64 & a->mask.u64) == (b->symbol.u64 & b->mask.u64) &&
-        a->is_inverted == b->is_inverted);
-}
-
-static hash32
 states_hm_hash(const void* data, int len)
 {
     const struct vec* states = data;
@@ -137,6 +115,8 @@ nfa_export_table(const struct table* tt, const struct vec* tf, const char* file_
             VEC_FOR_EACH(cell, union state, next)
                 if (next->is_accept)
                     ((union state*)vec_get(&row_indices, next->idx))->is_accept = 1;
+                if (next->is_inverted)
+                    ((union state*)vec_get(&row_indices, next->idx))->is_inverted = 1;
             VEC_END_EACH
         }
 
@@ -164,7 +144,10 @@ nfa_export_table(const struct table* tt, const struct vec* tf, const char* file_
         if (row_idx->is_accept)
         {
             sprintf(buf, "%d", row_idx->idx);
-            fprintf(fp, " %*s*%s ", (int)(4 - strlen(buf)), "", buf);
+            fprintf(fp, " %*s%s%s ",
+                (int)(4 - strlen(buf)), "",
+                row_idx->is_inverted ? "!" : "*",
+                buf);
         }
         else
             fprintf(fp, " %*d ", 5, row_idx->idx);
@@ -403,27 +386,30 @@ dfa_remove_duplicates(struct table* dfa_tt, struct vec* tf)
         }
 }
 
-int
-dfa_from_nfa(struct dfa_table* dfa, struct nfa_graph* nfa)
+static hash32
+match_hm_hash(const void* data, int len)
 {
-    struct hm nfa_unique_tf;
-    struct hm dfa_unique_states;
-    struct table nfa_tt;
-    struct table dfa_tt_intermediate;
-    struct table dfa_tt;
-    struct vec dfa_tf;
-    int n, r, c;
-    int has_wildcards = 0;
-    int return_code = -1;
+    const struct matcher* m = data;
+    hash32 a = (hash32)((m->symbol.u64 & m->mask.u64) >> 32UL);
+    hash32 b = (hash32)((m->symbol.u64 & m->mask.u64) & 0xFFFFFFFF);
+    return hash32_combine(a, b);
+}
 
-    /*
-     * In an error case, the table and transition functions should be empty to
-     * prevent dfa_find_* to execute anything. The data will then be freed.
-     */
-    dfa_tt = dfa->tt;
-    dfa_tf = dfa->tf;
-    vec_init(&dfa->tf, dfa->tf.element_size);
-    table_init(&dfa->tt, dfa->tt.element_size);
+static int
+match_hm_compare(const void* adata, const void* bdata, int size)
+{
+    (void)size;
+    const struct matcher* a = adata;
+    const struct matcher* b = bdata;
+    /* hashmap expects this to behave like memcmp() */
+    return !((a->symbol.u64 & a->mask.u64) == (b->symbol.u64 & b->mask.u64));
+}
+
+static int
+nfa_table_from_graph(struct table* nfa_tt, struct vec* tf, const struct nfa_graph* nfa)
+{
+    int n, r, c;
+    struct hm unique_tf;
 
     /*
      * Purpose of this hashmap is to create a set of unique transition functions,
@@ -438,9 +424,9 @@ dfa_from_nfa(struct dfa_table* dfa, struct nfa_graph* nfa)
      * information for whether a state is an accept condition is encoded into the
      * transitions as negative indices.
      */
-    if (hm_init_with_options(&nfa_unique_tf,
+    if (hm_init_with_options(&unique_tf,
          sizeof(struct matcher),  /* transition function */
-         sizeof(int),             /* index into the "nfa->nodes[]" array as well as index into the "nfa_tt", "dfa_tt" columns and "dfa_tf" vector */
+         sizeof(int),             /* index into the "tf" vector and "nfa_tt" columns */
          VH_HM_MIN_CAPACITY,
          match_hm_hash,
          match_hm_compare) < 0)
@@ -448,15 +434,15 @@ dfa_from_nfa(struct dfa_table* dfa, struct nfa_graph* nfa)
         goto init_nfa_unique_tf_failed;
     }
 
-    vec_clear(&dfa_tf);
+    vec_init(tf, sizeof(struct matcher));
     for (n = 1; n != nfa->node_count; ++n)  /* Skip node 0, as it merely acts */
     {                                       /* a container for all start states */
-        int* nfa_tf_idx;
-        switch (hm_insert(&nfa_unique_tf, &nfa->nodes[n].matcher, (void**)&nfa_tf_idx))
+        int* tf_idx;
+        switch (hm_insert(&unique_tf, &nfa->nodes[n].matcher, (void**)&tf_idx))
         {
             case 1:
-                *nfa_tf_idx = hm_count(&nfa_unique_tf) - 1;
-                if (vec_push(&dfa_tf, &nfa->nodes[n].matcher) < 0)
+                *tf_idx = hm_count(&unique_tf) - 1;
+                if (vec_push(tf, &nfa->nodes[n].matcher) < 0)
                     goto build_tfs_failed;
                 break;
             case 0 : break;
@@ -468,10 +454,10 @@ dfa_from_nfa(struct dfa_table* dfa, struct nfa_graph* nfa)
      * Put the wildcard matcher (if it exists) as the last column. This
      * will cause the wildcard to be evaluated/executed last.
      */
-    HM_FOR_EACH(&nfa_unique_tf, struct matcher, int, matcher1, col1)
+    HM_FOR_EACH(&unique_tf, struct matcher, int, matcher1, col1)
         if (matches_wildcard(matcher1))
-            HM_FOR_EACH(&nfa_unique_tf, struct matcher, int, matcher2, col2)
-                if (*col2 == hm_count(&nfa_unique_tf) - 1)
+            HM_FOR_EACH(&unique_tf, struct matcher, int, matcher2, col2)
+                if (*col2 == hm_count(&unique_tf) - 1)
                 {
                     struct matcher tmp_matcher;
 
@@ -481,13 +467,12 @@ dfa_from_nfa(struct dfa_table* dfa, struct nfa_graph* nfa)
                     *col2 = tmp;
 
                     /* swap entries in transition function vector */
-                    matcher1 = vec_get(&dfa_tf, *col1);
-                    matcher2 = vec_get(&dfa_tf, *col2);
+                    matcher1 = vec_get(tf, *col1);
+                    matcher2 = vec_get(tf, *col2);
                     tmp_matcher = *matcher1;
                     *matcher1 = *matcher2;
                     *matcher2 = tmp_matcher;
 
-                    has_wildcards = 1;
                     goto wildcard_swapped_to_end;
                 }
             HM_END_EACH
@@ -500,25 +485,38 @@ wildcard_swapped_to_end:;
      * nfa->nodes array, or equivalently, a row index of the table. See "union states"
      * for details.
      */
-    if (table_init_with_size(&nfa_tt, nfa->node_count, hm_count(&nfa_unique_tf), sizeof(struct vec)) < 0)
+    if (table_init_with_size(nfa_tt, nfa->node_count, hm_count(&unique_tf), sizeof(struct vec)) < 0)
         goto init_nfa_table_failed;
-    for (r = 0; r != nfa_tt.rows; ++r)
-        for (c = 0; c != nfa_tt.cols; ++c)
-            vec_init(table_get(&nfa_tt, r, c), sizeof(union state));
+    for (r = 0; r != nfa_tt->rows; ++r)
+        for (c = 0; c != nfa_tt->cols; ++c)
+            vec_init(table_get(nfa_tt, r, c), sizeof(union state));
 
     for (r = 0; r != nfa->node_count; ++r)
         VEC_FOR_EACH(&nfa->nodes[r].next, int, next)
-            int* col = hm_find(&nfa_unique_tf, &nfa->nodes[*next].matcher);
+            int* col = hm_find(&unique_tf, &nfa->nodes[*next].matcher);
             union state next_state = make_state(
                 *next,
                 nfa->nodes[*next].matcher.is_accept,
                 nfa->nodes[*next].matcher.is_inverted);
-            struct vec* cell = table_get(&nfa_tt, r, *col);
+            struct vec* cell = table_get(nfa_tt, r, *col);
             if (vec_push(cell, &next_state) < 0)
                 goto build_nfa_table_failed;
         VEC_END_EACH
 
-    nfa_export_table(&nfa_tt, &dfa_tf, "nfa.txt");
+    return 0;
+
+    build_nfa_table_failed    :
+    init_nfa_table_failed     :
+    build_tfs_failed          : hm_deinit(&unique_tf);
+    init_nfa_unique_tf_failed : return -1;
+}
+
+static int
+nfa_table_bias_wildcards(struct table* nfa_tt, const struct vec* nfa_tf)
+{
+    int r, c;
+    if (!matches_wildcard(vec_back(nfa_tf)))
+        return 0;
 
     /*
      * DFA cannot handle wildcards as-is, because it would require generating
@@ -534,41 +532,69 @@ wildcard_swapped_to_end:;
      * last, it will prefer transitioning through known symbols before it falls
      * back to matching the wildcard on an unknown symbol.
      */
-    if (has_wildcards)
-        for (r = 0; r != nfa_tt.rows; ++r)
+    for (r = 0; r != nfa_tt->rows; ++r)
+    {
+        const struct vec* wildcard_next_states = table_get(nfa_tt, r, nfa_tt->cols - 1);
+        for (c = 0; c < nfa_tt->cols - 1; ++c)
         {
-            const struct vec* wildcard_next_states = table_get(&nfa_tt, r, nfa_tt.cols - 1);
-            for (c = 0; c < nfa_tt.cols - 1; ++c)
+            int c2;
+            struct vec* next_states = table_get(nfa_tt, r, c);
+            const struct matcher* m = vec_get(nfa_tf, c);
+
+            if (m->is_inverted)
+                continue;
+
+            for (c2 = 0; c2 < nfa_tt->cols - 1; ++c2)
             {
-                int c2;
-                struct vec* next_states = table_get(&nfa_tt, r, c);
-                const struct matcher* m = vec_get(&dfa_tf, c);
-
-                if (m->is_inverted)
-                    continue;
-
-                for (c2 = 0; c2 < nfa_tt.cols - 1; ++c2)
+                const struct matcher* m2 = vec_get(nfa_tf, c2);
+                if (c != c2 &&
+                    m2->is_inverted &&
+                    m2->mask.u64 == m->mask.u64 &&
+                    m2->symbol.u64 == m->symbol.u64)
                 {
-                    const struct matcher* m2 = vec_get(&dfa_tf, c2);
-                    if (c != c2 &&
-                        m2->is_inverted &&
-                        m2->mask.u64 == m->mask.u64 &&
-                        m2->symbol.u64 == m->symbol.u64)
-                    {
-                        goto matcher_is_negated;
-                    }
+                    goto matcher_is_negated;
                 }
-
-                VEC_FOR_EACH(wildcard_next_states, union state, wildcard_next_state)
-                    if (vec_find(next_states, wildcard_next_state) == vec_count(next_states))
-                        if (vec_push(next_states, wildcard_next_state) < 0)
-                            goto build_nfa_table_failed;
-                VEC_END_EACH
-
-                matcher_is_negated: continue;
             }
+
+            VEC_FOR_EACH(wildcard_next_states, union state, wildcard_next_state)
+                if (vec_find(next_states, wildcard_next_state) == vec_count(next_states))
+                    if (vec_push(next_states, wildcard_next_state) < 0)
+                        return -1;
+            VEC_END_EACH
+
+            matcher_is_negated: continue;
         }
-    nfa_export_table(&nfa_tt, &dfa_tf, "nfa_wc.txt");
+    }
+
+    return -1;
+
+}
+
+int
+dfa_from_nfa(struct dfa_table* dfa, struct nfa_graph* nfa)
+{
+    struct hm dfa_unique_states;
+    struct vec tf;
+    struct table nfa_tt;
+    struct table dfa_tt_intermediate;
+    struct table dfa_tt;
+    int n, r, c;
+    int has_wildcards = 0;
+    int return_code = -1;
+
+    /*
+     * In an error case, the table and transition functions should be empty to
+     * prevent dfa_find_* to execute anything. The data will then be freed.
+     */
+    dfa_tt = dfa->tt;
+    //tf = dfa->tf;
+    vec_init(&dfa->tf, dfa->tf.element_size);
+    table_init(&dfa->tt, dfa->tt.element_size);
+
+    nfa_table_from_graph(&nfa_tt, &tf, nfa);
+    nfa_export_table(&nfa_tt, &tf, "nfa.txt");
+    nfa_table_bias_wildcards(&nfa_tt, &tf);
+    nfa_export_table(&nfa_tt, &tf, "nfa_wc.txt");
 
     /*
      * Unlike the NFA transition table, the DFA table's states are sets of
@@ -675,13 +701,13 @@ wildcard_swapped_to_end:;
             VEC_END_EACH
         }
 
-    dfa_export_table(&dfa_tt, &dfa_tf, "dfa_dups.txt");
-    dfa_remove_duplicates(&dfa_tt, &dfa_tf);
-    dfa_export_table(&dfa_tt, &dfa_tf, "dfa.txt");
+    dfa_export_table(&dfa_tt, &tf, "dfa_dups.txt");
+    dfa_remove_duplicates(&dfa_tt, &tf);
+    dfa_export_table(&dfa_tt, &tf, "dfa.txt");
 
     /* Success! */
     return_code = 0;
-    vec_steal_vector(&dfa->tf, &dfa_tf);
+    vec_steal_vector(&dfa->tf, &tf);
     table_steal_table(&dfa->tt, &dfa_tt);
 
     table_deinit(&dfa_tt);
