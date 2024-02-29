@@ -214,7 +214,7 @@ fs_appdata_dir(void)
 int
 fs_make_dir(const char* path)
 {
-    if (CreateDirectory(path, NULL) == 0)
+    if (CreateDirectory(path, NULL))
         return 0;
     return -1;
 }
@@ -222,5 +222,7 @@ fs_make_dir(const char* path)
 int
 fs_remove_file(const char* path)
 {
-    return unlink(path);
+    if (DeleteFile(path))
+        return 0;
+    return -1;
 }
